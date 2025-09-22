@@ -15,37 +15,6 @@ On top of the Linea stack, it adds the smart contracts and infrastructure for St
 The additional Status Network features are optional, configurable using the CLI options (details provided under [Configuration Options](#configuration-options)).
 Open-sourced under the [Apache 2.0](LICENSE-APACHE) and the [MIT](LICENSE-MIT) licenses.
 
-## Quickstart
-
-### Prerequisites
-- Docker and Docker Compose
-- Java 21 (Temurin)
-- Make
-
-### Start local network
-- Only Status Network contracts on Linea stack (no extra Linea contract deployments):
-
-```bash
-STATUS_NETWORK_CONTRACTS_ENABLED=true LINEA_PROTOCOL_CONTRACTS_ONLY=true make start-env-with-rln
-```
-
-- Full Linea + Status Network (includes Linea protocol suite like token bridges):
-
-```bash
-LINEA_PROTOCOL_CONTRACTS_ONLY=false STATUS_NETWORK_CONTRACTS_ENABLED=true make start-env-with-rln-and-contracts
-```
-
-When the stack comes up, contract addresses are printed and can be verified with scripts under `contracts/local-deployments-artifacts/`.
-
-### Rebuild after sequencer changes
-Any edits to the sequencer or validators require rebuilding and restarting:
-
-```bash
-./build-rln-enabled-sequencer.sh
-make clean-environment
-STATUS_NETWORK_CONTRACTS_ENABLED=true LINEA_PROTOCOL_CONTRACTS_ONLY=true make start-env-with-rln
-```
-
 ## What is Status Network?
 
 [Status Network](https://status.network) is the **first natively gasless Ethereum L2**, optimized for social apps and games, featuring sustainable public funding for developers through native yield and DEX fees. Built on the Linea zkEVM stack, it provides high-performance, gas-free transactions while ensuring economic sustainability through a novel funding model and spam prevention technology.
