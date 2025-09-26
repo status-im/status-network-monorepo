@@ -411,16 +411,12 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     }
 
     /**
-     * @notice Returns the balance of a reward distributor.
-     * @dev The balance of a reward distributor is the balance of the actual tokens held by the distributor.
-     * @param distributor The address of the reward distributor.
-     * @return The balance of the reward distributor.
+     * @notice Returns the actual balance of an account (excluding virtual rewards from distributors).
+     * @param account The account to get the balance of.
+     * @return The actual balance of the account.
      */
-    function balanceOfRewardDistributor(address distributor) external view returns (uint256) {
-        if (!rewardDistributors.contains(distributor)) {
-            revert Karma__UnknownDistributor();
-        }
-        return super.balanceOf(distributor);
+    function actualBalanceOf(address account) external view returns (uint256) {
+        return super.balanceOf(account);
     }
 
     function allowance(address, address) public pure override returns (uint256) {

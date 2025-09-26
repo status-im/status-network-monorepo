@@ -2415,7 +2415,7 @@ contract RedeemRewardsTest is StakeManagerTest {
 
         uint256 aliceInitialBalance = stakingToken.balanceOf(alice);
         uint256 aliceInitialKarmaBalance = karma.balanceOf(alice);
-        uint256 streamerInitialKarmaBalance = karma.balanceOfRewardDistributor(address(streamer));
+        uint256 streamerInitialKarmaBalance = karma.actualBalanceOf(address(streamer));
 
         _stake(alice, 100e18, 0);
 
@@ -2438,7 +2438,7 @@ contract RedeemRewardsTest is StakeManagerTest {
         );
         assertEq(karma.balanceOf(alice), aliceInitialKarmaBalance + rewardAmount, "Alice redeemed Karma rewards");
         assertEq(
-            karma.balanceOfRewardDistributor(address(streamer)),
+            karma.actualBalanceOf(address(streamer)),
             streamerInitialKarmaBalance - rewardAmount,
             "Streamer paid the Karma rewards"
         );
@@ -2508,7 +2508,7 @@ contract LeaveTest is StakeManagerTest {
         vm.stopPrank();
 
         uint256 aliceInitialBalance = stakingToken.balanceOf(alice);
-        uint256 streamerInitialKarmaBalance = karma.balanceOfRewardDistributor(address(streamer));
+        uint256 streamerInitialKarmaBalance = karma.actualBalanceOf(address(streamer));
 
         _stake(alice, 100e18, 0);
 
@@ -2558,7 +2558,7 @@ contract LeaveTest is StakeManagerTest {
         );
 
         assertEq(stakingToken.balanceOf(alice), aliceInitialBalance, "Alice has all her funds back");
-        assertEq(karma.balanceOfRewardDistributor(address(streamer)), 0, "Streamer has no Karma left");
+        assertEq(karma.actualBalanceOf(address(streamer)), 0, "Streamer has no Karma left");
         assertEq(karma.balanceOf(alice), streamerInitialKarmaBalance, "Alice has all the Karma rewards");
     }
 
@@ -3637,7 +3637,7 @@ contract FuzzTests is StakeManagerTest {
         _stake(alice, stakeAmount, lockUpPeriod, expectedRevert);
         _setRewards(rewardAmount, rewardPeriod);
 
-        uint256 streamerKarmaBalanceBefore = karma.balanceOfRewardDistributor(address(streamer));
+        uint256 streamerKarmaBalanceBefore = karma.actualBalanceOf(address(streamer));
         assertEq(streamerKarmaBalanceBefore, rewardAmount);
 
         vm.warp(initialTime + accountRewardPeriod);
@@ -3646,6 +3646,6 @@ contract FuzzTests is StakeManagerTest {
 
         assertEq(streamer.totalRewardsSupply(), expectedReward, "Total rewards supply mismatch");
         assertApproxEqAbs(karma.balanceOf(alice), expectedReward, tolerance, "Reward balance mismatch");
-        assertEq(karma.balanceOfRewardDistributor(address(streamer)), streamerKarmaBalanceBefore - redeemed);
+        assertEq(karma.actualBalanceOf(address(streamer)), streamerKarmaBalanceBefore - redeemed);
     }
 }

@@ -303,7 +303,7 @@ contract SetRewardTest is KarmaTest {
         uint256 rewardAmount = 1000 ether;
         karma.setReward(distributor, rewardAmount, 0);
         vm.stopPrank();
-        assertEq(karma.balanceOfRewardDistributor(distributor), rewardAmount);
+        assertEq(karma.actualBalanceOf(distributor), rewardAmount);
     }
 
     function testSetRewardAsOtherAdmin() public {
@@ -315,7 +315,7 @@ contract SetRewardTest is KarmaTest {
         uint256 rewardAmount = 1000 ether;
         vm.prank(operator);
         karma.setReward(distributor, rewardAmount, 0);
-        assertEq(karma.balanceOfRewardDistributor(distributor), rewardAmount);
+        assertEq(karma.actualBalanceOf(distributor), rewardAmount);
     }
 
     function testSetRewardAsOperator() public {
