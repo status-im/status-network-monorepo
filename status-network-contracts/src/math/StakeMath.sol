@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT-1.0
+// SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.26;
 
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
