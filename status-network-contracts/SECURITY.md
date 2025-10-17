@@ -10,6 +10,8 @@ mechanisms. The staking system is one of several reward distributors in the broa
 
 - **Karma**: Reputation and governance token with voting capabilities. Generally non-transferable, but administrators
   can whitelist specific accounts for transfers
+- **Reward distributors** : Contracts that implement custom reward logic and integrate with the Karma token for virtual
+  reward accrual
 - **StakeManager**: Core staking logic with upgradeable proxy pattern (functions as a reward distributor for Karma)
 - **StakeVault**: User-owned vaults for secure stake management
 - **VaultFactory**: Factory for creating user stake vaults
@@ -35,6 +37,7 @@ The Status Network operates with several distinct actor types, each with specifi
   activities
 - **Vault Users**: Own and operate `StakeVault`s, can deposit/withdraw stakes, claim rewards, and participate in staking
   activities
+- **Slashers**: Entities that can initiate slashing of misbehaving vaults/accounts based on defined rules
 
 ## Target chain for deployment
 
