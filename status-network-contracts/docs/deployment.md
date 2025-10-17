@@ -32,7 +32,7 @@ $ forge verify-contract \
 --compiler-version $COMPILER_VERSION \
 $PROXY_CONTRACT_ADDRESS \
 --rpc-url $RPC_SN_SEPOLIA \
---verifier-url $VERIFIER_URL_SN_SEPOLIA
+--verifier-url $VERIFIER_URL_SN_SEPOLIA \
 --verifier blockscout \
 --constructor-args $(cast abi-encode "constructor(address,bytes)" $STAKE_MANAGER_IMPL_ADDRESS $INITIALIZE_CALLDATA)
 ```
@@ -47,7 +47,7 @@ $ forge verify-contract \
 --compiler-version $COMPILER_VERSION \
 $STAKE_MANAGER_CONTRACT_ADDRESS \
 --rpc-url $RPC_SN_SEPOLIA \
---verifier-url $VERIFIER_URL_SN_SEPOLIA
+--verifier-url $VERIFIER_URL_SN_SEPOLIA \
 --verifier blockscout
 ```
 
@@ -69,7 +69,7 @@ $ forge verify-contract \
 --compiler-version $COMPILER_VERSION \
 $VAULT_FACTORY_CONTRACT_ADDRESS \
 --rpc-url $RPC_SN_SEPOLIA \
---verifier-url $VERIFIER_URL_SN_SEPOLIA
+--verifier-url $VERIFIER_URL_SN_SEPOLIA \
 --verifier blockscout \
 --constructor-args $(cast abi-encode "constructor(address,address,address)" $OWNER_ADDRESS $STAKE_MANAGER_PROXY_CONTRACT_ADDRESS $VAULT_IMPL_ADDRESS)
 ```
@@ -98,7 +98,7 @@ $ forge verify-contract \
 --compiler-version $COMPILER_VERSION \
 $KARMA_CONTRACT_ADDRESS \
 --rpc-url $RPC_SN_SEPOLIA \
---verifier-url $VERIFIER_URL_SN_SEPOLIA
+--verifier-url $VERIFIER_URL_SN_SEPOLIA \
 --verifier blockscout
 ```
 
