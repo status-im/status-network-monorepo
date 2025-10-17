@@ -105,3 +105,19 @@ While the system enforces a maximum lock-up time of 4 years per individual lock 
 lock-up duration across multiple lock cycles. A vault can theoretically lock for extended periods beyond 4 years total
 by repeatedly locking for the maximum duration. The only practical limitation is the vault's maximum multiplier points
 (maxMP), which caps the rewards a vault can accumulate regardless of total lock duration.
+
+### Reward Distributor Misbehavior
+
+Reward distributors have significant privileges within the system, including the ability to report virtual Karma
+balances for accounts. While the system architecture assumes reward distributors will behave correctly, a malicious or
+buggy reward distributor could theoretically:
+
+- Report incorrect virtual Karma balances, violating the critical invariant that virtual Karma must be less than or
+  equal to the reward distributor's actual Karma balance
+- Manipulate reward distribution logic to favor certain accounts
+- Cause denial of service by reverting in critical functions like `rewardsBalanceOfAccount()` or `redeemRewards()`
+
+To mitigate these risks, **every reward distributor that is added to the system will undergo a thorough audit** before
+being integrated. This ensures that reward distributors implement the expected interfaces correctly, maintain the
+virtual Karma invariant, follow the system's security assumptions, and do not introduce vulnerabilities that could
+compromise the integrity of the Karma token or broader reward distribution mechanisms.
