@@ -2,7 +2,6 @@ pragma solidity ^0.8.26;
 
 import { StakeManagerTest } from "./StakeManagerBase.t.sol";
 
-
 contract IntegrationTest is StakeManagerTest {
     function setUp() public virtual override {
         super.setUp();
@@ -107,7 +106,7 @@ contract IntegrationTest is StakeManagerTest {
                 stakingBalance: 40e18,
                 rewardBalance: 1000e18,
                 rewardIndex: 125e17 // 1000 rewards / (40 staked + 40 MP) = 12.5
-             })
+            })
         );
 
         checkVault(

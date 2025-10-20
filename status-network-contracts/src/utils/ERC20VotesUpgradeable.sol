@@ -156,7 +156,14 @@ abstract contract ERC20VotesUpgradeable is Initializable, IVotesUpgradeable, ERC
     /**
      * @dev Delegates votes from signer to `delegatee`
      */
-    function delegateBySig(address delegatee, uint256 nonce, uint256 expiry, uint8 v, bytes32 r, bytes32 s)
+    function delegateBySig(
+        address delegatee,
+        uint256 nonce,
+        uint256 expiry,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    )
         public
         virtual
         override
@@ -274,7 +281,14 @@ abstract contract ERC20VotesUpgradeable is Initializable, IVotesUpgradeable, ERC
      * @dev Access an element of the array without performing bounds check. The position is assumed to be within
      * bounds.
      */
-    function _unsafeAccess(Checkpoint[] storage ckpts, uint256 pos) private pure returns (Checkpoint storage result) {
+    function _unsafeAccess(
+        Checkpoint[] storage ckpts,
+        uint256 pos
+    )
+        private
+        pure
+        returns (Checkpoint storage result)
+    {
         assembly {
             mstore(0, ckpts.slot)
             result.slot := add(keccak256(0, 0x20), pos)

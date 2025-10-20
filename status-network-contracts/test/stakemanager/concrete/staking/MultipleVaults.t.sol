@@ -51,7 +51,9 @@ contract MultipleVaultsStakeTest is StakeManagerTest {
         );
 
         checkUserTotals(
-            CheckUserTotalsParams({ user: alice, totalStakedBalance: 90e18, totalMPAccrued: 90e18, totalMaxMP: 450e18 })
+            CheckUserTotalsParams({
+                user: alice, totalStakedBalance: 90e18, totalMPAccrued: 90e18, totalMaxMP: 450e18
+            })
         );
     }
 }

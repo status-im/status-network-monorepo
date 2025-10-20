@@ -51,7 +51,11 @@ contract DeployKarmaAirdropScript is BaseScript {
      * @return karmaAirdrop The deployed KarmaAirdrop contract instance.
      * @return deploymentConfig The DeploymentConfig instance for the current network.
      */
-    function runForTest(address karmaAddress, address owner, address defaultDelegatee)
+    function runForTest(
+        address karmaAddress,
+        address owner,
+        address defaultDelegatee
+    )
         public
         returns (KarmaAirdrop karmaAirdrop, DeploymentConfig deploymentConfig)
     {
@@ -67,7 +71,11 @@ contract DeployKarmaAirdropScript is BaseScript {
      * @return karmaAirdrop The deployed KarmaAirdrop contract instance.
      * @return deploymentConfig The DeploymentConfig instance for the current network.
      */
-    function runForTest(address karmaAddress, address owner, bool allowMerkleRootUpdate)
+    function runForTest(
+        address karmaAddress,
+        address owner,
+        bool allowMerkleRootUpdate
+    )
         public
         returns (KarmaAirdrop karmaAirdrop, DeploymentConfig deploymentConfig)
     {
@@ -83,7 +91,12 @@ contract DeployKarmaAirdropScript is BaseScript {
      * @param defaultDelegatee The default delegatee address for new claimers.
      * @return karmaAirdrop The deployed KarmaAirdrop contract instance.
      */
-    function _run(address karmaAddress, address owner, bool allowMerkleRootUpdate, address defaultDelegatee)
+    function _run(
+        address karmaAddress,
+        address owner,
+        bool allowMerkleRootUpdate,
+        address defaultDelegatee
+    )
         internal
         broadcast
         returns (KarmaAirdrop karmaAirdrop)

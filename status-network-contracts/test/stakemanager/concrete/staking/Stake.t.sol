@@ -73,7 +73,7 @@ contract StakeTest is StakeManagerTest {
                 stakingBalance: 10e18,
                 rewardBalance: 1000e18,
                 rewardIndex: 50e18 // (1000 rewards / (10 staked + 10 MP)) = 50
-             })
+            })
         );
     }
 
@@ -365,8 +365,8 @@ contract StakeTest is StakeManagerTest {
 
         // new bonus = old bonus + bonus increase for old stake + bonus for new stake + bonus for new stake
         expectedBonus = expectedBonus + _bonusMP(stakeAmount, lockUpIncrease) + _bonusMP(stakeAmount, lockUpIncrease)
-        // This is the bonus for the new stake on the previous lock up
-        + _bonusMP(stakeAmount, YEAR);
+            // This is the bonus for the new stake on the previous lock up
+            + _bonusMP(stakeAmount, YEAR);
         expectedMP = expectedMP + stakeAmount;
         expectedMaxMP = expectedMP + expectedBonus + ((stakeAmount * 2) * streamer.MAX_MULTIPLIER());
 
@@ -504,7 +504,7 @@ contract StakeTest is StakeManagerTest {
                 stakingBalance: 40e18,
                 rewardBalance: 1000e18,
                 rewardIndex: 125e17 // (1000 rewards / (40 staked + 40 MP)) = 12,5
-             })
+            })
         );
     }
 

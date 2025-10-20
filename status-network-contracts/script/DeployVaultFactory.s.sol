@@ -40,7 +40,10 @@ contract DeployVaultFactoryScript is BaseScript {
      * @return vaultProxyClone The address of the StakeVault proxy clone used by the VaultFactory.
      * @return deploymentConfig The DeploymentConfig instance for the current network.
      */
-    function runForTest(address stakeManager, address stakingToken)
+    function runForTest(
+        address stakeManager,
+        address stakingToken
+    )
         public
         returns (
             VaultFactory vaultFactory,
@@ -63,7 +66,11 @@ contract DeployVaultFactoryScript is BaseScript {
      * @return vaultImplementation The address of the StakeVault logic contract.
      * @return vaultProxyClone The address of the StakeVault proxy clone used by the VaultFactory.
      */
-    function deploy(address deployer, address stakeManager, address stakingToken)
+    function deploy(
+        address deployer,
+        address stakeManager,
+        address stakingToken
+    )
         public
         returns (VaultFactory vaultFactory, address vaultImplementation, address vaultProxyClone)
     {
