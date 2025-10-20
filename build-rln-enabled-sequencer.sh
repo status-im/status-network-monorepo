@@ -13,7 +13,7 @@ NC='\033[0m' # No Color
 # Build paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LINEA_SEQUENCER_DIR="${SCRIPT_DIR}/besu-plugins/linea-sequencer"
-STATUS_RLN_PROVER_DIR="/Users/nadeem/dev/status/linea/status-rln-prover"
+STATUS_RLN_PROVER_DIR="rln-prover"
 CUSTOM_BESU_DIR="${SCRIPT_DIR}/custom-besu-minimal"
 
 echo -e "${BLUE}📁 Working directories:${NC}"
@@ -73,7 +73,7 @@ echo -e "${BLUE}🦀 Building RLN Prover Service...${NC}"
 cd "$STATUS_RLN_PROVER_DIR"
 cargo build --release
 
-PROVER_BINARY="${STATUS_RLN_PROVER_DIR}/target/release/status_rln_prover"
+PROVER_BINARY="${STATUS_RLN_PROVER_DIR}/target/release/prover_cli"
 if [[ ! -f "$PROVER_BINARY" ]]; then
     echo -e "${RED}❌ Error: RLN Prover binary not found!${NC}"
     exit 1
