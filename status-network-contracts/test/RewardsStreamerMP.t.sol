@@ -3341,7 +3341,7 @@ contract FuzzTests is StakeManagerTest {
         expectedAccountParams.account = vaults[account];
         uint256 calcLockEnd =
             Math.max(expectedVaultLockState[expectedAccountParams.account].lockEnd, vm.getBlockTimestamp())
-            + lockUpPeriod;
+                + lockUpPeriod;
         uint256 calcLockUpPeriod = calcLockEnd - vm.getBlockTimestamp(); //increased lock + remaining current lock
         if (lockUpPeriod == 0 || (lockUpPeriod >= MIN_LOCKUP_PERIOD && lockUpPeriod <= MAX_LOCKUP_PERIOD)) {
             //valid raw input
@@ -3399,7 +3399,7 @@ contract FuzzTests is StakeManagerTest {
 
         uint256 calcLockEnd =
             Math.max(expectedVaultLockState[expectedAccountParams.account].lockEnd, vm.getBlockTimestamp())
-            + lockUpPeriod;
+                + lockUpPeriod;
         uint256 calcLockUpPeriod = calcLockEnd - vm.getBlockTimestamp();
         if (!(calcLockUpPeriod >= MIN_LOCKUP_PERIOD && calcLockUpPeriod <= MAX_LOCKUP_PERIOD)) {
             expectedRevert = FuzzTests__UndefinedError.selector;
@@ -3505,7 +3505,12 @@ contract FuzzTests is StakeManagerTest {
         check("Lock: ", alice);
     }
 
-    function testFuzz_Unstake(uint128 stakeAmount, uint64 lockUpPeriod, uint16 accruedTime, uint128 unstakeAmount)
+    function testFuzz_Unstake(
+        uint128 stakeAmount,
+        uint64 lockUpPeriod,
+        uint16 accruedTime,
+        uint128 unstakeAmount
+    )
         public
     {
         vm.assume(stakeAmount > 0 && stakeAmount <= MAX_BALANCE);
