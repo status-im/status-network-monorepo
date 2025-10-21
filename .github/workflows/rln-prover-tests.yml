@@ -4,10 +4,6 @@ permissions:
   contents: read
   actions: read
 
-on:
-  workflow_call:
-    inputs:
-
 env:
   PROTOC_VERSION: "3.25.3"
 
