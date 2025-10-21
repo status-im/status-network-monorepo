@@ -179,11 +179,14 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
     /// @param account: the account to be slashed (address associated with the identity commitment).
     /// @param hash: keccak256 hash of abi.encodePacked(privateKey, rewardRecipient).
     function slashCommit(address account, bytes32 hash) external onlyRole(SLASHER_ROLE) {
-        uint256 lastRevealTime = lastRevealStartTime[account];
-        // If this is the first commit for this account, start from current time
-        // Otherwise, queue after the last reveal time
-        uint256 baseTime = lastRevealTime > block.timestamp ? lastRevealTime : block.timestamp;
-        uint256 revealStartTime = baseTime + slashRevealWindowTime;
+        uint256 lastReveal = lastRevealStartTime[account];
+        uint256 revealStartTime;
+
+        if (lastReveal == 0 || lastReveal + slashRevealWindowTime < block.timestamp) {
+            revealStartTime = block.timestamp;
+        } else {
+            revealStartTime = lastReveal + slashRevealWindowTime;
+        }
 
         slashCommitments[account][hash] = revealStartTime;
         lastRevealStartTime[account] = revealStartTime;
@@ -199,7 +202,11 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
     /// @param account: the account to be slashed (address associated with the identity commitment).
     /// @param privateKey: RLN private key as bytes32.
     /// @param rewardRecipient: Address that will receive the slash reward from the Karma contract.
-    function slashReveal(address account, bytes32 privateKey, address rewardRecipient)
+    function slashReveal(
+        address account,
+        bytes32 privateKey,
+        address rewardRecipient
+    )
         external
         onlyRole(SLASHER_ROLE)
     {

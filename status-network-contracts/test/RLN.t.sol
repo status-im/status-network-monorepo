@@ -327,12 +327,17 @@ contract RLNTest is Test {
         vm.prank(registerAddr);
         rln.register(identityCommitment0, user1Addr);
 
-        // Commit the slash
-        bytes32 hash = keccak256(abi.encodePacked(privateKey0, rewardRecipientAddr));
+        // Commit 1 (wrong key)
+        bytes32 hash1 = keccak256(abi.encodePacked(privateKey1, rewardRecipientAddr));
         vm.prank(slasherAddr);
-        rln.slashCommit(user1Addr, hash);
+        rln.slashCommit(user1Addr, hash1);
 
-        // Attempt to reveal before the window starts
+        // Commit 2 (right key)
+        bytes32 hash2 = keccak256(abi.encodePacked(privateKey0, rewardRecipientAddr));
+        vm.prank(slasherAddr);
+        rln.slashCommit(user1Addr, hash2);
+
+        // Attempt to reveal before the window starts for the second slash commitment
         vm.expectRevert(RLN.RLN__RevealWindowNotStarted.selector);
         vm.prank(slasherAddr);
         rln.slashReveal(user1Addr, privateKey0, rewardRecipientAddr);
