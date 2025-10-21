@@ -21,9 +21,9 @@ contract StakeVaultTest is Test {
     address internal bob = makeAddr("bob");
     address internal deployer = makeAddr("deployer");
 
-    function _createTestVault(address owner) internal returns (StakeVault) {
+    function _createTestVault(address owner) internal returns (StakeVault stakeVault) {
         vm.prank(owner);
-        return vaultFactory.createVault();
+        stakeVault = vaultFactory.createVault();
     }
 
     function setUp() public virtual {
