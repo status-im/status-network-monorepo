@@ -12,7 +12,7 @@ on:
         type: string
 
 env:
-  COMMIT_TAG: ${{ inputs.commit_tag }}
+  # COMMIT_TAG: ${{ inputs.commit_tag }}
   PROTOC_VERSION: "3.25.3"
 
 jobs:
