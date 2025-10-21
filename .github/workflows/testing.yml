@@ -28,6 +28,9 @@ on:
       linea_sequencer_changed:
         required: true
         type: string
+      rln_prover_changed:
+        required: true
+        type: string
 
 jobs:
   # Cache for pulling Docker images is disabled as we empirically found that this
@@ -65,6 +68,11 @@ jobs:
   linea-sequencer:
     uses: ./.github/workflows/linea-sequencer-plugin-testing.yml
     if: ${{ inputs.linea_sequencer_changed == 'true' }}
+    secrets: inherit
+
+  rln-prover:
+    uses: ./.github/workflows/rln-prover-tests.yml
+    if: ${{ inputs.rln_prover_changed == 'true' }}
     secrets: inherit
 
   # If all jobs are skipped, the workflow will still succeed.

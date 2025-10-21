@@ -41,6 +41,7 @@ jobs:
       contracts-excluding-local-deployment-artifacts-count: ${{ steps.exclusion-filter.outputs.contracts-excluding-local-deployment-artifacts_count }}
       smart-contracts: ${{ steps.filter.outputs.smart-contracts }}
       linea-sequencer-plugin: ${{ steps.filter.outputs.linea-sequencer-plugin }}
+      rln-prover: ${{ steps.filter.outputs.rln-prover  }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -115,6 +116,10 @@ jobs:
             linea-sequencer-plugin:
               - 'besu-plugins/linea-sequencer/**'
               - '.github/workflows/linea-sequencer-plugin-testing.yml'
+            rln-prover:
+              - 'rln-prover/**'
+              - '.github/workflows/main.yml'
+              - '.githb/workflows/rln-prover-tests.yml'
 
       - name: Filter out commit changes
         uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 #v3.0.2
@@ -147,6 +152,7 @@ jobs:
       smart_contracts_changed: ${{ needs.filter-commit-changes.outputs.smart-contracts || 'false' }}
       staterecovery_changed: ${{ needs.filter-commit-changes.outputs.staterecovery || 'false' }}
       transaction_exclusion_api_changed: ${{ needs.filter-commit-changes.outputs.transaction-exclusion-api || 'false' }}
+      rln_prover_changed: ${{ needs.filter-commit-changes.outputs.rln-prover || 'false' }}
     secrets: inherit
 
   # Always complete successfully even if no tests run

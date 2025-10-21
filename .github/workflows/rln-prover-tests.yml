@@ -1,0 +1,87 @@
+name: RLN prover tests
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  workflow_call:
+    inputs:
+      commit_tag:
+        required: true
+        type: string
+
+env:
+  COMMIT_TAG: ${{ inputs.commit_tag }}
+  PROTOC_VERSION: "3.25.3"
+
+jobs:
+  rln-prover-lint:
+    runs-on: ubuntu-latest
+    name: Run RLN prover tests
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install protoc
+        uses: taiki-e/install-action@v2
+        with:
+          tool: protoc@${{ env.PROTOC_VERSION }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "stable"
+      - name: Check formatting
+        if: success() || failure()
+        run: cargo fmt --all -- --check
+      - name: Check clippy
+        if: success() || failure()
+        run: cargo clippy --all-targets --release -- -D warnings
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    name: Test
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install protoc
+        uses: taiki-e/install-action@v2
+        with:
+          tool: protoc@${{ env.PROTOC_VERSION }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "stable"
+      - name: Install foundry
+        uses: foundry-rs/foundry-toolchain@v1
+      - name: Test
+        run: cargo test --all-features --release
+
+  unused-deps:
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    name: Unused Dependencies
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+      - name: Install protoc
+        uses: taiki-e/install-action@v2
+        with:
+          tool: protoc@${{ env.PROTOC_VERSION }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "nightly"
+      - name: Install cargo-udeps
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-udeps
+      - name: Check unused dependencies
+        run: cargo +nightly udeps --all-targets --all-features
+       
