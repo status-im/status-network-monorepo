@@ -205,11 +205,13 @@ contract StakeManagerTest is StakeMath, Test {
         vm.prank(admin);
         karma.setReward(address(streamer), amount, period);
     }
-
+    
     function _timeToAccrueMPLimit(uint256 amount) internal view returns (uint256) {
         uint256 maxMP = amount * streamer.MAX_MULTIPLIER();
         uint256 timeInSeconds = _timeToAccrueMP(amount, maxMP);
         return timeInSeconds;
     }
+
 }
+
 

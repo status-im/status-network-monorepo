@@ -34,13 +34,7 @@ contract DeployKarmaNFTScript is BaseScript {
      * @return karmaNFT The deployed KarmaNFT contract instance.
      * @return deploymentConfig The DeploymentConfig instance for the current network.
      */
-    function runForTest(
-        address metadataGenerator,
-        address karmaAddress
-    )
-        public
-        returns (KarmaNFT, DeploymentConfig)
-    {
+    function runForTest(address metadataGenerator, address karmaAddress) public returns (KarmaNFT, DeploymentConfig) {
         DeploymentConfig deploymentConfig = new DeploymentConfig(broadcaster);
         KarmaNFT karmaNFT = deploy(broadcaster, metadataGenerator, karmaAddress);
         return (karmaNFT, deploymentConfig);
@@ -53,11 +47,7 @@ contract DeployKarmaNFTScript is BaseScript {
      * @param karmaAddress The address of the Karma contract.
      * @return karmaNFT The deployed KarmaNFT contract instance.
      */
-    function deploy(
-        address deployer,
-        address metadataGenerator,
-        address karmaAddress
-    )
+    function deploy(address deployer, address metadataGenerator, address karmaAddress)
         public
         returns (KarmaNFT karmaNFT)
     {

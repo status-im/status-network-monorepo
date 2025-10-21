@@ -126,7 +126,7 @@ contract UnstakeTest is StakeTest {
                 totalStaked: stakeAmount,
                 totalMPStaked: (stakeAmount + expectedBonusMP) + stakeAmount,
                 totalMPAccrued: (stakeAmount + expectedBonusMP) + stakeAmount, // we do `+ stakeAmount` we've accrued
-                    // `stakeAmount` after 1 year
+                // `stakeAmount` after 1 year
                 totalMaxMP: _maxTotalMP(stakeAmount, lockUpPeriod),
                 stakingBalance: 10e18,
                 rewardBalance: 0,
@@ -230,9 +230,8 @@ contract UnstakeTest is StakeTest {
             predictedBonusMP[stage] = (totalStaked[stage] * predictedBonusMP[stage - 1]) / totalStaked[stage - 1];
             predictedTotalMaxMP[stage] = (totalStaked[stage] * predictedTotalMaxMP[stage - 1]) / totalStaked[stage - 1];
             increasedAccuredMP[stage] = 0; //no accuredMP in third stage;
-                //total accuredMP from this stage is a proportion from the difference of remainingStake and
-                // amountStaked
-                //if the account reduced 50% of its stake, the accuredMP should be reduced by 50%
+            //total accuredMP from this stage is a proportion from the difference of remainingStake and amountStaked
+            //if the account reduced 50% of its stake, the accuredMP should be reduced by 50%
             predictedAccuredMP[stage] = (totalStaked[stage] * predictedAccuredMP[stage - 1]) / totalStaked[stage - 1];
             predictedTotalMP[stage] = predictedBonusMP[stage] + predictedAccuredMP[stage];
         }
@@ -341,7 +340,7 @@ contract UnstakeTest is StakeTest {
                 // alice owned a 25% of the pool, so 25% of the rewards are paid out to alice (250)
                 rewardBalance: 750e18,
                 rewardIndex: 125e17 // reward index remains unchanged
-            })
+             })
         );
 
         checkVault(

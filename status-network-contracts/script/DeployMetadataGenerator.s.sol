@@ -33,10 +33,7 @@ contract DeployMetadataGeneratorScript is BaseScript {
      * @return metadataGenerator The deployed NFT metadata generator contract instance.
      * @return deploymentConfig The DeploymentConfig instance for the current network.
      */
-    function runForTest(
-        string memory _svgPrefix,
-        string memory _svgSuffix
-    )
+    function runForTest(string memory _svgPrefix, string memory _svgSuffix)
         public
         returns (INFTMetadataGenerator metadataGenerator, DeploymentConfig deploymentConfig)
     {
