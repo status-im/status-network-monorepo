@@ -16,7 +16,7 @@ env:
   PROTOC_VERSION: "3.25.3"
 
 jobs:
-  rln-prover-lint:
+  lint:
     runs-on: ubuntu-latest
     name: Run RLN prover tests
     steps:
