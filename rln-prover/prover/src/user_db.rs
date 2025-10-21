@@ -188,7 +188,7 @@ impl UserDb {
                         "New - Creating merkle tree folder: {}",
                         tree_folder.display()
                     );
-                    std::fs::create_dir(&tree_folder)?;
+                    std::fs::create_dir_all(&tree_folder)?;
                 }
 
                 let tree_config = PmtreeConfig::builder()

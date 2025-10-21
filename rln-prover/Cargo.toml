@@ -9,23 +9,20 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-# rln = { version = "0.8.0", features = ["pmtree-ft"] }
-rln = { git = "https://github.com/vacp2p/zerokit/", default-features = false, features = ["pmtree-ft"] }
-# zerokit_utils = { version = "0.6.0", features = ["pmtree-ft"] }
-zerokit_utils = { git = "https://github.com/vacp2p/zerokit/", default-features = false, features = ["pmtree-ft"] }
+rln = { version = "0.9.0", default-features = false, features = ["pmtree-ft"] }
+zerokit_utils = { version = "0.7.0", default-features = false, features = ["pmtree-ft"] }
+# rln = { git = "https://github.com/vacp2p/zerokit/", default-features = false, features = ["pmtree-ft"] }
+# zerokit_utils = { git = "https://github.com/vacp2p/zerokit/", default-features = false, features = ["pmtree-ft"] }
 
-ark-bn254 = { version = "0.5.0", features = ["std"] }
-ark-relations = { version = "0.5.1", features = ["std"] }
-# ark-ff = { version = "0.5.0", features = ["parallel"] }
-ark-ff = { version = "0.5.0",  features = ["asm"] }
-# ark-groth16 = { version = "0.5.0", features = ["parallel"] }
+ark-bn254 = { version = "0.5.0", default-features = false, features = ["std"] }
+ark-relations = { version = "0.5.1", default-features = false, features = ["std"] }
+ark-ff = { version = "0.5.0", default-features = false, features = ["asm"] }
 ark-groth16 = { version = "0.5.0", default-features = false, features = [] }
-# ark-serialize = { version = "0.5.0", features = ["parallel"] }
 ark-serialize = { version = "0.5.0", default-features = false, features = [] }
-tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread"] }
-clap = { version = "4.5.49", features = ["derive", "wrap_help"] }
+tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread"] }
+clap = { version = "4.5.50", features = ["derive", "wrap_help"] }
 url = { version = "2.5.7", features = ["serde"] }
-alloy = { version = "1.0.38", features = [
+alloy = { version = "1.0.41", features = [
     "getrandom",
     "sol-types",
     "contract",
@@ -35,9 +32,11 @@ alloy = { version = "1.0.38", features = [
 async-trait = "0.1.89"
 derive_more = "2.0.1"
 thiserror = "2.0.17"
-rustls = "0.23.32"
+rustls = "0.23.33"
 zeroize = "1.8.2"
 tonic = "0.14.2"
+tonic-web = "0.14.2"
+tonic-reflection = "0.14.2"
 prost = "0.14.1"
 tonic-prost = "0.14.2"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }

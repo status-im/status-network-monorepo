@@ -13,7 +13,7 @@ NC='\033[0m' # No Color
 # Build paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LINEA_SEQUENCER_DIR="${SCRIPT_DIR}/besu-plugins/linea-sequencer"
-STATUS_RLN_PROVER_DIR="rln-prover"
+STATUS_RLN_PROVER_DIR="${SCRIPT_DIR}/rln-prover"
 CUSTOM_BESU_DIR="${SCRIPT_DIR}/custom-besu-minimal"
 
 echo -e "${BLUE}📁 Working directories:${NC}"

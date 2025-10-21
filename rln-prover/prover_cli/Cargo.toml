@@ -10,7 +10,7 @@ clap.workspace = true
 rustls.workspace = true
 tracing-subscriber.workspace = true
 tracing.workspace = true
-toml = "0.9.5"
+toml = "0.9.8"
 opentelemetry = { version = "0.31.0", default-features = false, features = [
     "trace",
 ] }
