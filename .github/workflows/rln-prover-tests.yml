@@ -7,9 +7,6 @@ permissions:
 on:
   workflow_call:
     inputs:
-      commit_tag:
-        required: true
-        type: string
 
 env:
   PROTOC_VERSION: "3.25.3"
