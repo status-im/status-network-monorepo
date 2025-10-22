@@ -10,6 +10,8 @@ mechanisms. The staking system is one of several reward distributors in the broa
 
 - **Karma**: Reputation and governance token with voting capabilities. Generally non-transferable, but administrators
   can whitelist specific accounts for transfers
+- **Reward distributors** : Contracts that implement custom reward logic and integrate with the Karma token for virtual
+  reward accrual
 - **StakeManager**: Core staking logic with upgradeable proxy pattern (functions as a reward distributor for Karma)
 - **StakeVault**: User-owned vaults for secure stake management
 - **VaultFactory**: Factory for creating user stake vaults
@@ -35,6 +37,7 @@ The Status Network operates with several distinct actor types, each with specifi
   activities
 - **Vault Users**: Own and operate `StakeVault`s, can deposit/withdraw stakes, claim rewards, and participate in staking
   activities
+- **Slashers**: Entities that can initiate slashing of misbehaving vaults/accounts based on defined rules
 
 ## Target chain for deployment
 
@@ -102,3 +105,19 @@ While the system enforces a maximum lock-up time of 4 years per individual lock 
 lock-up duration across multiple lock cycles. A vault can theoretically lock for extended periods beyond 4 years total
 by repeatedly locking for the maximum duration. The only practical limitation is the vault's maximum multiplier points
 (maxMP), which caps the rewards a vault can accumulate regardless of total lock duration.
+
+### Reward Distributor Misbehavior
+
+Reward distributors have significant privileges within the system, including the ability to report virtual Karma
+balances for accounts. While the system architecture assumes reward distributors will behave correctly, a malicious or
+buggy reward distributor could theoretically:
+
+- Report incorrect virtual Karma balances, violating the critical invariant that virtual Karma must be less than or
+  equal to the reward distributor's actual Karma balance
+- Manipulate reward distribution logic to favor certain accounts
+- Cause denial of service by reverting in critical functions like `rewardsBalanceOfAccount()` or `redeemRewards()`
+
+To mitigate these risks, **every reward distributor that is added to the system will undergo a thorough audit** before
+being integrated. This ensures that reward distributors implement the expected interfaces correctly, maintain the
+virtual Karma invariant, follow the system's security assumptions, and do not introduce vulnerabilities that could
+compromise the integrity of the Karma token or broader reward distribution mechanisms.
