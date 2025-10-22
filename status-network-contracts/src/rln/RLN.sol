@@ -16,6 +16,8 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
     error RLN__SetIsFull();
     error RLN__Unauthorized();
     error RLN__InvalidCommitment();
+    error RLN__RevealWindowNotStarted();
+    error RLN__InvalidSlashRevealWindowTime(uint256 windowTime);
 
     /// @dev Emmited when a new member registered.
     /// @param identityCommitment: `identityCommitment`;
@@ -26,6 +28,11 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
     /// @param index: index of `identityCommitment`;
     /// @param slasher: address of slasher (msg.sender).
     event MemberSlashed(uint256 index, address slasher);
+
+    /// @dev Emitted when the slash reveal window time is updated.
+    /// @param newWindowTime: the new reveal window time in seconds.
+    /// @param updatedBy: address of the account that performed the update.
+    event SlashRevealWindowTimeUpdated(uint256 newWindowTime, address indexed updatedBy);
 
     /// @dev User metadata struct.
     /// @param userAddress: address of depositor;
@@ -53,8 +60,15 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
     /// @dev Poseidon hasher contract.
     IPoseidonHasher public poseidonHasher;
 
+    /// @dev Time window for reveal after commit (default 1 hour).
+    uint256 public slashRevealWindowTime;
+
+    /// @dev Last reveal start time for each account to be slashed.
+    mapping(address account => uint256 lastRevealStartTime) public lastRevealStartTime;
+
     /// @dev Slash commitments mapping for the commit-reveal scheme.
-    mapping(bytes32 hash => bool commited) public slashCommitments;
+    /// Maps account => commitmentHash => revealStartTime.
+    mapping(address account => mapping(bytes32 hash => uint256 revealStartTime)) public slashCommitments;
 
     constructor() {
         _disableInitializers();
@@ -87,6 +101,9 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
 
         karma = Karma(_token);
         poseidonHasher = IPoseidonHasher(_poseidonHasher);
+
+        // Set default reveal window time to 1 hour
+        slashRevealWindowTime = 1 hours;
     }
 
     /**
@@ -97,6 +114,20 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
         if (!hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
             revert RLN__Unauthorized();
         }
+    }
+
+    /// @dev Sets the slash reveal window time.
+    /// @param _slashRevealWindowTime: new reveal window time in seconds.
+    /// @notice The window time must be at least 1 second and no more than 365 days.
+    ///         A non-zero value is required to ensure the queuing mechanism functions correctly.
+    ///         An excessively large value could lock commitments indefinitely.
+    function setSlashRevealWindowTime(uint256 _slashRevealWindowTime) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (_slashRevealWindowTime == 0 || _slashRevealWindowTime > 1 days) {
+            revert RLN__InvalidSlashRevealWindowTime(_slashRevealWindowTime);
+        }
+
+        slashRevealWindowTime = _slashRevealWindowTime;
+        emit SlashRevealWindowTimeUpdated(_slashRevealWindowTime, msg.sender);
     }
 
     /// @dev Adds `identityCommitment` to the registry set and takes the necessary stake amount.
@@ -143,28 +174,54 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
     /// The slasher must first commit to a hash of (privateKey, rewardRecipient) before revealing
     /// the actual values. This prevents front-running attacks where others could observe the
     /// privateKey in the mempool and slash the member themselves with a different reward recipient.
+    /// The commit is queued by account, with each new commit having a reveal window after the previous one.
     ///
+    /// @param account: the account to be slashed (address associated with the identity commitment).
     /// @param hash: keccak256 hash of abi.encodePacked(privateKey, rewardRecipient).
-    function slashCommit(bytes32 hash) external onlyRole(SLASHER_ROLE) {
-        slashCommitments[hash] = true;
+    function slashCommit(address account, bytes32 hash) external onlyRole(SLASHER_ROLE) {
+        uint256 lastReveal = lastRevealStartTime[account];
+        uint256 revealStartTime;
+
+        if (lastReveal == 0 || lastReveal + slashRevealWindowTime < block.timestamp) {
+            revealStartTime = block.timestamp;
+        } else {
+            revealStartTime = lastReveal + slashRevealWindowTime;
+        }
+
+        slashCommitments[account][hash] = revealStartTime;
+        lastRevealStartTime[account] = revealStartTime;
     }
 
     /// @dev Reveals and executes a previously committed slash operation.
     /// @notice This is the second step of the commit-reveal scheme for slashing.
     /// After committing the hash, the slasher reveals the actual privateKey and rewardRecipient.
-    /// The function verifies that these values match a previously committed hash, then executes
-    /// the slash. This two-step process prevents front-running while ensuring the slasher cannot
-    /// change the parameters after commitment.
+    /// The function verifies that these values match a previously committed hash and that the
+    /// reveal window has started. This two-step process with queuing prevents front-running
+    /// while ensuring the slasher cannot change the parameters after commitment.
     ///
+    /// @param account: the account to be slashed (address associated with the identity commitment).
     /// @param privateKey: RLN private key as bytes32.
     /// @param rewardRecipient: Address that will receive the slash reward from the Karma contract.
-    function slashReveal(bytes32 privateKey, address rewardRecipient) external onlyRole(SLASHER_ROLE) {
+    function slashReveal(
+        address account,
+        bytes32 privateKey,
+        address rewardRecipient
+    )
+        external
+        onlyRole(SLASHER_ROLE)
+    {
         bytes32 hash = keccak256(abi.encodePacked(privateKey, rewardRecipient));
-        if (!slashCommitments[hash]) {
+        uint256 revealStartTime = slashCommitments[account][hash];
+
+        if (revealStartTime == 0) {
             revert RLN__InvalidCommitment();
         }
 
-        delete slashCommitments[hash];
+        if (block.timestamp < revealStartTime) {
+            revert RLN__RevealWindowNotStarted();
+        }
+
+        delete slashCommitments[account][hash];
         slash(privateKey, rewardRecipient);
     }
 }

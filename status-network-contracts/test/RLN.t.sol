@@ -232,21 +232,24 @@ contract RLNTest is Test {
             )
         );
         vm.prank(user1Addr);
-        rln.slashCommit(hash);
+        rln.slashCommit(user1Addr, hash);
     }
 
     function test_SlashCommitAddsNewHashWithSlashRole() public {
         bytes32 hash = keccak256(abi.encodePacked(privateKey0, rewardRecipientAddr));
 
         // Verify commitment doesn't exist yet
-        assertFalse(rln.slashCommitments(hash));
+        assertEq(rln.slashCommitments(user1Addr, hash), 0);
 
         // Commit with slash role
         vm.prank(slasherAddr);
-        rln.slashCommit(hash);
+        rln.slashCommit(user1Addr, hash);
 
-        // Verify commitment was added
-        assertTrue(rln.slashCommitments(hash));
+        // Verify commitment was added with a revealStartTime
+        assertGt(rln.slashCommitments(user1Addr, hash), 0);
+
+        // Verify lastRevealStartTime was updated
+        assertGt(rln.lastRevealStartTime(user1Addr), 0);
     }
 
     function test_SlashRevealRevertsIfNoSlashRole() public {
@@ -260,14 +263,14 @@ contract RLNTest is Test {
             )
         );
         vm.prank(user1Addr);
-        rln.slashReveal(privateKey0, rewardRecipientAddr);
+        rln.slashReveal(user1Addr, privateKey0, rewardRecipientAddr);
     }
 
     function test_SlashRevealRevertsIfCommitmentDoesntExist() public {
         // Attempt to reveal without committing first
         vm.expectRevert(RLN.RLN__InvalidCommitment.selector);
         vm.prank(slasherAddr);
-        rln.slashReveal("1234", rewardRecipientAddr);
+        rln.slashReveal(user1Addr, "1234", rewardRecipientAddr);
     }
 
     function test_SlashRevealSlashesAccountAndRemovesHash() public {
@@ -283,10 +286,14 @@ contract RLNTest is Test {
         // Commit the slash
         bytes32 hash = keccak256(abi.encodePacked(privateKey0, rewardRecipientAddr));
         vm.prank(slasherAddr);
-        rln.slashCommit(hash);
+        rln.slashCommit(user1Addr, hash);
 
-        // Verify commitment exists
-        assertTrue(rln.slashCommitments(hash));
+        // Verify commitment exists with a revealStartTime
+        uint256 revealStartTime = rln.slashCommitments(user1Addr, hash);
+        assertGt(revealStartTime, 0);
+
+        // Warp time to allow reveal (skip to the reveal window)
+        vm.warp(revealStartTime);
 
         // Burn event
         vm.expectEmit(true, true, true, true);
@@ -302,15 +309,91 @@ contract RLNTest is Test {
 
         // Reveal and slash
         vm.prank(slasherAddr);
-        rln.slashReveal(privateKey0, rewardRecipientAddr);
+        rln.slashReveal(user1Addr, privateKey0, rewardRecipientAddr);
 
         // Verify commitment was removed
-        assertFalse(rln.slashCommitments(hash));
+        assertEq(rln.slashCommitments(user1Addr, hash), 0);
 
         // Verify member was slashed
         (address userAddress, uint256 userIndex) = _memberData(identityCommitment0);
         assertEq(userAddress, address(0));
         assertEq(userIndex, 0);
+    }
+
+    function test_SlashRevealRevertsIfRevealWindowNotStarted() public {
+        vm.prank(owner);
+        karma.mint(user1Addr, 10 ether);
+
+        vm.prank(registerAddr);
+        rln.register(identityCommitment0, user1Addr);
+
+        // Commit 1 (wrong key)
+        bytes32 hash1 = keccak256(abi.encodePacked(privateKey1, rewardRecipientAddr));
+        vm.prank(slasherAddr);
+        rln.slashCommit(user1Addr, hash1);
+
+        // Commit 2 (right key)
+        bytes32 hash2 = keccak256(abi.encodePacked(privateKey0, rewardRecipientAddr));
+        vm.prank(slasherAddr);
+        rln.slashCommit(user1Addr, hash2);
+
+        // Attempt to reveal before the window starts for the second slash commitment
+        vm.expectRevert(RLN.RLN__RevealWindowNotStarted.selector);
+        vm.prank(slasherAddr);
+        rln.slashReveal(user1Addr, privateKey0, rewardRecipientAddr);
+    }
+
+    function test_SlashCommitCreatesQueueForMultipleCommits() public {
+        // Commit three slashes for the same account
+        bytes32 hash1 = keccak256(abi.encodePacked(privateKey0, rewardRecipientAddr));
+        bytes32 hash2 = keccak256(abi.encodePacked(privateKey1, rewardRecipientAddr));
+        bytes32 hash3 = keccak256(abi.encodePacked(privateKey2, rewardRecipientAddr));
+
+        vm.startPrank(slasherAddr);
+        rln.slashCommit(user1Addr, hash1);
+        uint256 revealTime1 = rln.slashCommitments(user1Addr, hash1);
+
+        rln.slashCommit(user1Addr, hash2);
+        uint256 revealTime2 = rln.slashCommitments(user1Addr, hash2);
+
+        rln.slashCommit(user1Addr, hash3);
+        uint256 revealTime3 = rln.slashCommitments(user1Addr, hash3);
+        vm.stopPrank();
+
+        // Verify that each subsequent commit has a later reveal time
+        assertGt(revealTime1, 0);
+        assertEq(revealTime2, revealTime1 + rln.slashRevealWindowTime());
+        assertEq(revealTime3, revealTime2 + rln.slashRevealWindowTime());
+
+        // Verify lastRevealStartTime was updated to the last commit's time
+        assertEq(rln.lastRevealStartTime(user1Addr), revealTime3);
+    }
+
+    function test_SetSlashRevealWindowTime() public {
+        uint256 newWindowTime = 2 hours;
+
+        // Set new window time as admin
+        vm.prank(adminAddr);
+        rln.setSlashRevealWindowTime(newWindowTime);
+
+        // Verify it was updated
+        assertEq(rln.slashRevealWindowTime(), newWindowTime);
+    }
+
+    function test_SetSlashRevealWindowTimeRevertsIfNotAdmin() public {
+        uint256 newWindowTime = 2 hours;
+
+        // Attempt to set new window time without admin role
+        vm.expectRevert(
+            abi.encodePacked(
+                "AccessControl: account ",
+                Strings.toHexString(uint160(user1Addr)),
+                " is missing role ",
+                Strings.toHexString(uint256(rln.DEFAULT_ADMIN_ROLE()), 32)
+            )
+        );
+        vm.prank(user1Addr);
+        rln.setSlashRevealWindowTime(newWindowTime);
     }
 
     /* ========== HELPERS ========== */
