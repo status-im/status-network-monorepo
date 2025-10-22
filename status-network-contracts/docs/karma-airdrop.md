@@ -64,7 +64,7 @@ When an application team deploys an airdrop instance:
    - Whether Merkle root updates are allowed
    - Optional default delegatee address for voting power
 
-2. **Funding**: A Status treasur account transfers Karma tokens to the airdrop contract to fund the distribution.
+2. **Funding**: A Status treasury account transfers Karma tokens to the airdrop contract to fund the distribution.
 
 3. **Merkle Root Setting**: The owner sets the initial Merkle root containing all eligible claims.
 
