@@ -8,8 +8,9 @@ on:
   workflow_call:
     inputs:
       commit_tag:
-        required: true
+        required: false
         type: string
+        default: 'local'
 
 env:
   GOPROXY: "https://proxy.golang.org"

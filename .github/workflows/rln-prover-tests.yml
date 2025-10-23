@@ -6,13 +6,8 @@ permissions:
 
 on:
   workflow_call:
-    inputs:
-      commit_tag:
-        required: true
-        type: string
 
 env:
-  COMMIT_TAG: ${{ inputs.commit_tag }}
   PROTOC_VERSION: "3.25.3"
 
 jobs:
