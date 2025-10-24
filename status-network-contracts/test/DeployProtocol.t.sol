@@ -16,18 +16,18 @@ import { VaultFactory } from "../src/VaultFactory.sol";
 import { INFTMetadataGenerator } from "../src/interfaces/INFTMetadataGenerator.sol";
 
 contract DeployProtocolTest is Test {
-    DeployProtocolScript deployProtocol;
-    MockToken stakingToken;
-    address deployer;
+    DeployProtocolScript public deployProtocol;
+    MockToken public stakingToken;
+    address public deployer;
 
-    Karma karma;
-    address karmaImpl;
-    INFTMetadataGenerator metadataGenerator;
-    KarmaNFT karmaNFT;
-    StakeManager stakeManager;
-    VaultFactory vaultFactory;
-    address vaultImpl;
-    DeploymentConfig deploymentConfig;
+    Karma public karma;
+    address public karmaImpl;
+    INFTMetadataGenerator public metadataGenerator;
+    KarmaNFT public karmaNFT;
+    StakeManager public stakeManager;
+    VaultFactory public vaultFactory;
+    address public vaultImpl;
+    DeploymentConfig public deploymentConfig;
 
     function setUp() public {
         stakingToken = new MockToken("Staking Token", "STK");
