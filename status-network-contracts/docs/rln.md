@@ -70,7 +70,8 @@ Identity commitments are generated off-chain.
 
 The registry size is fixed based on the merkle tree depth parameter:
 
-- **Depth 16**: 2^16 = 65,536 identities -**Depth 20**: 2^20 = 1,048,576 identities
+- **Depth 16**: 2^16 = 65,536 identities
+- **Depth 20**: 2^20 = 1,048,576 identities
 
 Once the registry reaches capacity, new registrations are rejected until space is available.
 
