@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT-1.0
 pragma solidity ^0.8.26;
 
-import { StakeManagerTest } from "./StakeManagerBase.t.sol";
+import { Test } from "forge-std/Test.sol";
+import { StakeMath } from "../../src/math/StakeMath.sol";
 
-contract MathTest is StakeManagerTest {
+contract StakeMathTest is StakeMath, Test {
     function test_CalcInitialMP() public pure {
         assertEq(_initialMP(1), 1, "wrong initial MP");
         assertEq(_initialMP(10e18), 10e18, "wrong initial MP");
@@ -21,19 +22,15 @@ contract MathTest is StakeManagerTest {
 
     function test_CalcBonusMP() public view {
         assertEq(_bonusMP(10e18, 0), 0, "wrong bonus MP");
-        assertEq(_bonusMP(10e18, streamer.MIN_LOCKUP_PERIOD()), 2_465_753_424_657_534_246, "wrong bonus MP");
-        assertEq(_bonusMP(10e18, streamer.MIN_LOCKUP_PERIOD() + 13 days), 2_821_917_808_219_178_082, "wrong bonus MP");
+        assertEq(_bonusMP(10e18, MIN_LOCKUP_PERIOD), 2_465_753_424_657_534_246, "wrong bonus MP");
+        assertEq(_bonusMP(10e18, MIN_LOCKUP_PERIOD + 13 days), 2_821_917_808_219_178_082, "wrong bonus MP");
         assertEq(_bonusMP(100e18, 0), 0, "wrong bonus MP");
     }
 
     function test_CalcMaxTotalMP() public view {
         assertEq(_maxTotalMP(10e18, 0), 50e18, "wrong max total MP");
-        assertEq(_maxTotalMP(10e18, streamer.MIN_LOCKUP_PERIOD()), 52_465_753_424_657_534_246, "wrong max total MP");
-        assertEq(
-            _maxTotalMP(10e18, streamer.MIN_LOCKUP_PERIOD() + 13 days),
-            52_821_917_808_219_178_082,
-            "wrong max total MP"
-        );
+        assertEq(_maxTotalMP(10e18, MIN_LOCKUP_PERIOD), 52_465_753_424_657_534_246, "wrong max total MP");
+        assertEq(_maxTotalMP(10e18, MIN_LOCKUP_PERIOD + 13 days), 52_821_917_808_219_178_082, "wrong max total MP");
         assertEq(_maxTotalMP(100e18, 0), 500e18, "wrong max total MP");
     }
 
