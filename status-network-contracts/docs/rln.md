@@ -3,8 +3,9 @@
 ## Overview
 
 The RLN (Rate-Limiting Nullifier) contract is a privacy-preserving identity registry that manages a set of identity
-commitments for the protocol participants. It enables users to register their identities, and allows authorized accounts
-to slash misbehaving users through a commit-reveal scheme that prevents front-running attacks.
+commitments for the protocol participants. This is used to prevent spam on the gas-less Status Network protocol. It
+enables users to register their identities, and allows authorized accounts to slash misbehaving users through a Status
+Network protocol. commit-reveal scheme that prevents front-running attacks.
 
 ## Features
 
@@ -36,31 +37,19 @@ to slash misbehaving users through a commit-reveal scheme that prevents front-ru
 
   - Integrates with the Karma contract to enforce economic penalties for violations.
   - Slashing burns a percentage of the user's total Karma balance (both actual and virtual tokens).
-  - Slashing rewards are minted to a recipient specified as parameter.
+  - [Slashing rewards](./karma.md#slashing) are minted to a recipient specified as parameter.
 
-- **Role-Based Access Control:**
+- **Upgradeability**
 
-  - Supports multiple roles: DEFAULT_ADMIN_ROLE, REGISTER_ROLE, and SLASHER_ROLE.
-  - Ensures only authorized accounts can register identities and execute slashes.
-
-- **Upgradeable Design:**
-  - Uses UUPS (Universal Upgradeable Proxy Standard) for secure contract upgrades.
-  - Initialized with owner, slasher, register, merkle tree depth, Karma token addresses, Poseidon hasher contract
-    address.
+The contract can be upgraded by users with the ADMIN role.
 
 ## Identity Registration
 
-The RLN contract maintains a registry of identity commitments that represent encrypted representations of user
-identities.
+The RLN contract maintains a registry of identity commitments that represent user identities.
 
 ### Registration Process
 
-When an authorized account with REGISTER_ROLE registers an identity commitment:
-
-1. **Commitment Validation**: The contract verifies that the identity commitment hasn't been previously registered.
-2. **Registry Space**: The contract checks that the registry has capacity (not full based on merkle tree depth).
-3. **Commitment Storage**: The identity commitment is stored with the registrant's address and an incrementing index.
-4. **Event Emission**: A `MemberRegistered` event is emitted containing the commitment and its registry index.
+Accounts with REGISTER_ROLE can register new identity commitments by calling the `register` function.
 
 ### Identity Commitment Generation
 
@@ -73,7 +62,8 @@ The registry size is fixed based on the merkle tree depth parameter:
 - **Depth 16**: 2^16 = 65,536 identities
 - **Depth 20**: 2^20 = 1,048,576 identities
 
-Once the registry reaches capacity, new registrations are rejected until space is available.
+Once the registry reaches capacity, new registrations are rejected until space is available. When accounts are slashed,
+their identity commitments are removed from the registry, freeing up space for new registrations.
 
 ## Commit-Reveal Slashing Mechanism
 
@@ -98,7 +88,6 @@ When a slasher initiates a slash operation, they call `slashCommit()`:
 2. **Commitment Recording**: The contract stores this hash along with the timestamp in a mapping.
 3. **Queue Management**: If this is not the first slash commit on this account, the reveal start time is scheduled for
    after the current reveal window closes.
-4. **Event Emission**: The system records the commitment for later verification.
 
 The hash ensures the slasher commits to specific values without revealing them until the reveal phase.
 
@@ -127,7 +116,7 @@ sequentially in the order they were committed.
 ### Direct Slash (Emergency)
 
 The contract also supports a direct `slash()` function for emergency situations or when the slasher wishes to bypass the
-commit-reveal mechanism. However, this requires explicit authorization and is typically reserved for privileged roles.
+commit-reveal mechanism. However, calling `slash` directly is vulrnerable to front-running attacks.
 
 ### Access Control
 
@@ -137,21 +126,7 @@ Only accounts with the `SLASHER_ROLE` or the admin can execute slashing operatio
 
 - **Reveal Window Duration**: The amount of time that must pass between a commit and a reveal.
 
-## Data Structures and State
+### Security considerations
 
-The RLN contract maintains several key data structures:
-
-### Members Registry
-
-```
-mapping(uint256 commitment => User user) public members
-```
-
-Maps identity commitments to user information:
-
-```
-struct User {
-    address userAddress;    // Address of the registrant
-    uint256 index;         // Position in the merkle tree
-}
-```
+- Supports multiple roles: DEFAULT_ADMIN_ROLE, REGISTER_ROLE, and SLASHER_ROLE.
+- Ensures only authorized accounts can register identities and execute slashes.
