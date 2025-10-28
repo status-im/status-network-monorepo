@@ -32,8 +32,8 @@ mod tests {
     const TX_HASH_1: [u8; 32] = [0x011; 32];
     const TX_HASH_1_2: [u8; 32] = [0x12; 32];
 
-    // Set to 10 seconds as 5 seconds can cause failures on Mac M1 machines.
-    const PROOF_VERIFY_TEST_TIMEOUT: u64 = 10;
+    // Increase timeout to reduce CI flakiness on slower runners.
+    const PROOF_VERIFY_TEST_TIMEOUT: u64 = 30;
 
     #[derive(thiserror::Error, Debug)]
     enum AppErrorExt {

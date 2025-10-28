@@ -26,6 +26,54 @@ echo -e "  Custom Besu: ${CUSTOM_BESU_DIR}"
 BESU_PACKAGE_TAG="beta-v2.1-rc16.2-20250521134911-f6cb0f2"
 BESU_BASE_IMAGE="consensys/linea-besu-package:${BESU_PACKAGE_TAG}"
 
+# Publish options (can be overridden by flags or env)
+PUSH_IMAGES=${PUSH_IMAGES:-false}
+REGISTRY=${REGISTRY:-}
+NAMESPACE=${NAMESPACE:-}
+BESU_IMAGE_NAME=${BESU_IMAGE_NAME:-linea-besu-minimal-rln}
+RLN_PROVER_IMAGE_NAME=${RLN_PROVER_IMAGE_NAME:-status-rln-prover}
+IMAGE_TAG_SUFFIX=${IMAGE_TAG_SUFFIX:-}
+
+print_usage() {
+    cat << USAGE
+Usage: $(basename "$0") [options]
+
+Options:
+  --push                       Push images to a registry after build (default: ${PUSH_IMAGES})
+  --registry <host>            Registry host (e.g. ghcr.io, docker.io)
+  --namespace <ns>             Namespace/org (e.g. status-im)
+  --besu-name <name>           Besu image repository name (default: ${BESU_IMAGE_NAME})
+  --prover-name <name>         RLN prover image repository name (default: ${RLN_PROVER_IMAGE_NAME})
+  --tag-suffix <suffix>        Optional tag suffix to append after timestamp (e.g. -dev)
+  -h, --help                   Show this help
+
+Environment vars:
+  PUSH_IMAGES, REGISTRY, NAMESPACE, BESU_IMAGE_NAME, RLN_PROVER_IMAGE_NAME, IMAGE_TAG_SUFFIX
+USAGE
+}
+
+# Simple args parser
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --push)
+            PUSH_IMAGES=true; shift ;;
+        --registry)
+            REGISTRY="$2"; shift 2 ;;
+        --namespace)
+            NAMESPACE="$2"; shift 2 ;;
+        --besu-name)
+            BESU_IMAGE_NAME="$2"; shift 2 ;;
+        --prover-name)
+            RLN_PROVER_IMAGE_NAME="$2"; shift 2 ;;
+        --tag-suffix)
+            IMAGE_TAG_SUFFIX="$2"; shift 2 ;;
+        -h|--help)
+            print_usage; exit 0 ;;
+        *)
+            echo -e "${YELLOW}Unknown option: $1${NC}"; print_usage; exit 1 ;;
+    esac
+done
+
 echo -e "${BLUE}🦀 Building RLN Bridge Rust Library for Linux...${NC}"
 cd "${LINEA_SEQUENCER_DIR}/sequencer/src/main/rust/rln_bridge"
 
@@ -202,7 +250,8 @@ rm -f extract-deps.sh
 
 # Build the minimal custom image
 TIMESTAMP=$(date +%Y%m%d%H%M%S)
-BESU_IMAGE_TAG="linea-besu-minimal-rln:${TIMESTAMP}"
+TAG_WITH_TIME="${TIMESTAMP}${IMAGE_TAG_SUFFIX}"
+BESU_IMAGE_TAG="${BESU_IMAGE_NAME}:${TAG_WITH_TIME}"
 
 echo -e "${YELLOW}🔨 Building Docker image...${NC}"
 docker build --platform linux/amd64 -t "$BESU_IMAGE_TAG" .
@@ -211,25 +260,64 @@ echo -e "${GREEN}✅ Minimal custom Besu image built: $BESU_IMAGE_TAG${NC}"
 
 echo -e "${BLUE}🐳 Building RLN Prover Docker image...${NC}"
 cd "$STATUS_RLN_PROVER_DIR"
-RLN_PROVER_TAG="status-rln-prover:${TIMESTAMP}"
+RLN_PROVER_TAG="${RLN_PROVER_IMAGE_NAME}:${TAG_WITH_TIME}"
 docker build --platform linux/amd64 -t "$RLN_PROVER_TAG" .
 
 echo -e "${GREEN}✅ RLN Prover image built: $RLN_PROVER_TAG${NC}"
+
+###############################################
+# Optional: Push images to a registry
+###############################################
+
+BESU_IMAGE_REMOTE="$BESU_IMAGE_TAG"
+RLN_PROVER_IMAGE_REMOTE="$RLN_PROVER_TAG"
+
+if [[ -n "$REGISTRY" || -n "$NAMESPACE" ]]; then
+    BESU_IMAGE_REMOTE="${REGISTRY:+${REGISTRY}/}${NAMESPACE:+${NAMESPACE}/}${BESU_IMAGE_NAME}:${TAG_WITH_TIME}"
+    RLN_PROVER_IMAGE_REMOTE="${REGISTRY:+${REGISTRY}/}${NAMESPACE:+${NAMESPACE}/}${RLN_PROVER_IMAGE_NAME}:${TAG_WITH_TIME}"
+fi
+
+if [[ "$PUSH_IMAGES" == "true" ]]; then
+    echo -e "${BLUE}📤 Pushing images to registry...${NC}"
+    echo -e "  Besu: ${BESU_IMAGE_REMOTE}"
+    echo -e "  RLN Prover: ${RLN_PROVER_IMAGE_REMOTE}"
+    docker tag "$BESU_IMAGE_TAG" "$BESU_IMAGE_REMOTE"
+    docker push "$BESU_IMAGE_REMOTE"
+    docker tag "$RLN_PROVER_TAG" "$RLN_PROVER_IMAGE_REMOTE"
+    docker push "$RLN_PROVER_IMAGE_REMOTE"
+    echo -e "${GREEN}✅ Images pushed successfully${NC}"
+fi
 
 echo -e "${BLUE}📝 Updating Docker Compose...${NC}"
 COMPOSE_FILE="${SCRIPT_DIR}/docker/compose-spec-l2-services-rln.yml"
 if [[ -f "$COMPOSE_FILE" ]]; then
     # Create backup
     cp "$COMPOSE_FILE" "${COMPOSE_FILE}.backup.$(date +%Y%m%d%H%M%S)"
-    
-    # Update only the sequencer and l2-node-besu images
-    sed -i.tmp "s|image: linea-besu.*:.*|image: ${BESU_IMAGE_TAG}|g" "$COMPOSE_FILE"
-    sed -i.tmp "s|image: status-rln-prover:.*|image: ${RLN_PROVER_TAG}|g" "$COMPOSE_FILE"
-    rm -f "${COMPOSE_FILE}.tmp"
-    
+
+    # Update image lines for specific services only
+    awk -v besu_img="$BESU_IMAGE_REMOTE" -v rln_img="$RLN_PROVER_IMAGE_REMOTE" '
+        /^[[:space:]]*container_name:[[:space:]]*sequencer$/ { tgt = "besu" }
+        /^[[:space:]]*container_name:[[:space:]]*l2-node-besu$/ { tgt = "besu" }
+        /^[[:space:]]*container_name:[[:space:]]*rln-prover$/ { tgt = "rln" }
+        /^[[:space:]]*container_name:[[:space:]]*karma-service$/ { tgt = "rln" }
+        {
+          if (tgt != "" && $0 ~ /^[[:space:]]*image:[[:space:]]*/) {
+            match($0, /^[[:space:]]*/); lead = substr($0, 1, RLENGTH);
+            if (tgt == "besu") {
+              print lead "image: " besu_img;
+            } else {
+              print lead "image: " rln_img;
+            }
+            tgt = "";
+            next;
+          }
+          print $0;
+        }
+    ' "$COMPOSE_FILE" > "${COMPOSE_FILE}.tmp" && mv "${COMPOSE_FILE}.tmp" "$COMPOSE_FILE"
+
     echo -e "${GREEN}✅ Updated Docker Compose with minimal images:${NC}"
-    echo -e "  Besu: $BESU_IMAGE_TAG"
-    echo -e "  RLN Prover: $RLN_PROVER_TAG"
+    echo -e "  sequencer, l2-node-besu -> ${BESU_IMAGE_REMOTE}"
+    echo -e "  rln-prover, karma-service -> ${RLN_PROVER_IMAGE_REMOTE}"
 fi
 
 # Clean up build directory
@@ -240,8 +328,8 @@ echo -e "${GREEN}🎉 Minimal Build Complete!${NC}"
 echo -e "${BLUE}📋 Built Components:${NC}"
 echo -e "  Custom Sequencer JAR: $(basename "$SEQUENCER_JAR")"
 echo -e "  RLN Library: librln_bridge.so (Linux x86-64)"
-echo -e "  Minimal Besu Image: $BESU_IMAGE_TAG"
-echo -e "  RLN Prover Image: $RLN_PROVER_TAG"
+echo -e "  Minimal Besu Image: $BESU_IMAGE_REMOTE"
+echo -e "  RLN Prover Image: $RLN_PROVER_IMAGE_REMOTE"
 echo
 echo -e "${YELLOW}🚀 Next Steps:${NC}"
 echo -e "  1. Run: ${GREEN}make start-env-with-rln${NC}"
@@ -249,5 +337,5 @@ echo -e "  2. Test gasless transactions"
 echo -e "  3. Check logs: ${GREEN}docker logs sequencer${NC}"
 echo
 echo -e "${BLUE}🔧 Environment Variables:${NC}"
-echo -e "  export BESU_IMAGE_TAG=${BESU_IMAGE_TAG}"
-echo -e "  export RLN_PROVER_IMAGE_TAG=${RLN_PROVER_TAG}"
+echo -e "  export BESU_IMAGE_REF=${BESU_IMAGE_REMOTE}"
+echo -e "  export RLN_PROVER_IMAGE_REF=${RLN_PROVER_IMAGE_REMOTE}"
