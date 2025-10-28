@@ -7,12 +7,6 @@ permissions:
 on:
   workflow_call:
     inputs:
-      coordinator_changed:
-        required: true
-        type: string
-      staterecovery_changed:
-        required: true
-        type: string
       postman_changed:
         required: true
         type: string
@@ -29,11 +23,6 @@ on:
 jobs:
   # Cache for pulling Docker images is disabled as we empirically found that this
   # (retrieving cache and loading Docker images) actually increased test time-to-completion
-  coordinator:
-    uses: ./.github/workflows/coordinator-testing.yml
-    if: ${{ inputs.coordinator_changed == 'true' }}
-    secrets: inherit
-
   postman:
     uses: ./.github/workflows/postman-testing.yml
     if: ${{ inputs.postman_changed == 'true' }}
@@ -42,11 +31,6 @@ jobs:
   transaction-exclusion-api:
     uses: ./.github/workflows/transaction-exclusion-api-testing.yml
     if: ${{ inputs.transaction_exclusion_api_changed == 'true' }}
-    secrets: inherit
-
-  staterecovery:
-    uses: ./.github/workflows/staterecovery-testing.yml
-    if: ${{ inputs.staterecovery_changed == 'true' }}
     secrets: inherit
 
   linea-sequencer:
@@ -62,7 +46,7 @@ jobs:
   # If all jobs are skipped, the workflow will still succeed.
   always_succeed:
     runs-on: ubuntu-latest
-    if: ${{ inputs.coordinator_changed == 'false' && inputs.postman_changed == 'false' && inputs.transaction_exclusion_api_changed == 'false' && inputs.staterecovery_changed == 'false' && inputs.linea_sequencer_changed == 'false' && inputs.rln_prover_changed == 'false' }}
+    if: ${{ inputs.postman_changed == 'false' && inputs.transaction_exclusion_api_changed == 'false' && inputs.linea_sequencer_changed == 'false' && inputs.rln_prover_changed == 'false' }}
     steps:
       - name: Ensure Workflow Success
         run: echo "All jobs were skipped, but workflow succeeds."

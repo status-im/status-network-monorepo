@@ -529,7 +529,7 @@ async fn test_grpc_tx_exceed_gas_quota() {
             assert_eq!(r.tx_count, quota_mult);
         }
         Resp::Error(e) => {
-            panic!("Unexpected error {:?}", e);
+            panic!("Unexpected error {e:?}");
         }
     }
 }

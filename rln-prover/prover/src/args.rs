@@ -278,7 +278,7 @@ mod tests {
             ..Default::default()
         };
 
-        println!("config: {:?}", config);
+        println!("config: {config:?}");
 
         {
             let args_1 = vec!["program", "--ip", "127.0.0.1", "--port", "50051"];

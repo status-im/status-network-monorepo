@@ -1,6 +1,11 @@
+#[allow(unexpected_cfgs)]
+#[cfg(feature = "anvil")]
 use std::net::{IpAddr, Ipv4Addr};
+#[allow(unexpected_cfgs)]
+#[cfg(feature = "anvil")]
 use std::time::Duration;
 
+#[allow(unexpected_cfgs)]
 #[cfg(feature = "anvil")]
 #[tokio::test]
 #[traced_test]
