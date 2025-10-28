@@ -1,9 +1,24 @@
 # Karma
 
+## Table Of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Setting Rewards on Reward Distributors](#setting-rewards-on-reward-distributors)
+  - [Reward Distribution](#reward-distribution)
+  - [How Setting Rewards Works](#how-setting-rewards-works)
+  - [Virtual vs Actual Karma](#virtual-vs-actual-karma)
+  - [Why This Design?](#why-this-design)
+  - [Balance Calculation Example](#balance-calculation-example)
+- [Slashing](#slashing)
+- [Supply and Balance Calculation](#supply-and-balance-calculation)
+- [Sources of Karma Tokens](#sources-of-karma-tokens)
+
 ## Overview
 
-The Karma contract is an ERC-20 token implementation with a modified supply mechanism that incorporates external reward
-distributors. Karma tokens are not transferrable, but they can be used as voting power in the Status Network.
+The Karma contract is an ERC-20 token implementation with a modified supply mechanism that incorporates external
+[reward distributors](reward-distributors.md). Karma tokens are not transferrable, but they can be used as voting power
+in the Status Network.
 
 ## Features
 
@@ -33,10 +48,11 @@ distributors. Karma tokens are not transferrable, but they can be used as voting
 
 ## Setting Rewards on Reward Distributors
 
-One of the core functionalities of the Karma contract is its ability to work with external reward distributors. This
-section explains how rewards are set and how the system handles virtual versus actual Karma tokens.
+One of the core functionalities of the Karma contract is its ability to work with external
+[reward distributors](reward-distributors.md). This section explains how rewards are set and how the system handles
+virtual versus actual Karma tokens.
 
-### Overview of Reward Distribution
+### Reward Distribution
 
 The Karma contract integrates with external contracts that implement the `IRewardDistributor` interface. These
 distributors manage their own reward mechanisms (such as staking rewards) and track "virtual" Karma balances for
@@ -97,7 +113,8 @@ The contract provides separate functions to query actual token balances versus t
 ## Slashing
 
 The Karma contract includes a slashing mechanism that allows authorized accounts to reduce an account's Karma balance as
-a penalty for certain behaviors. This section explains how slashing works and its implications.
+a penalty for certain behaviors, through the [RLN Registry](rln.md). This section explains how slashing works and its
+implications.
 
 ### Overview of Slashing
 
@@ -188,5 +205,5 @@ increase, even though no token transfers occur until rewards are explicitly rede
 
 ## Sources of Karma Tokens
 
-One of the sources for the generation of Karma tokens is the [staking protocol](system-overview.md), with more sources
-planned in the future.
+One of the sources for the generation of Karma tokens is the
+[staking protocol](staking/-reward-distributor/overview.md), with more sources planned in the future.

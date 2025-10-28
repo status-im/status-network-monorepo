@@ -1,10 +1,20 @@
 # Karma Airdrop
 
+## Table Of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [How It Works](#how-it-works)
+  - [Initial Setup](#initial-setup)
+  - [Updating the Merkle Root](#updating-the-merkle-root)
+- [Epoch System](#epoch-system)
+- [Delegation and Voting Power](#delegation-and-voting-power)
+
 ## Overview
 
 The Karma Airdrop contract is a Merkle tree-based distribution mechanism that enables efficient token distribution to
-eligible users. It allows application teams within the Status Network to distribute Karma tokens to their users and
-those they onboard through a trustless, gas-efficient claiming process.
+eligible users. It allows application teams within the Status Network to distribute [Karma tokens](karma.md) to their
+users and those they onboard through a trustless, gas-efficient claiming process.
 
 Each airdrop instance is managed independently by an application team, which can update the Merkle root to include new
 eligible claimants as their user base grows and evolves.

@@ -1,5 +1,16 @@
 # Leave Mechanism
 
+## Table Of Contents
+
+- [Overview](#overview)
+- [Key Characteristics](#key-characteristics)
+  - [Leaving Can Happen Anytime](#leaving-can-happen-anytime)
+  - [No Incentive to Leave Early](#no-incentive-to-leave-early)
+  - [Withdraw Function Respects Locks](#withdraw-function-respects-locks)
+  - [Retrieving Locked Funds After Leaving](#retrieving-locked-funds-after-leaving)
+  - [Immediate Access Requires Unstaking](#immediate-access-requires-unstaking)
+  - [Protected Against Malicious Upgrades](#protected-against-malicious-upgrades)
+
 ## Overview
 
 The `leave()` function allows vault owners to permanently exit the staking system. This mechanism exists primarily to

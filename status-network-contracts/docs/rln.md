@@ -1,5 +1,21 @@
 # RLN (Rate-Limiting Nullifier)
 
+## Table Of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Identity Registration](#identity-registration)
+  - [Registration Process](#registration-process)
+  - [Identity Commitment Generation](#identity-commitment-generation)
+  - [Registry Capacity](#registry-capacity)
+- [Commit-Reveal Slashing Mechanism](#commit-reveal-slashing-mechanism)
+  - [Why Commit-Reveal?](#why-commit-reveal)
+  - [Step 1: Commit Phase](#step-1-commit-phase)
+  - [Step 2: Reveal Phase](#step-2-reveal-phase)
+  - [Reveal Window Timing](#reveal-window-timing)
+  - [Direct Slash (Emergency)](#direct-slash-emergency)
+  - [Access Control](#access-control)
+
 ## Overview
 
 The RLN (Rate-Limiting Nullifier) contract is a privacy-preserving identity registry that manages a set of identity
@@ -38,8 +54,6 @@ Network protocol. commit-reveal scheme that prevents front-running attacks.
   - Integrates with the Karma contract to enforce economic penalties for violations.
   - Slashing burns a percentage of the user's total Karma balance (both actual and virtual tokens).
   - [Slashing rewards](./karma.md#slashing) are minted to a recipient specified as parameter.
-
-- **Upgradeability**
 
 The contract can be upgraded by users with the ADMIN role.
 
