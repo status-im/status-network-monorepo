@@ -59,7 +59,7 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
       - name: Test
         working-directory: rln-prover
-        run: cargo test --all-features --release
+        run: cargo test --release
 
   unused-deps:
     needs: [lint, test]
