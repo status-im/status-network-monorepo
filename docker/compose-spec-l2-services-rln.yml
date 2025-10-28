@@ -24,7 +24,7 @@ services:
       - local-dev:/app/data
       - ./config/rln-prover/mock_users.json:/app/mock_users.json:ro
     healthcheck:
-      test: ["CMD", "sh", "-c", "ps aux | grep status_rln_prover | grep -v grep"]
+      test: [ "CMD-SHELL", "ps aux | grep -w prover_cli | grep -v grep" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -50,7 +50,7 @@ services:
       - local-dev:/app/data
       - ./config/rln-prover/mock_users.json:/app/mock_users.json:ro
     healthcheck:
-      test: ["CMD", "sh", "-c", "ps aux | grep status_rln_prover | grep -v grep"]
+      test: [ "CMD-SHELL", "ps aux | grep -w prover_cli | grep -v grep" ]
       interval: 30s
       timeout: 10s
       retries: 3
