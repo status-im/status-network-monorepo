@@ -6,6 +6,17 @@ ensure that participants in the staking system are rewarded fairly based on thei
 We'll cover how MP are calculated, how the stake amount and lock-up duration affect MP, and how MP influences the
 rewards participants earn.
 
+## Table Of Contents
+
+- [What and why](#what-and-why)
+- [Initial MP and Accrued MP](#initial-mp-and-accrued-mp)
+  - [Initial MP formula](#initial-mp-formula)
+  - [Accrued MP formula](#accrued-mp-formula)
+    - [On real-time MP accrual](#on-real-time-mp-accrual)
+  - [Total MP](#total-mp)
+- [Maximum MP](#maximum-mp)
+- [Summary](#summary)
+
 ## What and why
 
 Generally, accounts can freely participate in the staking system by depositing funds into a staking vault. The longer

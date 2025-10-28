@@ -3,6 +3,16 @@
 This document outlines various scenarios and flows that users might encounter when interacting with the staking system.
 We'll explore different staking strategies, lock-up periods, and their impact on rewards and Multiplier Points (MP).
 
+## Table Of Contents
+
+- [Basic Staking Flow (No Lock-up)](#basic-staking-flow-no-lock-up)
+- [Staking with Lock-up](#staking-with-lock-up)
+- [Multi-vault Strategy](#multi-vault-strategy)
+- [Reward Distribution Scenarios](#reward-distribution-scenarios)
+- [Emergency Scenarios](#emergency-scenarios)
+- [Best Practices](#best-practices)
+- [Common Scenarios and Outcomes](#common-scenarios-and-outcomes)
+
 ## Basic Staking Flow (No Lock-up)
 
 The simplest way to participate in the system is to stake tokens without a lock-up period.

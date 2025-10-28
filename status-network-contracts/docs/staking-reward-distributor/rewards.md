@@ -5,6 +5,14 @@ mechanism that works in conjunction with the [Multiplier Points (MP)](multiplier
 
 In this document we'll discuss how rewards are calculated and distributed to the participants of the system.
 
+## Table Of Contents
+
+- [How Rewards Work](#how-rewards-work)
+  - [Reward rate and reward distribution](#reward-rate-and-reward-distribution)
+  - [Claiming rewards](#claiming-rewards)
+- [Reward Indices](#reward-indices)
+- [Summary](#summary)
+
 ## How Rewards Work
 
 Generally, rewards are set by the admin or owner of the protocol. They decide how many rewards are distributed over a

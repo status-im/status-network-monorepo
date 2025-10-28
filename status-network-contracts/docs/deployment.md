@@ -1,5 +1,14 @@
 # Deployment Guide
 
+## Table Of Contents
+
+- [Overview](#overview)
+- [Prerequisites](#prerequisites)
+- [Deploying the Full Protocol](#deploying-the-full-protocol)
+  - [Using DeployProtocol Script (Recommended)](#using-deployprotocol-script-recommended)
+  - [Network Configuration](#network-configuration)
+- [Individual Deployment Scripts](#individual-deployment-scripts)
+
 ## Overview
 
 This guide covers the deployment of the Status Network protocol contracts. The recommended approach is to use the

@@ -1,5 +1,12 @@
 # Reward Distributors
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Purpose and Design Goals](#purpose-and-design-goals)
+- [Virtual vs Actual Karma](#virtual-vs-actual-karma)
+  - [Redeeming rewards](#redeeming-rewards)
+
 ## Overview
 
 Reward distributors are contracts that integrate with the Karma token system to enable flexible and efficient reward
@@ -30,8 +37,8 @@ We refer to "actual" Karma as the ERC-20 tokens that exist in the Karma contract
 by actual Karma and can be converted to actual tokens any time. Reward distributors implement their own logic for
 determining how virtual rewards accrue to accounts (staking, activity, time-based).
 
-The [staking system](system-overview.md) is one such reward distributor, distributing Karma based on staked SNT and
-Multiplier Points (MP).
+The [staking system](staking-reward-distributor/overview.md) is one such reward distributor, distributing Karma based on
+staked SNT and Multiplier Points (MP).
 
 ### Redeeming rewards
 
