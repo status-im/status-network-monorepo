@@ -181,7 +181,7 @@ impl UserDb {
         // merkle tree
         let trees = (0..tree_count)
             .map(|i| {
-                let tree_folder = config.merkle_tree_folder.join(format!("tree_{i}"));
+                let tree_folder = config.merkle_tree_folder.join(format!("tree_{}", i));
 
                 if !tree_folder.exists() {
                     debug!(
@@ -323,7 +323,7 @@ impl UserDb {
                         let tree_folder = self
                             .config
                             .merkle_tree_folder
-                            .join(format!("tree_{tree_count}"));
+                            .join(format!("tree_{}", tree_count));
                         if !tree_folder.exists() {
                             debug!("Creating merkle tree folder: {}", tree_folder.display());
                             // Note: Only we create_dir can happen (as we have a write lock)

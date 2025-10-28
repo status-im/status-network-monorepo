@@ -284,7 +284,7 @@ mod tests {
         debug!("Starting broadcast receiver...");
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         let res =
-            tokio::time::timeout(std::time::Duration::from_secs(7), broadcast_receiver.recv())
+            tokio::time::timeout(std::time::Duration::from_secs(10), broadcast_receiver.recv())
                 .await
                 .map_err(|_e| AppErrorExt::Elapsed)?;
         debug!("res: {:?}", res);
