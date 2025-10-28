@@ -28,11 +28,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "stable"
+          workspaces: "rln-prover"
       - name: Check formatting
         if: success() || failure()
+        working-directory: rln-prover
         run: cargo fmt --all -- --check
       - name: Check clippy
         if: success() || failure()
+        working-directory: rln-prover
         run: cargo clippy --all-targets --release -- -D warnings
 
   test:
@@ -51,9 +54,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "stable"
+          workspaces: "rln-prover"
       - name: Install foundry
         uses: foundry-rs/foundry-toolchain@v1
       - name: Test
+        working-directory: rln-prover
         run: cargo test --all-features --release
 
   unused-deps:
@@ -73,10 +78,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "nightly"
+          workspaces: "rln-prover"
       - name: Install cargo-udeps
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-udeps
       - name: Check unused dependencies
+        working-directory: rln-prover
         run: cargo +nightly udeps --all-targets --all-features
        
