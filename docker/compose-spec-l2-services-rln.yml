@@ -7,19 +7,15 @@ services:
   rln-prover:
     hostname: rln-prover
     container_name: rln-prover
-    image: status-rln-prover:20250914165712
+    image: status-rln-prover:20251027201207
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo", "rln" ]
     ports:
       - "50051:50051"  # RLN proof service
       - "50052:50052"  # Karma service (optional, can be same port)
     restart: unless-stopped
+    command: ["--no-config", "--ip", "0.0.0.0", "--port", "50051", "--mock-sc", "true", "--mock-user", "/app/mock_users.json"]
     environment:
-      SERVICE_IP: "0.0.0.0"
-      SERVICE_PORT: "50051"
       RUST_LOG: "debug"
-      # Mock mode for testing (set to true for local development)
-      MOCK_SC: "true"
-      MOCK_USER: "/app/mock_users.json"
       # Real blockchain connection (uncomment for production)
       # WS_RPC_URL: "wss://eth-mainnet.g.alchemy.com/v2/YOUR_TOKEN"
       # KARMA_SC_ADDRESS: "0x..."
@@ -40,19 +36,16 @@ services:
 
   # Karma Service (separate from prover for scalability)
   karma-service:
-    hostname: karma-service  
+    hostname: karma-service
     container_name: karma-service
-    image: status-rln-prover:20250914165712
+    image: status-rln-prover:20251027201207
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo", "rln" ]
     ports:
       - "50053:50052"
     restart: unless-stopped
+    command: ["--no-config", "--ip", "0.0.0.0", "--port", "50052", "--mock-sc", "true", "--mock-user", "/app/mock_users.json"]
     environment:
-      SERVICE_IP: "0.0.0.0"
-      SERVICE_PORT: "50052"
       RUST_LOG: "debug"
-      MOCK_SC: "true"
-      MOCK_USER: "/app/mock_users.json"
     volumes:
       - local-dev:/app/data
       - ./config/rln-prover/mock_users.json:/app/mock_users.json:ro
@@ -70,7 +63,7 @@ services:
   sequencer:
     hostname: sequencer
     container_name: sequencer
-    image: linea-besu-minimal-rln:20250914165712
+    image: linea-besu-minimal-rln:20251027201207
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     ports:
       - "8545:8545"
@@ -181,7 +174,7 @@ services:
   l2-node-besu:
     hostname: l2-node-besu
     container_name: l2-node-besu
-    image: linea-besu-minimal-rln:20250914165712
+    image: linea-besu-minimal-rln:20251027201207
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     depends_on:
       sequencer:
