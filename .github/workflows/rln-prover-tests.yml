@@ -10,7 +10,7 @@ on:
 env:
   PROTOC_VERSION: "3.25.3"
   RUST_LOG: "debug"
-  RUST_BACKTRACE: "1"
+  RUST_BACKTRACE: "full"
 
 jobs:
   lint:
