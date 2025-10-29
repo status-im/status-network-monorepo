@@ -6,7 +6,7 @@ use ark_groth16::{Proof, ProvingKey};
 use ark_relations::r1cs::ConstraintMatrices;
 use rln::utils::IdSecret;
 use rln::{
-    circuit::{ARKZKEY_BYTES, read_arkzkey_from_bytes_uncompressed as read_zkey},
+    circuit::zkey_from_folder,
     error::ProofError,
     hashers::{hash_to_field_le, poseidon_hash},
     poseidon_tree::MerkleProof,
@@ -44,15 +44,17 @@ pub struct RlnIdentifier {
 
 impl RlnIdentifier {
     pub fn new(identifier: &[u8]) -> Self {
-        let pk_and_matrices = {
-            // let mut reader = Cursor::new(ARKZKEY_BYTES);
-            read_zkey(ARKZKEY_BYTES).unwrap()
-        };
+        // Use zkey_from_folder() to get the proving key and constraints
+        // This uses the built-in circuit data from the rln library
+        let (pk, matrices) = zkey_from_folder();
+        
+        // Load the graph.bin file that's compatible with rln 0.9.0
+        // This was copied from rln-0.9.0/resources/tree_depth_20/graph.bin
         let graph_bytes = include_bytes!("../resources/graph.bin");
 
         Self {
             identifier: hash_to_field_le(identifier),
-            pkey_and_constraints: pk_and_matrices,
+            pkey_and_constraints: (pk.clone(), matrices.clone()),
             graph: graph_bytes.to_vec(),
         }
     }

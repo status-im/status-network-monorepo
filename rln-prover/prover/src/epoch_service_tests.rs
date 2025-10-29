@@ -29,7 +29,9 @@ mod tests {
         // Test epoch_service is really notifying when an epoch or epoch slice has just changed
 
         let epoch_slice_duration = Duration::from_secs(10);
-        let epoch_service = EpochService::try_from((epoch_slice_duration, Utc::now())).unwrap();
+        // Use a genesis time that's definitely in the past to avoid race condition
+        let genesis = Utc::now() - chrono::Duration::seconds(60);
+        let epoch_service = EpochService::try_from((epoch_slice_duration, genesis)).unwrap();
         let notifier = epoch_service.epoch_changes.clone();
         let counter_0 = Arc::new(AtomicU64::new(0));
         let counter = counter_0.clone();
