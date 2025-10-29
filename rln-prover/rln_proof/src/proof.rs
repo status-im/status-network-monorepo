@@ -11,7 +11,7 @@ use rln::{
     hashers::{hash_to_field_le, poseidon_hash},
     poseidon_tree::MerkleProof,
     protocol::{
-        RLNProofValues, generate_proof, proof_values_from_witness, rln_witness_from_values,
+        generate_proof, proof_values_from_witness, rln_witness_from_values, RLNProofValues,
     },
 };
 use zerokit_utils::ZerokitMerkleProof;
@@ -47,7 +47,7 @@ impl RlnIdentifier {
         // Use zkey_from_folder() to get the proving key and constraints
         // This uses the built-in circuit data from the rln library
         let (pk, matrices) = zkey_from_folder();
-        
+
         // Load the graph.bin file that's compatible with rln 0.9.0
         // This was copied from rln-0.9.0/resources/tree_depth_20/graph.bin
         let graph_bytes = include_bytes!("../resources/graph.bin");
