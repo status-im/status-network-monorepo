@@ -1,6 +1,61 @@
 pnpm-install:
 		pnpm install
 
+# Ensure Foundry libraries for Status Network contracts are present
+status-network-contracts-setup:
+		cd status-network-contracts; \
+		# Remove potentially stale or external-path lockfile to avoid invalid git pathspecs during install \
+		rm -f foundry.lock; \
+		if ! command -v forge >/dev/null 2>&1; then \
+			echo "Foundry (forge) not found. Installing via foundryup..."; \
+			curl -L https://foundry.paradigm.xyz | bash; \
+			if [ -f "$$HOME/.foundry/bin/foundryup" ]; then \
+				"$$HOME/.foundry/bin/foundryup" -y; \
+				export PATH="$$HOME/.foundry/bin:$$PATH"; \
+			fi; \
+		fi; \
+		if [ ! -d lib/openzeppelin-contracts/contracts ]; then \
+			mkdir -p lib; \
+			TMP_DIR=$$(mktemp -d); \
+			curl -L --fail https://github.com/OpenZeppelin/openzeppelin-contracts/archive/refs/tags/v4.9.6.tar.gz -o "$$TMP_DIR/oz496.tar.gz"; \
+			tar -xzf "$$TMP_DIR/oz496.tar.gz" -C "$$TMP_DIR"; \
+			rm -rf lib/openzeppelin-contracts; \
+			mv "$$TMP_DIR/openzeppelin-contracts-4.9.6" lib/openzeppelin-contracts; \
+			rm -rf "$$TMP_DIR"; \
+		fi; \
+		if [ ! -d lib/openzeppelin-contracts-upgradeable/contracts ]; then \
+			TMP_DIR=$$(mktemp -d); \
+			curl -L --fail https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable/archive/refs/tags/v4.9.6.tar.gz -o "$$TMP_DIR/ozu496.tar.gz"; \
+			tar -xzf "$$TMP_DIR/ozu496.tar.gz" -C "$$TMP_DIR"; \
+			rm -rf lib/openzeppelin-contracts-upgradeable; \
+			mv "$$TMP_DIR/openzeppelin-contracts-upgradeable-4.9.6" lib/openzeppelin-contracts-upgradeable; \
+			rm -rf "$$TMP_DIR"; \
+		fi; \
+		# If expected files are missing (e.g., Pausable or draft-ERC20Permit), fallback to OZ v4.8.3
+		if [ ! -f lib/openzeppelin-contracts/contracts/security/Pausable.sol ] || [ ! -f lib/openzeppelin-contracts/contracts/token/ERC20/extensions/draft-ERC20Permit.sol ]; then \
+			echo "Expected OZ files missing, reinstalling OpenZeppelin v4.8.3 for compatibility"; \
+			rm -rf lib/openzeppelin-contracts; \
+			mkdir -p lib; \
+			TMP_DIR=$$(mktemp -d); \
+			curl -L --fail https://github.com/OpenZeppelin/openzeppelin-contracts/archive/refs/tags/v4.8.3.tar.gz -o "$$TMP_DIR/oz.tar.gz"; \
+			tar -xzf "$$TMP_DIR/oz.tar.gz" -C "$$TMP_DIR"; \
+			mv "$$TMP_DIR/openzeppelin-contracts-4.8.3" lib/openzeppelin-contracts; \
+			rm -rf lib/openzeppelin-contracts-upgradeable; \
+			curl -L --fail https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable/archive/refs/tags/v4.8.3.tar.gz -o "$$TMP_DIR/ozu.tar.gz"; \
+			tar -xzf "$$TMP_DIR/ozu.tar.gz" -C "$$TMP_DIR"; \
+			mv "$$TMP_DIR/openzeppelin-contracts-upgradeable-4.8.3" lib/openzeppelin-contracts-upgradeable; \
+			rm -rf "$$TMP_DIR"; \
+		fi
+		if [ ! -d lib/forge-std/src ]; then \
+			mkdir -p lib; \
+			TMP_DIR=$$(mktemp -d); \
+			curl -L --fail https://github.com/foundry-rs/forge-std/archive/refs/tags/v1.8.2.tar.gz -o "$$TMP_DIR/fs.tar.gz"; \
+			tar -xzf "$$TMP_DIR/fs.tar.gz" -C "$$TMP_DIR"; \
+			rm -rf lib/forge-std; \
+			mv "$$TMP_DIR/forge-std-1.8.2" lib/forge-std; \
+			rm -rf "$$TMP_DIR"; \
+		fi
+
 clean-smc-folders:
 		rm -f contracts/.openzeppelin/unknown-31648428.json
 		rm -f contracts/.openzeppelin/unknown-1337.json
@@ -18,7 +73,7 @@ deploy-linea-rollup:
 		# WARNING: FOR LOCAL DEV ONLY - DO NOT REUSE THESE KEYS ELSEWHERE
 		cd contracts/; \
 		PRIVATE_KEY=$${DEPLOYMENT_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80} \
-		RPC_URL=http:\\localhost:8445/ \
+		RPC_URL=http://localhost:8445/ \
 		VERIFIER_CONTRACT_NAME=IntegrationTestTrueVerifier \
 		LINEA_ROLLUP_INITIAL_STATE_ROOT_HASH=0x072ead6777750dc20232d1cee8dc9a395c2d350df4bbaa5096c6f59b214dcecd \
 		LINEA_ROLLUP_INITIAL_L2_BLOCK_NUMBER=0 \
@@ -27,7 +82,7 @@ deploy-linea-rollup:
 		LINEA_ROLLUP_RATE_LIMIT_PERIOD=86400 \
 		LINEA_ROLLUP_RATE_LIMIT_AMOUNT=1000000000000000000000 \
 		LINEA_ROLLUP_GENESIS_TIMESTAMP=1683325137 \
-		npx ts-node local-deployments-artifacts/deployPlonkVerifierAndLineaRollupV$(L1_CONTRACT_VERSION).ts
+		pnpm --filter contracts exec ts-node local-deployments-artifacts/deployPlonkVerifierAndLineaRollupV$(L1_CONTRACT_VERSION).ts
 
 deploy-linea-rollup-v6:
 		$(MAKE) deploy-linea-rollup L1_CONTRACT_VERSION=6
@@ -37,25 +92,25 @@ deploy-l2messageservice:
 		cd contracts/; \
 		MESSAGE_SERVICE_CONTRACT_NAME=L2MessageService \
 		PRIVATE_KEY=$${DEPLOYMENT_PRIVATE_KEY:-0xb17202c37cce9498e6f7dcdc1abd207802d09b5eee96677ea219ac867a198b91} \
-		RPC_URL=http:\\localhost:9045/ \
+		RPC_URL=http://localhost:9045/ \
 		L2MSGSERVICE_SECURITY_COUNCIL=0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266 \
 		L2MSGSERVICE_L1L2_MESSAGE_SETTER=$${L2MSGSERVICE_L1L2_MESSAGE_SETTER:-0xd42e308fc964b71e18126df469c21b0d7bcb86cc} \
 		L2MSGSERVICE_RATE_LIMIT_PERIOD=86400 \
 		L2MSGSERVICE_RATE_LIMIT_AMOUNT=1000000000000000000000 \
-		npx ts-node local-deployments-artifacts/deployL2MessageServiceV1.ts
+		pnpm --filter contracts exec ts-node local-deployments-artifacts/deployL2MessageServiceV1.ts
 
 deploy-token-bridge-l1:
 		# WARNING: FOR LOCAL DEV ONLY - DO NOT REUSE THESE KEYS ELSEWHERE
 		cd contracts/; \
 		PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
 		REMOTE_DEPLOYER_ADDRESS=0x1B9AbEeC3215D8AdE8a33607f2cF0f4F60e5F0D0 \
-		RPC_URL=http:\\localhost:8445/ \
+		RPC_URL=http://localhost:8445/ \
 		REMOTE_CHAIN_ID=1337 \
 		TOKEN_BRIDGE_L1=true \
 		L1_TOKEN_BRIDGE_SECURITY_COUNCIL=0x90F79bf6EB2c4f870365E785982E1f101E93b906 \
 		L2MESSAGESERVICE_ADDRESS=0xe537D669CA013d86EBeF1D64e40fC74CADC91987 \
 		LINEA_ROLLUP_ADDRESS=0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9 \
-		npx ts-node local-deployments-artifacts/deployBridgedTokenAndTokenBridgeV1_1.ts
+		pnpm --filter contracts exec ts-node local-deployments-artifacts/deployBridgedTokenAndTokenBridgeV1_1.ts
 
 deploy-token-bridge-l2:
 		# WARNING: FOR LOCAL DEV ONLY - DO NOT REUSE THESE KEYS ELSEWHERE
@@ -63,39 +118,40 @@ deploy-token-bridge-l2:
 		SAVE_ADDRESS=true \
 		PRIVATE_KEY=0x1dd171cec7e2995408b5513004e8207fe88d6820aeff0d82463b3e41df251aae \
 		REMOTE_DEPLOYER_ADDRESS=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 \
-		RPC_URL=http:\\localhost:8545/ \
+		RPC_URL=http://localhost:8545/ \
 		REMOTE_CHAIN_ID=31648428 \
 		TOKEN_BRIDGE_L1=false \
 		L2_TOKEN_BRIDGE_SECURITY_COUNCIL=0xf17f52151EbEF6C7334FAD080c5704D77216b732 \
 		L2MESSAGESERVICE_ADDRESS=0xe537D669CA013d86EBeF1D64e40fC74CADC91987 \
 		LINEA_ROLLUP_ADDRESS=0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9 \
-		npx ts-node local-deployments-artifacts/deployBridgedTokenAndTokenBridgeV1_1.ts
+		pnpm --filter contracts exec ts-node local-deployments-artifacts/deployBridgedTokenAndTokenBridgeV1_1.ts
 
 deploy-l1-test-erc20:
 		# WARNING: FOR LOCAL DEV ONLY - DO NOT REUSE THESE KEYS ELSEWHERE
 		cd contracts/; \
 		PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-		RPC_URL=http:\\localhost:8445/ \
+		RPC_URL=http://localhost:8445/ \
 		TEST_ERC20_L1=true \
 		TEST_ERC20_NAME=TestERC20 \
 		TEST_ERC20_SYMBOL=TERC20 \
 		TEST_ERC20_INITIAL_SUPPLY=100000 \
-		npx ts-node local-deployments-artifacts/deployTestERC20.ts
+		pnpm --filter contracts exec ts-node local-deployments-artifacts/deployTestERC20.ts
 
 deploy-l2-test-erc20:
 		# WARNING: FOR LOCAL DEV ONLY - DO NOT REUSE THESE KEYS ELSEWHERE
 		cd contracts/; \
 		PRIVATE_KEY=0x1dd171cec7e2995408b5513004e8207fe88d6820aeff0d82463b3e41df251aae \
-		RPC_URL=http:\\localhost:8545/ \
+		RPC_URL=http://localhost:8545/ \
 		TEST_ERC20_L1=false \
 		TEST_ERC20_NAME=TestERC20 \
 		TEST_ERC20_SYMBOL=TERC20 \
 		TEST_ERC20_INITIAL_SUPPLY=100000 \
-		npx ts-node local-deployments-artifacts/deployTestERC20.ts
+		pnpm --filter contracts exec ts-node local-deployments-artifacts/deployTestERC20.ts
 
 deploy-status-network-contracts:
 		# WARNING: FOR LOCAL DEV ONLY - DO NOT REUSE THESE KEYS ELSEWHERE
 		# Deploy Status Network contracts (Karma, StakeManager, RLN, etc.) using Forge
+		$(MAKE) status-network-contracts-setup
 		@echo "Deploying Status Network Contracts..."
 		@echo "Deploying KarmaTiers contract..."
 		@cd status-network-contracts && \
@@ -176,13 +232,14 @@ deploy-contracts: L1_CONTRACT_VERSION:=6
 deploy-contracts: LINEA_PROTOCOL_CONTRACTS_ONLY:=false
 deploy-contracts: STATUS_NETWORK_CONTRACTS_ENABLED:=false
 deploy-contracts:
+	$(MAKE) pnpm-install
 	@echo "Starting contract deployment process..."
 	@echo "Configuration: LINEA_PROTOCOL_CONTRACTS_ONLY=$(LINEA_PROTOCOL_CONTRACTS_ONLY), STATUS_NETWORK_CONTRACTS_ENABLED=$(STATUS_NETWORK_CONTRACTS_ENABLED)"
 	@echo "Verifying network readiness..."
 	./scripts/verify-network-ready.sh || { echo "Network not ready for deployment"; exit 1; }
 	cd contracts/; \
-	export L1_NONCE=$$(npx ts-node local-deployments-artifacts/get-wallet-nonce.ts --wallet-priv-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --rpc-url http://localhost:8445) && \
-	export L2_NONCE=$$(npx ts-node local-deployments-artifacts/get-wallet-nonce.ts --wallet-priv-key 0xb17202c37cce9498e6f7dcdc1abd207802d09b5eee96677ea219ac867a198b91 --rpc-url http://localhost:8545) && \
+	export L1_NONCE=$$(pnpm --filter contracts exec ts-node local-deployments-artifacts/get-wallet-nonce.ts --wallet-priv-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --rpc-url http://localhost:8445) && \
+	export L2_NONCE=$$(pnpm --filter contracts exec ts-node local-deployments-artifacts/get-wallet-nonce.ts --wallet-priv-key 0xb17202c37cce9498e6f7dcdc1abd207802d09b5eee96677ea219ac867a198b91 --rpc-url http://localhost:8545) && \
 	cd .. && \
 	echo "Starting Linea protocol contracts deployment..." && \
 	if [ "$(LINEA_PROTOCOL_CONTRACTS_ONLY)" = "false" ]; then \
@@ -237,8 +294,8 @@ deploy-l2-evm-opcode-tester:
 		# WARNING: FOR LOCAL DEV ONLY - DO NOT REUSE THESE KEYS ELSEWHERE
 		cd contracts/; \
 		PRIVATE_KEY=0x8f2a55949038a9610f50fb23b5883af3b4ecb3c3bb792cbcefbd1542c692be63 \
-		RPC_URL=http:\\localhost:8545/ \
-		npx ts-node local-deployments-artifacts/deployLondonEvmTestingFramework.ts
+		RPC_URL=http://localhost:8545/ \
+		pnpm --filter contracts exec ts-node local-deployments-artifacts/deployLondonEvmTestingFramework.ts
 
 evm-opcode-tester-execute-all-opcodes: OPCODE_TEST_CONTRACT_ADDRESS:=0xa50a51c09a5c451C52BB714527E1974b686D8e77
 evm-opcode-tester-execute-all-opcodes: NUMBER_OF_RUNS:=3
@@ -248,15 +305,15 @@ evm-opcode-tester-execute-all-opcodes:
 		OPCODE_TEST_CONTRACT_ADDRESS=$(OPCODE_TEST_CONTRACT_ADDRESS) \
 		NUMBER_OF_RUNS=$(NUMBER_OF_RUNS) \
 		PRIVATE_KEY=0x8f2a55949038a9610f50fb23b5883af3b4ecb3c3bb792cbcefbd1542c692be63 \
-		RPC_URL=http:\\localhost:8545/ \
-		npx ts-node local-deployments-artifacts/executeAllOpcodes.ts
+		RPC_URL=http://localhost:8545/ \
+		pnpm --filter contracts exec ts-node local-deployments-artifacts/executeAllOpcodes.ts
 
 deploy-l2-scenario-testing-proxy:
 		# WARNING: FOR LOCAL DEV ONLY - DO NOT REUSE THESE KEYS ELSEWHERE
 		cd contracts/; \
 		PRIVATE_KEY=0x1dd171cec7e2995408b5513004e8207fe88d6820aeff0d82463b3e41df251aae \
-		RPC_URL=http:\\localhost:8545/ \
-		npx ts-node local-deployments-artifacts/deployLineaScenarioDelegatingProxy.ts
+		RPC_URL=http://localhost:8545/ \
+		pnpm --filter contracts exec ts-node local-deployments-artifacts/deployLineaScenarioDelegatingProxy.ts
 
 execute-scenario-testing-proxy-scenario: LINEA_SCENARIO_DELEGATING_PROXY_ADDRESS:=0x2f6dAaF8A81AB675fbD37Ca6Ed5b72cf86237453
 execute-scenario-testing-proxy-scenario:
@@ -264,9 +321,9 @@ execute-scenario-testing-proxy-scenario:
 		# GAS_LIMIT=452500 will cause it to fail
 		cd contracts/; \
 		LINEA_SCENARIO_DELEGATING_PROXY_ADDRESS=$(LINEA_SCENARIO_DELEGATING_PROXY_ADDRESS) \
-		NUMBER_OF_LOOPS=10000000 \
+		NUMBER_OF_RUNS=10000000 \
 		LINEA_SCENARIO=1 \
 		GAS_LIMIT=452500 \
 		PRIVATE_KEY=0x1dd171cec7e2995408b5513004e8207fe88d6820aeff0d82463b3e41df251aae \
-		RPC_URL=http:\\localhost:8545/ \
-		npx ts-node local-deployments-artifacts/executeLineaScenarioDelegatingProxyScenario.ts
+		RPC_URL=http://localhost:8545/ \
+		pnpm --filter contracts exec ts-node local-deployments-artifacts/executeLineaScenarioDelegatingProxyScenario.ts

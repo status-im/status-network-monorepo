@@ -1,0 +1,32 @@
+[package]
+name = "smart_contract"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "karma_sc_test"
+path = "src/bin_tests/karma_sc_test.rs"
+
+[[bin]]
+name = "karma_tiers_test"
+path = "src/bin_tests/karma_tiers_test.rs"
+
+[[bin]]
+name = "rln_sc_test"
+path = "src/bin_tests/rln_sc_test.rs"
+
+[dependencies]
+tokio.workspace = true
+clap.workspace = true
+url.workspace = true
+alloy.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+rustls.workspace = true
+log = "0.4.28"
+
+[dev-dependencies]
+claims = "0.8"
+
+[features]
+anvil = ["alloy/provider-anvil-node"]

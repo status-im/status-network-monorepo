@@ -14,8 +14,11 @@ clean-testnet-folders:
 clean-environment:
 		docker compose -f docker/compose-tracing-v2-ci-extension.yml -f docker/compose-tracing-v2-staterecovery-extension.yml --profile l1 --profile l2 --profile debug --profile staterecovery kill -s 9 || true;
 		docker compose -f docker/compose-tracing-v2-ci-extension.yml -f docker/compose-tracing-v2-staterecovery-extension.yml --profile l1 --profile l2 --profile debug --profile staterecovery down || true;
+		# Ensure RLN stack containers are stopped as well
+		docker rm -f rln-prover karma-service sequencer || true;
 		make clean-local-folders;
-		docker volume rm linea-local-dev linea-logs || true; # ignore failure if volumes do not exist already
+		# Remove both legacy and RLN stack volumes (ignore failures if they don't exist)
+		docker volume rm linea-local-dev linea-logs docker_local-dev docker_logs docker_rln-data || true; # ignore failure if volumes do not exist already
 		docker system prune -f || true;
 
 start-env: COMPOSE_PROFILES:=l1,l2
