@@ -74,6 +74,15 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# If pushing is requested, require both registry and namespace to avoid ambiguous pushes
+if [[ "$PUSH_IMAGES" == "true" ]]; then
+    if [[ -z "$REGISTRY" || -z "$NAMESPACE" ]]; then
+        echo -e "${RED}❌ When using --push, both --registry and --namespace are required.${NC}"
+        echo -e "${YELLOW}Example:${NC} $(basename "$0") --push --registry ghcr.io --namespace your-org"
+        exit 1
+    fi
+fi
+
 echo -e "${BLUE}🦀 Building RLN Bridge Rust Library for Linux...${NC}"
 cd "${LINEA_SEQUENCER_DIR}/sequencer/src/main/rust/rln_bridge"
 
@@ -286,6 +295,23 @@ if [[ "$PUSH_IMAGES" == "true" ]]; then
     docker tag "$RLN_PROVER_TAG" "$RLN_PROVER_IMAGE_REMOTE"
     docker push "$RLN_PROVER_IMAGE_REMOTE"
     echo -e "${GREEN}✅ Images pushed successfully${NC}"
+
+    # Post-push: print convenient pull commands and (where possible) web links
+    echo -e "${BLUE}🔗 Published image references:${NC}"
+    echo -e "  • Besu: ${GREEN}${BESU_IMAGE_REMOTE}${NC}"
+    echo -e "    docker pull ${BESU_IMAGE_REMOTE}"
+    echo -e "  • RLN Prover: ${GREEN}${RLN_PROVER_IMAGE_REMOTE}${NC}"
+    echo -e "    docker pull ${RLN_PROVER_IMAGE_REMOTE}"
+
+    # Best-effort clickable links for common registries
+    if [[ "$REGISTRY" == "docker.io" ]]; then
+        echo -e "  🌐 Besu (Docker Hub): https://hub.docker.com/r/${NAMESPACE}/${BESU_IMAGE_NAME}/tags?name=${TAG_WITH_TIME}"
+        echo -e "  🌐 RLN  (Docker Hub): https://hub.docker.com/r/${NAMESPACE}/${RLN_PROVER_IMAGE_NAME}/tags?name=${TAG_WITH_TIME}"
+    elif [[ "$REGISTRY" == "ghcr.io" ]]; then
+        # GitHub Container Registry doesn't have a stable per-tag public URL; point to package page
+        echo -e "  🌐 Besu (GHCR package page): https://github.com/${NAMESPACE}/packages/container/${BESU_IMAGE_NAME}"
+        echo -e "  🌐 RLN  (GHCR package page): https://github.com/${NAMESPACE}/packages/container/${RLN_PROVER_IMAGE_NAME}"
+    fi
 fi
 
 echo -e "${BLUE}📝 Updating Docker Compose...${NC}"
