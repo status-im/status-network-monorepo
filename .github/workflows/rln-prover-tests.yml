@@ -9,6 +9,7 @@ on:
 
 env:
   PROTOC_VERSION: "3.25.3"
+  RUST_LOG: "debug"
 
 jobs:
   lint:
@@ -59,7 +60,7 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
       - name: Test
         working-directory: rln-prover
-        run: cargo test --release
+        run: cargo test -v --release -- --nocapture
 
   unused-deps:
     needs: [lint, test]
