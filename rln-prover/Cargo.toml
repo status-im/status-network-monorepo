@@ -51,8 +51,8 @@ criterion = { version = "0.7.0", features = ["async_tokio"] }
 [profile.release]
 lto = "fat"
 codegen-units = 1
-opt-level = 3
-debug = false
-panic = "unwind"
-strip = true
-incremental = false
+# opt-level = 3
+# debug = false
+# panic = "unwind"
+# strip = true
+# incremental = false
