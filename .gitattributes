@@ -24,5 +24,7 @@ prover/prover-assets/**/**/**/*.bin binary
 prover/prover-assets/**/**/**/**/*.bin binary
 prover/prover-assets/kzgsrs/* binary
 
+rln-prover/rln_proof/resources/*.bin binary
+
 *.woff2 binary
 
