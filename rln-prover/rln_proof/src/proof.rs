@@ -11,7 +11,7 @@ use rln::{
     hashers::{hash_to_field_le, poseidon_hash},
     poseidon_tree::MerkleProof,
     protocol::{
-        generate_proof, proof_values_from_witness, rln_witness_from_values, RLNProofValues,
+        RLNProofValues, generate_proof, proof_values_from_witness, rln_witness_from_values,
     },
 };
 use zerokit_utils::ZerokitMerkleProof;
