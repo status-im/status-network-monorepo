@@ -18,9 +18,9 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.protobuf.ByteString;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
-import java.math.BigInteger;
 import java.io.Closeable;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -28,13 +28,10 @@ import net.consensys.linea.config.LineaRlnValidatorConfiguration;
 import net.consensys.linea.config.LineaTracerConfiguration;
 import net.consensys.linea.plugins.config.LineaL1L2BridgeSharedConfiguration;
 import net.consensys.linea.sequencer.txpoolvalidation.shared.KarmaServiceClient;
+import net.consensys.linea.sequencer.txpoolvalidation.shared.KarmaServiceClient.KarmaInfo;
 import net.consensys.linea.zktracer.LineCountingTracer;
 import net.consensys.linea.zktracer.ZkCounter;
 import net.consensys.linea.zktracer.ZkTracer;
-import org.hyperledger.besu.plugin.data.ProcessableBlockHeader;
-import org.hyperledger.besu.plugin.services.BlockchainService;
-import org.hyperledger.besu.plugin.services.TransactionSimulationService;
-import net.consensys.linea.sequencer.txpoolvalidation.shared.KarmaServiceClient.KarmaInfo;
 import net.vac.prover.Address;
 import net.vac.prover.RlnProverGrpc;
 import net.vac.prover.SendTransactionReply;
@@ -42,6 +39,9 @@ import net.vac.prover.SendTransactionRequest;
 import net.vac.prover.U256;
 import net.vac.prover.Wei;
 import org.hyperledger.besu.datatypes.Transaction;
+import org.hyperledger.besu.plugin.data.ProcessableBlockHeader;
+import org.hyperledger.besu.plugin.services.BlockchainService;
+import org.hyperledger.besu.plugin.services.TransactionSimulationService;
 import org.hyperledger.besu.plugin.services.txvalidator.PluginTransactionPoolValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -121,7 +121,8 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
       BlockchainService blockchainService,
       LineaTracerConfiguration tracerConfiguration,
       LineaL1L2BridgeSharedConfiguration l1L2BridgeSharedConfiguration) {
-    this(rlnConfig,
+    this(
+        rlnConfig,
         enabled,
         karmaServiceClient,
         transactionSimulationService,
@@ -131,9 +132,7 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
         null);
   }
 
-  /**
-   * Backward-compatible constructor used by existing tests. New dependencies default to null.
-   */
+  /** Backward-compatible constructor used by existing tests. New dependencies default to null. */
   public RlnProverForwarderValidator(
       LineaRlnValidatorConfiguration rlnConfig,
       boolean enabled,
@@ -405,7 +404,8 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
     var lineCountingTracer =
         tracerConfiguration != null && tracerConfiguration.isLimitless()
             ? new ZkCounter(l1L2BridgeConfiguration)
-            : new ZkTracer(net.consensys.linea.zktracer.Fork.LONDON, l1L2BridgeConfiguration, chainId);
+            : new ZkTracer(
+                net.consensys.linea.zktracer.Fork.LONDON, l1L2BridgeConfiguration, chainId);
     lineCountingTracer.traceStartConflation(1L);
     lineCountingTracer.traceStartBlock(pendingBlockHeader, pendingBlockHeader.getCoinbase());
     return lineCountingTracer;

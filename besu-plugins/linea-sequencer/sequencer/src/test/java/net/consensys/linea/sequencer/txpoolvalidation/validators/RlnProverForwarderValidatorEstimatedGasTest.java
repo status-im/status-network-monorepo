@@ -10,19 +10,17 @@ package net.consensys.linea.sequencer.txpoolvalidation.validators;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import org.apache.tuweni.bytes.Bytes;
 import io.grpc.ManagedChannel;
 import io.grpc.inprocess.InProcessChannelBuilder;
 import io.grpc.inprocess.InProcessServerBuilder;
 import io.grpc.stub.StreamObserver;
-import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import net.vac.prover.RlnProverGrpc;
 import net.vac.prover.SendTransactionReply;
 import net.vac.prover.SendTransactionRequest;
+import org.apache.tuweni.bytes.Bytes;
 import org.hyperledger.besu.datatypes.Address;
-import org.hyperledger.besu.datatypes.Transaction;
 import org.hyperledger.besu.datatypes.Wei;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -104,7 +102,9 @@ class RlnProverForwarderValidatorEstimatedGasTest {
     // validateTransaction performs a blocking gRPC call; just invoke and then assert capture
     final var maybeError =
         validator.validateTransaction(
-            (org.hyperledger.besu.datatypes.Transaction) tx, /* isLocal */ true, /* hasPriority */ false);
+            (org.hyperledger.besu.datatypes.Transaction) tx, /* isLocal */
+            true, /* hasPriority */
+            false);
     assertThat(maybeError).isEmpty();
     latch.countDown();
     latch.await(100, TimeUnit.MILLISECONDS);
@@ -113,5 +113,3 @@ class RlnProverForwarderValidatorEstimatedGasTest {
     assertThat(capturedRequest.getEstimatedGasUsed()).isEqualTo(21_000L);
   }
 }
-
-
