@@ -53,6 +53,14 @@ The Status Network RLN validator system can be configured using various CLI opti
 - **`--plugin-linea-rln-karma-service`**: Karma service endpoint in `host:port` format (default: `localhost:50052`)
 - **`--plugin-linea-rln-deny-list-path`**: Path to the gasless deny list file (default: `/var/lib/besu/gasless-deny-list.txt`)
 
+### Troubleshooting
+- If a 0-gas (gasless) transaction is accepted by the RPC but not included, check the sequencer logs for RLN proof cache timeouts or epoch mismatches and ensure `--plugin-linea-rln-epoch-mode=TEST` is used in local demos.
+- If paid transactions fail for “min gas price” or “upfront cost” locally, ensure L2 genesis has `baseFeePerGas=0` and sequencer `min-gas-price=0` in config.
+- Premium gas transactions (gas > configured threshold) bypass RLN validation by design.
+
+### CI
+- GitHub Actions runs sequencer unit tests (Java 21) with Gradle caching. JNI-dependent RLN native tests are excluded from CI.
+
 ## How to contribute
 
 Contributions are welcome!
