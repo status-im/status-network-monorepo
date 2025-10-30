@@ -5,6 +5,7 @@ import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/ac
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import { ERC20VotesUpgradeable } from "./utils/ERC20VotesUpgradeable.sol";
 import { IRewardDistributor } from "./interfaces/IRewardDistributor.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -14,7 +15,7 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
  * @notice This contract allows for setting rewards for reward distributors.
  * @dev Implementation of the Karma token
  */
-contract Karma is Initializable, ERC20Upgradeable, UUPSUpgradeable, AccessControlUpgradeable {
+contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessControlUpgradeable {
     using EnumerableSet for EnumerableSet.AddressSet;
 
     /// @notice Emitted when the address is invalid
@@ -29,20 +30,28 @@ contract Karma is Initializable, ERC20Upgradeable, UUPSUpgradeable, AccessContro
     error Karma__Unauthorized();
     /// @notice Emitted when slash percentage to set is invalid
     error Karma__InvalidSlashPercentage();
+    /// @notice Emitted when slash reward percentage is invalid
+    error Karma__InvalidSlashRewardPercentage();
     /// @notice Emitted when balance to slash is invalid
     error Karma__CannotSlashZeroBalance();
+    /// @notice Emitted when there are insufficient funds to transfer
+    error Karma__InsufficientTransferBalance();
 
     /// @notice Emitted when a reward distributor is added
     event RewardDistributorAdded(address distributor);
     /// @notice Emitted when a reward distributor is removed
     event RewardDistributorRemoved(address distributor);
     /// @notice Emitted when an account is slashed
-    event AccountSlashed(address indexed account, uint256 amount);
+    event AccountSlashed(
+        address indexed account, uint256 amount, address indexed rewardRecipient, uint256 rewardAmount
+    );
     /// @notice Emitted when the slash percentage is updated
     event SlashPercentageUpdated(uint256 oldPercentage, uint256 newPercentage);
+    /// @notice Emitted when the slash reward percentage is updated
+    event SlashRewardPercentageUpdated(uint256 oldPercentage, uint256 newPercentage);
 
     /*//////////////////////////////////////////////////////////////////////////
-                                  CONSTATNS
+                                  CONSTANTS
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Maximum slash percentage (in basis points: 100% = 10000)
@@ -58,19 +67,15 @@ contract Karma is Initializable, ERC20Upgradeable, UUPSUpgradeable, AccessContro
     string public constant NAME = "Karma";
     /// @notice The symbol of the token
     string public constant SYMBOL = "KARMA";
-    /// @notice The total allocation for all reward distributors
-    uint256 public totalDistributorAllocation;
-    uint256 public totalSlashAmount;
     /// @notice Set of reward distributors
     EnumerableSet.AddressSet private rewardDistributors;
-    /// @notice Mapping of reward distributor allocations
-    mapping(address distributor => uint256 allocation) public rewardDistributorAllocations;
-    /// @notice Mapping of reward distributor slash amounts for individual accounts
-    mapping(address distributor => mapping(address account => uint256 slashAmount)) public rewardDistributorSlashAmount;
-    /// @notice Mapping of accounts to their slashed amount for internal balance
-    mapping(address account => uint256 slashAmount) public accountSlashAmount;
+    /// @notice Maps addresses to their transfer permission
+    mapping(address account => bool whitelisted) public allowedToTransfer;
     /// @notice Percentage of Karma to slash (in basis points: 1% = 100, 10% = 1000, 100% = 10000)
     uint256 public slashPercentage;
+    /// @notice Percentage of slashed amount to allocate for rewards (in basis points: 1% = 100, 10% = 1000, 100% =
+    /// 10000)
+    uint256 public slashRewardPercentage;
 
     /// @notice Operator role keccak256("OPERATOR_ROLE")
     bytes32 public constant OPERATOR_ROLE = 0x97667070c54ef182b0f5858b034beac1b6f3089aa2d3188bb1e8929f4fa9b929;
@@ -114,11 +119,13 @@ contract Karma is Initializable, ERC20Upgradeable, UUPSUpgradeable, AccessContro
             revert Karma__InvalidAddress();
         }
         __ERC20_init(NAME, SYMBOL);
+        __ERC20Votes_init();
         __UUPSUpgradeable_init();
         __AccessControl_init();
 
         _setupRole(DEFAULT_ADMIN_ROLE, _owner);
         slashPercentage = 5000; // 50%
+        slashRewardPercentage = 1000; // 10%
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -138,6 +145,7 @@ contract Karma is Initializable, ERC20Upgradeable, UUPSUpgradeable, AccessContro
     /**
      * @notice Removes a reward distributor from the set of reward distributors.
      * @dev Only the owner can remove a reward distributor.
+     * @dev Burns all karma from the distributor.
      * @param distributor The address of the reward distributor.
      */
     function removeRewardDistributor(address distributor) public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -146,7 +154,7 @@ contract Karma is Initializable, ERC20Upgradeable, UUPSUpgradeable, AccessContro
 
     /**
      * @notice Sets the slash percentage for the contract.
-     * @dev Only the admin configure the slash percentage
+     * @dev Only the admin can configure the slash percentage
      * @param percentage The percentage to set (in basis points: 1% = 100, 10% = 1000, 100% = 10000)
      */
     function setSlashPercentage(uint256 percentage) public onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -156,6 +164,33 @@ contract Karma is Initializable, ERC20Upgradeable, UUPSUpgradeable, AccessContro
         uint256 oldPercentage = slashPercentage;
         slashPercentage = percentage;
         emit SlashPercentageUpdated(oldPercentage, percentage);
+    }
+
+    /**
+     * @notice Sets the slash reward percentage for the contract.
+     * @dev Only the admin or operator can configure the slash reward percentage
+     * @param percentage The percentage to set (in basis points: 1% = 100, 10% = 1000, 100% = 10000)
+     */
+    function setSlashRewardPercentage(uint256 percentage) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (percentage > 10_000) {
+            revert Karma__InvalidSlashRewardPercentage();
+        }
+        uint256 oldPercentage = slashRewardPercentage;
+        slashRewardPercentage = percentage;
+        emit SlashRewardPercentageUpdated(oldPercentage, percentage);
+    }
+
+    /**
+     * @notice Sets whether an account is allowed to transfer tokens.
+     * @dev Only the admin can set transfer permissions.
+     * @param account The address of the account.
+     * @param allowed Boolean indicating whether the account is allowed to transfer tokens.
+     */
+    function setAllowedToTransfer(address account, bool allowed) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) {
+            revert Karma__InvalidAddress();
+        }
+        allowedToTransfer[account] = allowed;
     }
 
     /**
@@ -186,7 +221,6 @@ contract Karma is Initializable, ERC20Upgradeable, UUPSUpgradeable, AccessContro
      * @param amount The amount of tokens to mint.
      */
     function mint(address account, uint256 amount) public virtual onlyAdminOrOperator {
-        _overflowCheck(amount);
         _mint(account, amount);
     }
 
@@ -194,18 +228,28 @@ contract Karma is Initializable, ERC20Upgradeable, UUPSUpgradeable, AccessContro
      * @notice Slashes karma from an account based on the current slashing percentage
      * @dev Only accounts with the SLASHER_ROLE can call this function
      * @param account Account to slash
+     * @param rewardRecipient Address that will receive the slash reward
      * @return slashedAmount The amount of karma that was slashed
      */
-    function slash(address account) public virtual onlySlasher returns (uint256) {
-        return _slash(account);
+    function slash(address account, address rewardRecipient) public virtual onlySlasher returns (uint256) {
+        return _slash(account, rewardRecipient);
     }
 
     function calculateSlashAmount(uint256 value) public view returns (uint256) {
         return _calculateSlashAmount(value);
     }
 
-    function transfer(address, uint256) public pure override returns (bool) {
-        revert Karma__TransfersNotAllowed();
+    /**
+     * @notice Transfers tokens from the caller to a specified address.
+     * @dev Transfers are only allowed if the caller is whitelisted in `allowedToTransfer`.
+     * @param to The address to transfer tokens to.
+     * @param amount The amount of tokens to transfer.
+     * @return A boolean value indicating whether the operation succeeded.
+     */
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        address owner = _msgSender();
+        _transfer(owner, to, amount);
+        return true;
     }
 
     function approve(address, uint256) public pure override returns (bool) {
@@ -220,48 +264,16 @@ contract Karma is Initializable, ERC20Upgradeable, UUPSUpgradeable, AccessContro
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    function _totalSupply() internal view returns (uint256) {
-        return super.totalSupply() + _externalSupply();
-    }
+    function _beforeTokenTransfer(address from, address to, uint256) internal view override {
+        if (from != address(0) && to != address(0)) {
+            if (!allowedToTransfer[msg.sender]) {
+                revert Karma__TransfersNotAllowed();
+            }
 
-    /**
-     * @notice Returns the internal total supply of the token.
-     * @dev The internal total supply is the total supply of the token without the external supply.
-     * @return The internal total supply of the token.
-     */
-    function _internalTotalSupply() internal view returns (uint256) {
-        return super.totalSupply();
-    }
-
-    /**
-     * @notice Returns the external supply of the token.
-     * @dev The external supply is the sum of the rewards from all reward distributors.
-     * @return The external supply of the token.
-     */
-    function _externalSupply() internal view returns (uint256) {
-        uint256 externalSupply;
-
-        for (uint256 i = 0; i < rewardDistributors.length(); i++) {
-            IRewardDistributor distributor = IRewardDistributor(rewardDistributors.at(i));
-            uint256 supply = distributor.totalRewardsSupply();
-            externalSupply += supply;
+            if (rewardDistributors.contains(to)) {
+                revert Karma__TransfersNotAllowed();
+            }
         }
-
-        if (externalSupply > totalDistributorAllocation) {
-            return totalDistributorAllocation;
-        }
-
-        return externalSupply;
-    }
-
-    /**
-     * @notice Returns the internal balance of an account.
-     * @dev This function is used to get the internal balance of an account.
-     * @param account The address of the account to get the internal balance of.
-     * @return The internal balance of the account.
-     */
-    function _internalBalanceOf(address account) internal view returns (uint256) {
-        return super.balanceOf(account);
     }
 
     /**
@@ -294,57 +306,65 @@ contract Karma is Initializable, ERC20Upgradeable, UUPSUpgradeable, AccessContro
         if (!rewardDistributors.contains(distributor)) {
             revert Karma__UnknownDistributor();
         }
+        _burn(distributor, super.balanceOf(distributor));
         rewardDistributors.remove(distributor);
         emit RewardDistributorRemoved(distributor);
     }
 
     /**
      * @notice Sets the reward for a reward distributor.
+     * @dev Mints actual tokens to the reward distributor.
+     * @param rewardsDistributor The address of the reward distributor.
+     * @param amount The amount of rewards to set.
+     * @param duration The duration of the rewards.
      */
     function _setReward(address rewardsDistributor, uint256 amount, uint256 duration) internal virtual {
         if (!rewardDistributors.contains(rewardsDistributor)) {
             revert Karma__UnknownDistributor();
         }
-        _overflowCheck(amount);
-
-        rewardDistributorAllocations[rewardsDistributor] += amount;
-        totalDistributorAllocation += amount;
+        _mint(rewardsDistributor, amount);
         IRewardDistributor(rewardsDistributor).setReward(amount, duration);
     }
 
     /**
      * @notice Slashes karma from an account based on the current slashing percentage
      * @param account Account to slash
+     * @param rewardRecipient Address that will receive the slash reward
      * @return slashedAmount The amount of karma that was slashed
      */
-    function _slash(address account) internal virtual returns (uint256) {
-        uint256 currentBalance = balanceOf(account);
+    function _slash(address account, address rewardRecipient) internal virtual returns (uint256) {
+        uint256 currentBalance = _balanceOf(account);
         if (currentBalance == 0) {
             revert Karma__CannotSlashZeroBalance();
         }
 
-        uint256 totalAmountToSlash;
+        // first, calculate the total amount to slash from the actual reward tokens
+        uint256 totalAmountToSlash = _calculateSlashAmount(super.balanceOf(account));
 
-        // first, slash all reward distributors
         for (uint256 i = 0; i < rewardDistributors.length(); i++) {
             address distributor = rewardDistributors.at(i);
             uint256 currentDistributorAccountBalance = IRewardDistributor(distributor).rewardsBalanceOfAccount(account);
-            uint256 currentDistributorSlashAmount = rewardDistributorSlashAmount[distributor][account];
 
-            uint256 distributorAmountToSlash =
-                _calculateSlashAmount(currentDistributorAccountBalance - currentDistributorSlashAmount);
+            // then, calculate the amount to slash from each reward distributor
+            totalAmountToSlash += _calculateSlashAmount(currentDistributorAccountBalance);
 
-            rewardDistributorSlashAmount[distributor][account] += distributorAmountToSlash;
-            totalAmountToSlash += distributorAmountToSlash;
+            // turn virtual Karma into real Karma for slashing
+            IRewardDistributor(distributor).redeemRewards(account);
         }
 
-        // then, slash internal balance
-        uint256 amountToSlash = _calculateSlashAmount(super.balanceOf(account) - accountSlashAmount[account]);
-        accountSlashAmount[account] += amountToSlash;
-        totalAmountToSlash += amountToSlash;
-        totalSlashAmount += totalAmountToSlash;
+        // Calculate reward from the slashed amount
+        // slashRewardPercentage of the slashed amount goes to the reward recipient
+        uint256 rewardAmount = Math.mulDiv(totalAmountToSlash, slashRewardPercentage, MAX_SLASH_PERCENTAGE);
 
-        emit AccountSlashed(account, totalAmountToSlash);
+        // Burn the entire slashed amount from the account
+        _burn(account, totalAmountToSlash);
+
+        // Mint the reward to the recipient (if recipient is specified)
+        if (rewardAmount > 0 && rewardRecipient != address(0)) {
+            _mint(rewardRecipient, rewardAmount);
+        }
+
+        emit AccountSlashed(account, totalAmountToSlash, rewardRecipient, rewardAmount);
         return totalAmountToSlash;
     }
 
@@ -365,28 +385,16 @@ contract Karma is Initializable, ERC20Upgradeable, UUPSUpgradeable, AccessContro
         return amountToSlash;
     }
 
-    /**
-     * @notice Returns the raw balance of an account.
-     */
-    function _rawBalanceAndSlashAmountOf(address account) internal view returns (uint256, uint256) {
-        uint256 externalBalance;
-        uint256 slashedAmount;
+    function _balanceOf(address account) internal view returns (uint256) {
+        uint256 externalBalance = 0;
 
         // first, aggregate all slashed amounts from reward distributors
         for (uint256 i = 0; i < rewardDistributors.length(); i++) {
             address distributor = rewardDistributors.at(i);
             externalBalance += IRewardDistributor(distributor).rewardsBalanceOfAccount(account);
-            slashedAmount += rewardDistributorSlashAmount[distributor][account];
         }
-        // then, add the slashed amount from the internal balance
-        slashedAmount += accountSlashAmount[account];
 
-        return (super.balanceOf(account) + externalBalance, slashedAmount);
-    }
-
-    function _overflowCheck(uint256 amount) internal view {
-        // This will revert if `amount` overflows the total supply
-        super.totalSupply() + totalDistributorAllocation + amount;
+        return (super.balanceOf(account) + externalBalance);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -399,7 +407,21 @@ contract Karma is Initializable, ERC20Upgradeable, UUPSUpgradeable, AccessContro
      * @return The total supply of the token.
      */
     function totalSupply() public view override returns (uint256) {
-        return _totalSupply();
+        uint256 externalSupply = 0;
+        uint256 totalDistributorBalance = 0;
+
+        for (uint256 i = 0; i < rewardDistributors.length(); i++) {
+            IRewardDistributor distributor = IRewardDistributor(rewardDistributors.at(i));
+            externalSupply += distributor.totalRewardsSupply();
+            totalDistributorBalance += super.balanceOf(address(distributor));
+        }
+
+        if (externalSupply > totalDistributorBalance) {
+            externalSupply = totalDistributorBalance;
+        }
+
+        // subtract the distributor balances to avoid double counting
+        return super.totalSupply() - totalDistributorBalance + externalSupply;
     }
 
     /**
@@ -417,34 +439,41 @@ contract Karma is Initializable, ERC20Upgradeable, UUPSUpgradeable, AccessContro
      * @return The balance of the account.
      */
     function balanceOf(address account) public view override returns (uint256) {
-        (uint256 rawBalance, uint256 slashedAmount) = _rawBalanceAndSlashAmountOf(account);
-        // Subtract slashed amount
-        if (slashedAmount >= rawBalance) {
+        if (rewardDistributors.contains(account)) {
             return 0;
         }
-        return rawBalance - slashedAmount;
+        return _balanceOf(account);
     }
 
     /**
-     * @notice Returns the total slash amount of an account
-     * @param account The account to get the slash amount of.
-     * @return The slash amount of the account.
+     * @notice Returns the actual token balance of an account.
+     * @dev This value excludes virtual Karma distributed by reward distributors.
+     * @param account The account to get the token balance of.
+     * @return The actual token balance of the account.
      */
-    function slashedAmountOf(address account) public view returns (uint256) {
-        (, uint256 slashAmount) = _rawBalanceAndSlashAmountOf(account);
-        return slashAmount;
+    function actualTokenBalanceOf(address account) public view returns (uint256) {
+        return super.balanceOf(account);
     }
 
+    /**
+     * @notice Returns the balance of a reward distributor.
+     * @dev The balance of a reward distributor is the balance of the actual tokens held by the distributor.
+     * @param distributor The address of the reward distributor.
+     * @return The balance of the reward distributor.
+     */
+    function balanceOfRewardDistributor(address distributor) external view returns (uint256) {
+        if (!rewardDistributors.contains(distributor)) {
+            revert Karma__UnknownDistributor();
+        }
+        return super.balanceOf(distributor);
+    }
+
+    /**
+     * @notice Returns the allowance of an account.
+     * @dev Allowances are not used in this contract, so this function always returns 0.
+     * @return Always returns 0.
+     */
     function allowance(address, address) public pure override returns (uint256) {
         return 0;
-    }
-
-    /**
-     * @notice Returns the external supply of the token.
-     * @dev The external supply is the sum of the rewards from all reward distributors.
-     * @return The external supply of the token.
-     */
-    function externalSupply() public view returns (uint256) {
-        return _externalSupply();
     }
 }

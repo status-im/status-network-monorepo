@@ -2,24 +2,34 @@
 pragma solidity ^0.8.26;
 
 import { Test } from "forge-std/Test.sol";
+import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { RLN } from "../src/rln/RLN.sol";
 import { Karma } from "../src/Karma.sol";
 import { KarmaDistributorMock } from "./mocks/KarmaDistributorMock.sol";
 import { DeployKarmaScript } from "../script/DeployKarma.s.sol";
+import { PoseidonHasher } from "../src/rln/PoseidonHasher.sol";
+import { IERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 
 import { DeploymentConfig } from "../script/DeploymentConfig.s.sol";
 
 contract RLNTest is Test {
     RLN public rln;
+    PoseidonHasher public poseidonHasher;
 
     uint256 private constant DEPTH = 2; // for most tests
-    uint256 private constant SMALL_DEPTH = 1; // for “full” test
+    uint256 private constant SMALL_DEPTH = 1; // for "full" test
 
-    // Sample identity commitments
-    uint256 private identityCommitment0 = 1234;
-    uint256 private identityCommitment1 = 5678;
-    uint256 private identityCommitment2 = 9999;
+    // Sample private keys (32 bytes)
+    bytes32 private privateKey0 = bytes32(uint256(1234));
+    bytes32 private privateKey1 = bytes32(uint256(5678));
+    bytes32 private privateKey2 = bytes32(uint256(9999));
+
+    // Identity commitments derived from private keys
+    uint256 private identityCommitment0;
+    uint256 private identityCommitment1;
+    uint256 private identityCommitment2;
 
     // Role‐holders
     address private owner;
@@ -34,15 +44,24 @@ contract RLNTest is Test {
     address private user1Addr = makeAddr("user1");
     address private user2Addr = makeAddr("user2");
     address private user3Addr = makeAddr("user3");
+    address private rewardRecipientAddr = makeAddr("rewardRecipient");
 
     function setUp() public {
         DeployKarmaScript karmaDeployment = new DeployKarmaScript();
-        (Karma _karma, DeploymentConfig deploymentConfig) = karmaDeployment.run();
+        (Karma _karma, DeploymentConfig deploymentConfig) = karmaDeployment.runForTest();
         karma = _karma;
         (address deployer,) = deploymentConfig.activeNetworkConfig();
         owner = deployer;
-        distributor1 = new KarmaDistributorMock();
-        distributor2 = new KarmaDistributorMock();
+        distributor1 = new KarmaDistributorMock(IERC20(address(_karma)));
+        distributor2 = new KarmaDistributorMock(IERC20(address(_karma)));
+
+        // Deploy PoseidonHasher
+        poseidonHasher = new PoseidonHasher();
+
+        // Compute identity commitments from private keys
+        identityCommitment0 = poseidonHasher.hash(uint256(privateKey0));
+        identityCommitment1 = poseidonHasher.hash(uint256(privateKey1));
+        identityCommitment2 = poseidonHasher.hash(uint256(privateKey2));
 
         // Assign deterministic addresses
         adminAddr = makeAddr("admin");
@@ -61,20 +80,15 @@ contract RLNTest is Test {
         karma.addRewardDistributor(address(distributor1));
         karma.addRewardDistributor(address(distributor2));
         karma.grantRole(karma.SLASHER_ROLE(), address(rln));
+        karma.setAllowedToTransfer(address(distributor1), true);
+        karma.setAllowedToTransfer(address(distributor2), true);
         vm.stopBroadcast();
     }
 
     /// @dev Deploys a new RLN instance (behind ERC1967Proxy).
     function _deployRLN(uint256 depth, Karma karmaToken) internal returns (RLN) {
         bytes memory initData = abi.encodeCall(
-            RLN.initialize,
-            (
-                adminAddr,
-                slasherAddr,
-                registerAddr,
-                depth,
-                address(karmaToken) // token address unused in these tests
-            )
+            RLN.initialize, (adminAddr, slasherAddr, registerAddr, depth, address(karmaToken), address(poseidonHasher))
         );
         address impl = address(new RLN());
         address proxy = address(new ERC1967Proxy(impl, initData));
@@ -83,7 +97,7 @@ contract RLNTest is Test {
 
     /* ---------- INITIAL STATE ---------- */
 
-    function test_initial_state() public {
+    function test_initial_state() public view {
         // SET_SIZE should be 2^DEPTH = 4
         assertEq(rln.SET_SIZE(), uint256(1) << DEPTH);
 
@@ -102,7 +116,7 @@ contract RLNTest is Test {
         // Register first identity
         uint256 indexBefore = rln.identityCommitmentIndex();
         vm.startPrank(registerAddr);
-        vm.expectEmit(true, false, false, true);
+        vm.expectEmit(true, true, true, true);
         emit RLN.MemberRegistered(identityCommitment0, indexBefore);
         rln.register(identityCommitment0, user1Addr);
         vm.stopPrank();
@@ -115,7 +129,7 @@ contract RLNTest is Test {
         // Register second identity
         indexBefore = rln.identityCommitmentIndex();
         vm.startPrank(registerAddr);
-        vm.expectEmit(true, false, false, true);
+        vm.expectEmit(true, true, true, true);
         emit RLN.MemberRegistered(identityCommitment1, indexBefore);
         rln.register(identityCommitment1, user2Addr);
         vm.stopPrank();
@@ -162,8 +176,8 @@ contract RLNTest is Test {
     function test_slash_succeeds() public {
         uint256 distributorBalance = 50 ether;
         vm.startPrank(owner);
-        karma.mint(user2Addr, 10 ether); // Mint Karma tokens to user2
-        distributor1.setUserKarmaShare(user2Addr, distributorBalance);
+        karma.mint(address(distributor1), distributorBalance); // Mint Karma tokens to distributor1
+        distributor1.setUserKarmaShare(user2Addr, 10 ether);
         vm.stopPrank();
 
         // Register the identity first
@@ -174,12 +188,20 @@ contract RLNTest is Test {
         // Retrieve the assigned index
         (, uint256 index1) = _memberData(identityCommitment1);
 
-        // Slash with a valid proof
-        vm.startPrank(slasherAddr);
-        vm.expectEmit(false, true, false, true);
+        // burn event
+        vm.expectEmit(true, true, true, true);
+        emit IERC20Upgradeable.Transfer(user2Addr, address(0), 5 ether);
+
+        // reward mint event
+        vm.expectEmit(true, true, true, true);
+        emit IERC20Upgradeable.Transfer(address(0), rewardRecipientAddr, 0.5 ether);
+
+        // slash event
+        vm.expectEmit(true, true, true, true);
         emit RLN.MemberSlashed(index1, slasherAddr);
-        rln.slash(identityCommitment1);
-        vm.stopPrank();
+
+        vm.prank(slasherAddr);
+        rln.slash(privateKey1, rewardRecipientAddr);
 
         // After slash, the member record should be cleared
         (address u1, uint256 i1) = _memberData(identityCommitment1);
@@ -191,8 +213,187 @@ contract RLNTest is Test {
         // Attempt to slash a non‐existent identity
         vm.startPrank(slasherAddr);
         vm.expectRevert(RLN.RLN__MemberNotFound.selector);
-        rln.slash(identityCommitment0);
+        rln.slash(privateKey0, rewardRecipientAddr);
         vm.stopPrank();
+    }
+
+    /* ---------- SLASH COMMIT/REVEAL ---------- */
+
+    function test_SlashCommitRevertsIfNoSlashRole() public {
+        bytes32 hash = keccak256(abi.encodePacked(privateKey0, rewardRecipientAddr));
+
+        // Attempt to commit without slash role
+        vm.expectRevert(
+            abi.encodePacked(
+                "AccessControl: account ",
+                Strings.toHexString(uint160(user1Addr)),
+                " is missing role ",
+                Strings.toHexString(uint256(rln.SLASHER_ROLE()), 32)
+            )
+        );
+        vm.prank(user1Addr);
+        rln.slashCommit(user1Addr, hash);
+    }
+
+    function test_SlashCommitAddsNewHashWithSlashRole() public {
+        bytes32 hash = keccak256(abi.encodePacked(privateKey0, rewardRecipientAddr));
+
+        // Verify commitment doesn't exist yet
+        assertEq(rln.slashCommitments(user1Addr, hash), 0);
+
+        // Commit with slash role
+        vm.prank(slasherAddr);
+        rln.slashCommit(user1Addr, hash);
+
+        // Verify commitment was added with a revealStartTime
+        assertGt(rln.slashCommitments(user1Addr, hash), 0);
+
+        // Verify lastRevealStartTime was updated
+        assertGt(rln.lastRevealStartTime(user1Addr), 0);
+    }
+
+    function test_SlashRevealRevertsIfNoSlashRole() public {
+        // Attempt to reveal without slash role
+        vm.expectRevert(
+            abi.encodePacked(
+                "AccessControl: account ",
+                Strings.toHexString(uint160(user1Addr)),
+                " is missing role ",
+                Strings.toHexString(uint256(rln.SLASHER_ROLE()), 32)
+            )
+        );
+        vm.prank(user1Addr);
+        rln.slashReveal(user1Addr, privateKey0, rewardRecipientAddr);
+    }
+
+    function test_SlashRevealRevertsIfCommitmentDoesntExist() public {
+        // Attempt to reveal without committing first
+        vm.expectRevert(RLN.RLN__InvalidCommitment.selector);
+        vm.prank(slasherAddr);
+        rln.slashReveal(user1Addr, "1234", rewardRecipientAddr);
+    }
+
+    function test_SlashRevealSlashesAccountAndRemovesHash() public {
+        vm.prank(owner);
+        karma.mint(user1Addr, 10 ether);
+
+        vm.prank(registerAddr);
+        rln.register(identityCommitment0, user1Addr);
+
+        // Retrieve the assigned index
+        (, uint256 index0) = _memberData(identityCommitment0);
+
+        // Commit the slash
+        bytes32 hash = keccak256(abi.encodePacked(privateKey0, rewardRecipientAddr));
+        vm.prank(slasherAddr);
+        rln.slashCommit(user1Addr, hash);
+
+        // Verify commitment exists with a revealStartTime
+        uint256 revealStartTime = rln.slashCommitments(user1Addr, hash);
+        assertGt(revealStartTime, 0);
+
+        // Warp time to allow reveal (skip to the reveal window)
+        vm.warp(revealStartTime);
+
+        // Burn event
+        vm.expectEmit(true, true, true, true);
+        emit IERC20Upgradeable.Transfer(user1Addr, address(0), 5 ether);
+
+        // Reward mint event
+        vm.expectEmit(true, true, true, true);
+        emit IERC20Upgradeable.Transfer(address(0), rewardRecipientAddr, 0.5 ether);
+
+        // Slash event
+        vm.expectEmit(true, true, true, true);
+        emit RLN.MemberSlashed(index0, slasherAddr);
+
+        // Reveal and slash
+        vm.prank(slasherAddr);
+        rln.slashReveal(user1Addr, privateKey0, rewardRecipientAddr);
+
+        // Verify commitment was removed
+        assertEq(rln.slashCommitments(user1Addr, hash), 0);
+
+        // Verify member was slashed
+        (address userAddress, uint256 userIndex) = _memberData(identityCommitment0);
+        assertEq(userAddress, address(0));
+        assertEq(userIndex, 0);
+    }
+
+    function test_SlashRevealRevertsIfRevealWindowNotStarted() public {
+        vm.prank(owner);
+        karma.mint(user1Addr, 10 ether);
+
+        vm.prank(registerAddr);
+        rln.register(identityCommitment0, user1Addr);
+
+        // Commit 1 (wrong key)
+        bytes32 hash1 = keccak256(abi.encodePacked(privateKey1, rewardRecipientAddr));
+        vm.prank(slasherAddr);
+        rln.slashCommit(user1Addr, hash1);
+
+        // Commit 2 (right key)
+        bytes32 hash2 = keccak256(abi.encodePacked(privateKey0, rewardRecipientAddr));
+        vm.prank(slasherAddr);
+        rln.slashCommit(user1Addr, hash2);
+
+        // Attempt to reveal before the window starts for the second slash commitment
+        vm.expectRevert(RLN.RLN__RevealWindowNotStarted.selector);
+        vm.prank(slasherAddr);
+        rln.slashReveal(user1Addr, privateKey0, rewardRecipientAddr);
+    }
+
+    function test_SlashCommitCreatesQueueForMultipleCommits() public {
+        // Commit three slashes for the same account
+        bytes32 hash1 = keccak256(abi.encodePacked(privateKey0, rewardRecipientAddr));
+        bytes32 hash2 = keccak256(abi.encodePacked(privateKey1, rewardRecipientAddr));
+        bytes32 hash3 = keccak256(abi.encodePacked(privateKey2, rewardRecipientAddr));
+
+        vm.startPrank(slasherAddr);
+        rln.slashCommit(user1Addr, hash1);
+        uint256 revealTime1 = rln.slashCommitments(user1Addr, hash1);
+
+        rln.slashCommit(user1Addr, hash2);
+        uint256 revealTime2 = rln.slashCommitments(user1Addr, hash2);
+
+        rln.slashCommit(user1Addr, hash3);
+        uint256 revealTime3 = rln.slashCommitments(user1Addr, hash3);
+        vm.stopPrank();
+
+        // Verify that each subsequent commit has a later reveal time
+        assertGt(revealTime1, 0);
+        assertEq(revealTime2, revealTime1 + rln.slashRevealWindowTime());
+        assertEq(revealTime3, revealTime2 + rln.slashRevealWindowTime());
+
+        // Verify lastRevealStartTime was updated to the last commit's time
+        assertEq(rln.lastRevealStartTime(user1Addr), revealTime3);
+    }
+
+    function test_SetSlashRevealWindowTime() public {
+        uint256 newWindowTime = 2 hours;
+
+        // Set new window time as admin
+        vm.prank(adminAddr);
+        rln.setSlashRevealWindowTime(newWindowTime);
+
+        // Verify it was updated
+        assertEq(rln.slashRevealWindowTime(), newWindowTime);
+    }
+
+    function test_SetSlashRevealWindowTimeRevertsIfNotAdmin() public {
+        uint256 newWindowTime = 2 hours;
+
+        // Attempt to set new window time without admin role
+        vm.expectRevert(
+            abi.encodePacked(
+                "AccessControl: account ",
+                Strings.toHexString(uint160(user1Addr)),
+                " is missing role ",
+                Strings.toHexString(uint256(rln.DEFAULT_ADMIN_ROLE()), 32)
+            )
+        );
+        vm.prank(user1Addr);
+        rln.setSlashRevealWindowTime(newWindowTime);
     }
 
     /* ========== HELPERS ========== */

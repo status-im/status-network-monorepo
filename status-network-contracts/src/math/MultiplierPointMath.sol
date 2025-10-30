@@ -39,7 +39,8 @@ abstract contract MultiplierPointMath is IStakeConstants {
     }
 
     /**
-     * @notice Calculates the bonus multiplier points (MPs) earned when a balance Δa is locked for a specified duration
+     * @notice Calculates the bonus multiplier points (MPs) earned when a balance Δa is locked for a specified
+     * duration
      * t_lock.
      * It is equivalent to the accrued multiplier points function but specifically applied in the context of a locked
      * balance.
@@ -62,7 +63,8 @@ abstract contract MultiplierPointMath is IStakeConstants {
     }
 
     /**
-     * @notice Calculates the reduction in multiplier points (MPs) when a portion of the balance Δa `_reducedAmount` is
+     * @notice Calculates the reduction in multiplier points (MPs) when a portion of the balance Δa `_reducedAmount`
+     * is
      * removed from the total balance a_bal `_balance`.
      * The reduction is proportional to the ratio of the removed balance to the total balance, applied to the current
      * multiplier points $mp$.

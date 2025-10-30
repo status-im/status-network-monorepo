@@ -14,15 +14,11 @@ clean-testnet-folders:
 clean-environment:
 		docker compose -f docker/compose-tracing-v2-ci-extension.yml -f docker/compose-tracing-v2-staterecovery-extension.yml --profile l1 --profile l2 --profile debug --profile staterecovery kill -s 9 || true;
 		docker compose -f docker/compose-tracing-v2-ci-extension.yml -f docker/compose-tracing-v2-staterecovery-extension.yml --profile l1 --profile l2 --profile debug --profile staterecovery down || true;
-		# Ensure RLN stacks are also torn down (rpc/sequencer + prover/karma)
-		docker compose -f docker/compose-spec-l2-services-rln.yml --profile l2 --profile l2-bc --profile debug --profile external-to-monorepo --profile rln kill -s 9 || true;
-		docker compose -f docker/compose-spec-l2-services-rln.yml --profile l2 --profile l2-bc --profile debug --profile external-to-monorepo --profile rln down || true;
-		# Include tracing-v2 RLN extension if used
-		docker compose -f docker/compose-tracing-v2-rln.yml --profile l1 --profile l2 --profile debug --profile rln kill -s 9 || true;
-		docker compose -f docker/compose-tracing-v2-rln.yml --profile l1 --profile l2 --profile debug --profile rln down || true;
+		# Ensure RLN stack containers are stopped as well
+		docker rm -f rln-prover karma-service sequencer || true;
 		make clean-local-folders;
-		# Remove volumes from both default and RLN stacks (ignore if absent)
-		docker volume rm linea-local-dev linea-logs docker_local-dev local-dev rln-data logs || true; # ignore failure if volumes do not exist already
+		# Remove both legacy and RLN stack volumes (ignore failures if they don't exist)
+		docker volume rm linea-local-dev linea-logs docker_local-dev docker_logs docker_rln-data || true; # ignore failure if volumes do not exist already
 		docker system prune -f || true;
 
 start-env: COMPOSE_PROFILES:=l1,l2

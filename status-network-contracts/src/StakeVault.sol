@@ -5,7 +5,7 @@ pragma solidity 0.8.26;
 import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { IStakeManagerProxy } from "./interfaces/IStakeManagerProxy.sol";
+import { IStakeManager } from "./interfaces/IStakeManager.sol";
 import { IStakeVault } from "./interfaces/IStakeVault.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
@@ -30,8 +30,8 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
     error StakeVault__UnstakingFailed();
     /// @notice Emitted when not allowed to exit the system
     error StakeVault__NotAllowedToExit();
-    /// @notice Emitted when not allowed to leave the system
-    error StakeVault__NotAllowedToLeave();
+    /// @notice Emitted when exiting the system failed
+    error StakeVault__FailedToExit();
     /// @notice Emitted when migration failed
     error StakeVault__MigrationFailed();
     /// @notice Emitted when the caller is not the owner of the vault
@@ -42,6 +42,12 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
     error StakeVault__NotAllowedToTransferOwnership();
     /// @notice Emitted when receiving invalid lock end timestamp from stake manager
     error StakeVault__InvalidLockEnd();
+    /// @notice Emitted when trying to withdraw staked funds without having left first
+    error StakeVault__MustLeaveFirst();
+    /// @notice Emitted when trying to call functions that can't be called after leaving
+    error StakeVault__MarkedAsLeft();
+    /// @notice Emitted when leaving the system failed
+    error StakeVault__FailedToLeave();
 
     /*//////////////////////////////////////////////////////////////////////////
                                   STATE VARIABLES
@@ -50,13 +56,24 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
     /// @notice Staking token - must be set immutable due to codehash check in StakeManager
     IERC20 public immutable STAKING_TOKEN;
     /// @notice Stake manager proxy contract
-    IStakeManagerProxy public stakeManager;
+    IStakeManager public stakeManager;
     /// @notice Timestamp until the funds are locked
     uint256 public lockUntil;
+    /// @notice Total amount deposited into the vault
+    uint256 public depositedBalance;
+    /// @notice Flag to indicate if the vault has left the system
+    bool public hasLeft;
 
     modifier validDestination(address _destination) {
         if (_destination == address(0)) {
             revert StakeVault__InvalidDestinationAddress();
+        }
+        _;
+    }
+
+    modifier onlyNotLeft() {
+        if (hasLeft) {
+            revert StakeVault__MarkedAsLeft();
         }
         _;
     }
@@ -89,7 +106,7 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
      */
     function initialize(address _owner, address _stakeManager) public initializer {
         _transferOwnership(_owner);
-        stakeManager = IStakeManagerProxy(_stakeManager);
+        stakeManager = IStakeManager(_stakeManager);
     }
 
     /**
@@ -108,7 +125,7 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
      * @param _amount The amount of tokens to stake.
      * @param _seconds The time period to stake for.
      */
-    function stake(uint256 _amount, uint256 _seconds) external onlyOwner {
+    function stake(uint256 _amount, uint256 _seconds) external onlyOwner onlyNotLeft {
         _stake(_amount, _seconds, msg.sender);
     }
 
@@ -122,7 +139,7 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
      * @param _seconds The time period to stake for.
      * @param _from The address from which tokens will be transferred.
      */
-    function stake(uint256 _amount, uint256 _seconds, address _from) external onlyOwner {
+    function stake(uint256 _amount, uint256 _seconds, address _from) external onlyOwner onlyNotLeft {
         _stake(_amount, _seconds, _from);
     }
 
@@ -132,7 +149,7 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
      * @dev Can only be called if the stake manager is trusted.
      * @param _seconds The time period to lock the staked amount for.
      */
-    function lock(uint256 _seconds) external onlyOwner {
+    function lock(uint256 _seconds) external onlyOwner onlyNotLeft {
         uint256 newLockUntil = stakeManager.lock(_seconds, lockUntil);
         _ensureLockUntilValid(newLockUntil, _seconds);
         lockUntil = newLockUntil;
@@ -169,17 +186,26 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
      * @param _destination The address to receive the funds.
      */
     function leave(address _destination) external onlyOwner validDestination(_destination) {
+        hasLeft = true;
         // We have to `try/catch` here in case the upgrade was bad and `leave()`
         // either doesn't exist on the new stake manager or reverts for some reason.
         // If it was a good upgrade, it will cause the stake manager to properly update
         // its internal accounting before we move the funds out.
         try stakeManager.leave() {
             if (lockUntil <= block.timestamp) {
-                STAKING_TOKEN.transfer(_destination, STAKING_TOKEN.balanceOf(address(this)));
+                depositedBalance = 0;
+                bool success = STAKING_TOKEN.transfer(_destination, STAKING_TOKEN.balanceOf(address(this)));
+                if (!success) {
+                    revert StakeVault__FailedToLeave();
+                }
             }
         } catch {
             if (lockUntil <= block.timestamp) {
-                STAKING_TOKEN.transfer(_destination, STAKING_TOKEN.balanceOf(address(this)));
+                depositedBalance = 0;
+                bool success = STAKING_TOKEN.transfer(_destination, STAKING_TOKEN.balanceOf(address(this)));
+                if (!success) {
+                    revert StakeVault__FailedToLeave();
+                }
             }
         }
     }
@@ -191,11 +217,13 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
      * @dev Reverts when the stake manager reverts or the funds can't be transferred.
      * @param migrateTo The address of the new vault.
      */
-    function migrateToVault(address migrateTo) external onlyOwner {
+    function migrateToVault(address migrateTo) external onlyOwner onlyNotLeft {
         if (IStakeVault(migrateTo).owner() != owner()) {
             revert StakeVault__NotAuthorized();
         }
         stakeManager.migrateToVault(migrateTo);
+        depositedBalance = 0;
+        lockUntil = 0;
         bool success = STAKING_TOKEN.transfer(migrateTo, STAKING_TOKEN.balanceOf(address(this)));
         if (!success) {
             revert StakeVault__MigrationFailed();
@@ -205,13 +233,14 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
     /**
      * @notice Updates the lock until timestamp.
      * @dev This function is only callable by the stake manager.
-     * @param _lockUntil The new lock until timestamp.
+     * @param data The migration data containing the new lock until timestamp and deposited balance.
      */
-    function migrateFromVault(uint256 _lockUntil) external {
+    function migrateFromVault(MigrationData calldata data) external {
         if (msg.sender != address(stakeManager)) {
             revert StakeVault__NotAuthorized();
         }
-        lockUntil = _lockUntil;
+        lockUntil = data.lockUntil;
+        depositedBalance = data.depositedBalance;
     }
 
     /**
@@ -246,23 +275,6 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
         _withdraw(_token, _amount, _destination);
     }
 
-    function withdrawFromVault(
-        uint256 _amount,
-        address _destination
-    )
-        external
-        onlyOwner
-        validDestination(_destination)
-    {
-        if (lockUntil > block.timestamp) {
-            revert StakeVault__FundsLocked();
-        }
-        bool success = STAKING_TOKEN.transfer(_destination, _amount);
-        if (!success) {
-            revert StakeVault__WithdrawFromVaultFailed();
-        }
-    }
-
     /**
      * @notice Returns the available amount of a token that can be withdrawn.
      * @dev Returns only excess amount if token is staking token.
@@ -271,7 +283,12 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
      */
     function availableWithdraw(IERC20 _token) external view returns (uint256) {
         if (_token == STAKING_TOKEN) {
-            return STAKING_TOKEN.balanceOf(address(this)) - amountStaked();
+            (uint256 totalBalance, uint256 excess) = _totalAndExcessStakingTokens();
+            if (lockUntil <= block.timestamp) {
+                return totalBalance;
+            } else {
+                return excess;
+            }
         }
         return _token.balanceOf(address(this));
     }
@@ -299,6 +316,7 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
      * @param _source The address from which tokens will be transferred.
      */
     function _stake(uint256 _amount, uint256 _seconds, address _source) internal {
+        depositedBalance += _amount;
         uint256 newLockUntil = stakeManager.stake(_amount, _seconds, lockUntil);
         _ensureLockUntilValid(newLockUntil, _seconds);
         lockUntil = newLockUntil;
@@ -318,6 +336,10 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
         if (lockUntil > block.timestamp) {
             revert StakeVault__FundsLocked();
         }
+        if (_amount > depositedBalance) {
+            revert StakeVault__NotEnoughAvailableBalance();
+        }
+        depositedBalance -= _amount;
         stakeManager.unstake(_amount);
         bool success = STAKING_TOKEN.transfer(_destination, _amount);
         if (!success) {
@@ -328,16 +350,50 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
     /**
      * @notice Withdraws tokens to a specified address.
      * @dev Reverts if the staking token transfer fails.
-     * @dev Only withdraws excess staking token amounts.
+     * @dev Only withdraws excess staking token amounts, or unlocked deposited funds.
      * @param _token The IERC20 token to withdraw.
      * @param _amount The amount of tokens to withdraw.
      * @param _destination The address to receive the tokens.
      */
     function _withdraw(IERC20 _token, uint256 _amount, address _destination) internal {
-        if (_token == STAKING_TOKEN && STAKING_TOKEN.balanceOf(address(this)) - amountStaked() < _amount) {
-            revert StakeVault__NotEnoughAvailableBalance();
+        if (_token == STAKING_TOKEN) {
+            (uint256 total, uint256 excess) = _totalAndExcessStakingTokens();
+            if (_amount > total) {
+                revert StakeVault__NotEnoughAvailableBalance();
+            }
+
+            // If we're withdrawing from locked deposited funds, check lock period
+            if (_amount > excess && lockUntil > block.timestamp) {
+                revert StakeVault__FundsLocked();
+            }
+
+            if (_amount > excess) {
+                if (!hasLeft) {
+                    // Can't withdraw staked funds without having left first.
+                    // Use unstake() instead, or leave() if you want to withdraw everything.
+                    revert StakeVault__MustLeaveFirst();
+                }
+                uint256 fromDeposited = _amount - excess;
+                depositedBalance -= fromDeposited;
+            }
         }
-        _token.transfer(_destination, _amount);
+
+        bool success = _token.transfer(_destination, _amount);
+        if (!success) {
+            revert StakeVault__WithdrawFromVaultFailed();
+        }
+    }
+
+    /**
+     * @notice Returns the available amount of staking tokens that can be withdrawn.
+     * @dev Includes excess tokens + unlocked deposited funds.
+     * @return The amount of staking tokens available for withdrawal.
+     * @return The amount of excess staking tokens.
+     */
+    function _totalAndExcessStakingTokens() internal view returns (uint256, uint256) {
+        uint256 totalBalance = STAKING_TOKEN.balanceOf(address(this));
+        uint256 excess = totalBalance > depositedBalance ? totalBalance - depositedBalance : 0;
+        return (totalBalance, excess);
     }
 
     /**
@@ -346,7 +402,7 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
      * @param _newLockUntil The new lock until timestamp.
      * @param _seconds The time period to stake for.
      */
-    function _ensureLockUntilValid(uint256 _newLockUntil, uint256 _seconds) internal {
+    function _ensureLockUntilValid(uint256 _newLockUntil, uint256 _seconds) internal view {
         uint256 expectedLockUntil = Math.max(lockUntil, block.timestamp) + _seconds;
         if (_seconds > 0 && _newLockUntil != expectedLockUntil) {
             // This should never happen, unless there was a malicious
@@ -369,13 +425,20 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
      * @dev Reverts when `emergencyModeEnabled()` returns false.
      */
     function emergencyExit(address _destination) external onlyOwner validDestination(_destination) {
+        depositedBalance = 0;
         try stakeManager.emergencyModeEnabled() returns (bool enabled) {
             if (!enabled) {
                 revert StakeVault__NotAllowedToExit();
             }
-            STAKING_TOKEN.transfer(_destination, STAKING_TOKEN.balanceOf(address(this)));
+            bool success = STAKING_TOKEN.transfer(_destination, STAKING_TOKEN.balanceOf(address(this)));
+            if (!success) {
+                revert StakeVault__FailedToExit();
+            }
         } catch {
-            STAKING_TOKEN.transfer(_destination, STAKING_TOKEN.balanceOf(address(this)));
+            bool success = STAKING_TOKEN.transfer(_destination, STAKING_TOKEN.balanceOf(address(this)));
+            if (!success) {
+                revert StakeVault__FailedToExit();
+            }
         }
     }
 

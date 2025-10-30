@@ -1,0 +1,27 @@
+[package]
+name = "prover_cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+prover = { path = "../prover" }
+tokio.workspace = true
+clap.workspace = true
+rustls.workspace = true
+tracing-subscriber.workspace = true
+tracing.workspace = true
+toml = "0.9.8"
+opentelemetry = { version = "0.31.0", default-features = false, features = [
+    "trace",
+] }
+opentelemetry_sdk = { version = "0.31.0", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.31.0", features = [
+    "grpc-tonic",
+    "reqwest-client",
+    "reqwest-rustls",
+    "http-proto",
+    "tls",
+    "tls-roots",
+] }
+tracing-opentelemetry = "0.32.0"
+anyhow = "1.0.100"

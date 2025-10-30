@@ -2,11 +2,8 @@ using KarmaHarness as karma;
 
 methods {
     function balanceOf(address) external returns (uint256) envfree;
-    function rawBalanceOf(address) external returns (uint256) envfree;
-    function totalDistributorAllocation() external returns (uint256) envfree;
     function totalSupply() external returns (uint256) envfree;
-    function externalSupply() external returns (uint256) envfree;
-    function accountSlashAmount(address) external returns (uint256) envfree;
+    function allowedToTransfer(address) external returns (bool) envfree;
     function _.setReward(uint256, uint256) external => DISPATCHER(true);
     function _.rewardsBalanceOfAccount(address) external => DISPATCHER(true);
     function hasRole(bytes32, address) external returns (bool) envfree;
@@ -18,14 +15,6 @@ methods {
 function mulDivSummary(uint256 a, uint256 b, uint256 c) returns uint256 {
   require c != 0;
   return require_uint256(a*b/c);
-}
-
-persistent ghost mathint sumOfDistributorAllocations {
-    init_state axiom sumOfDistributorAllocations == 0;
-}
-
-hook Sstore rewardDistributorAllocations[KEY address addr] uint256 newValue (uint256 oldValue) {
-    sumOfDistributorAllocations = sumOfDistributorAllocations - oldValue + newValue;
 }
 
 definition isUpgradeFunction(method f) returns bool = (
@@ -50,30 +39,17 @@ definition isOperatorFunction(method f) returns bool = (
                 || f.selector == sig:karma.mint(address, uint256).selector
 );
 
-invariant totalDistributorAllocationIsSumOfDistributorAllocations()
-    to_mathint(totalDistributorAllocation()) == sumOfDistributorAllocations
-    filtered {
-        f -> !isUpgradeFunction(f)
-    }
-
-// invariant slashAmountIsLessEqualToKarmaBalance(address account)
-//     rawBalanceOf(account) >= getSlashAmountForAccount(account)
-//     filtered {
-//         f -> !isUpgradeFunction(f) && !isERC20TransferFunction(f)
-//     }
-
-// rule externalSupplyIsLessOrEqThanTotalDistributorAllocation() {
-//     assert externalSupply() <= totalDistributorAllocation();
-// }
-
-rule erc20TransferIsDisabled(method f) {
+rule erc20TransferIsDisabledForNonWhitelistedAccounts(method f) {
     env e;
     calldataarg args;
+
+    bool isWhiteListed = allowedToTransfer(e.msg.sender);
 
     f@withrevert(e, args);
     bool isReverted = lastReverted;
 
-    assert isERC20TransferFunction(f) => isReverted;
+
+    assert isERC20TransferFunction(f) && !isWhiteListed => isReverted;
 }
 
 rule adminFuncsOnlyCallableByAdmin(method f) {
@@ -101,19 +77,3 @@ rule operatorFuncsCallableByAdminAndOperators(method f) {
     assert isOperatorFunction(f) && !isOwner && !isOperator => isReverted;
 }
 
-rule totalDistributorAllocationCanOnlyIncrease(method f) filtered { f ->
-     !isUpgradeFunction(f)
-     && !isERC20TransferFunction(f)
-    } {
-    env e;
-    calldataarg args;
-
-
-    uint256 totalDistributorAllocationBefore = totalDistributorAllocation();
-
-    f(e, args);
-
-    uint256 totalDistributorAllocationAfter = totalDistributorAllocation();
-
-    assert totalDistributorAllocationAfter >= totalDistributorAllocationBefore;
-}

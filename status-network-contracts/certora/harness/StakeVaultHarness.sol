@@ -11,4 +11,14 @@ contract StakeVaultHarness is StakeVault {
   function isInitializing() public view returns (bool) {
     return _isInitializing();
   }
+
+  function getInitializedVersion() public view returns (uint8) {
+    return _getInitializedVersion();
+  }
+
+  function getExcessBalance() public view returns (uint256) {
+    (, uint256 excess) =  _totalAndExcessStakingTokens();
+    return excess;
+  }
 }
+
