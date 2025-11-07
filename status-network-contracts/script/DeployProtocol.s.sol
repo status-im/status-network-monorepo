@@ -11,12 +11,14 @@ import { DeployMetadataGeneratorScript } from "./DeployMetadataGenerator.s.sol";
 import { DeployKarmaNFTScript } from "./DeployKarmaNFT.s.sol";
 import { DeployStakeManagerScript } from "./DeployStakeManager.s.sol";
 import { DeployVaultFactoryScript } from "./DeployVaultFactory.s.sol";
+import { DeploySimpleKarmaDistributorScript } from "./DeploySimpleKarmaDistributor.s.sol";
 
 import { INFTMetadataGenerator } from "../src/interfaces/INFTMetadataGenerator.sol";
 import { Karma } from "../src/Karma.sol";
 import { KarmaNFT } from "../src/KarmaNFT.sol";
 import { StakeManager } from "../src/StakeManager.sol";
 import { VaultFactory } from "../src/VaultFactory.sol";
+import { SimpleKarmaDistributor } from "../src/SimpleKarmaDistributor.sol";
 
 /**
  * @dev This script deploys the entire protocol including Karma, KarmaNFT, StakeManager, and VaultFactory.
@@ -34,12 +36,15 @@ contract DeployProtocolScript is BaseScript {
 
     DeployVaultFactoryScript deployVaultFactory;
 
+    DeploySimpleKarmaDistributorScript deploySimpleKarmaDistributor;
+
     constructor() BaseScript() {
         deployKarma = new DeployKarmaScript();
         deployMetadataGenerator = new DeployMetadataGeneratorScript();
         deployKarmaNFT = new DeployKarmaNFTScript();
         deployStakeManager = new DeployStakeManagerScript();
         deployVaultFactory = new DeployVaultFactoryScript();
+        deploySimpleKarmaDistributor = new DeploySimpleKarmaDistributorScript();
     }
 
     /**
@@ -59,14 +64,14 @@ contract DeployProtocolScript is BaseScript {
         public
         returns (
             Karma,
-            address,
+            address, /* karmaImpl */
             INFTMetadataGenerator,
             KarmaNFT,
             StakeManager,
-            address,
+            address, /* stakeManagerImpl */
             VaultFactory,
-            address,
-            address
+            address, /* vaultImpl */
+            address /* vaultProxyClone */
         )
     {
         DeploymentConfig deploymentConfig = new DeploymentConfig(broadcaster);
@@ -152,6 +157,10 @@ contract DeployProtocolScript is BaseScript {
         (vaultFactory, vaultImpl, vaultProxyClone) =
             deployVaultFactory.deploy(broadcaster, address(stakeManager), stakingToken);
 
+        console.log("Deploying SimpleRewardDistributor...");
+        (SimpleKarmaDistributor simpleKarmaDistributor, address simpleKarmaDistributorImpl) =
+            deploySimpleKarmaDistributor.deploy(broadcaster, address(karma));
+
         console.log("\nContract addresses:");
         console.log(address(karma), ": Karma (proxy)");
         console.log(karmaImpl, ": Karma (implementation)");
@@ -162,20 +171,34 @@ contract DeployProtocolScript is BaseScript {
         console.log(address(vaultFactory), ": VaultFactory");
         console.log(vaultImpl, ": StakeVault (implementation)");
         console.log(vaultProxyClone, ": StakeVault (proxy clone)");
+        console.log(address(simpleKarmaDistributor), ": SimpleKarmaDistributor (proxy)");
+        console.log(simpleKarmaDistributorImpl, ": SimpleKarmaDistributor (implementation)");
 
         /// INITIALIZATION
         vm.startBroadcast(broadcaster);
         console.log("\nInitializing contracts...");
 
+        // add reward distributors to Karma
         karma.addRewardDistributor(address(stakeManager));
         console.log("Added reward distributor (StakeManager)", address(stakeManager));
+        karma.addRewardDistributor(address(simpleKarmaDistributor));
+        console.log("Added reward distributor (SimpleKarmaDistributor)", address(simpleKarmaDistributor));
 
+        // whitelist reward distributors for transferring Karma tokens
         karma.setAllowedToTransfer(address(stakeManager), true);
-        console.log("Whitelisted reward distributor", address(stakeManager), "for transfer");
+        console.log("Whitelisted reward distributor (StakeManager)", address(stakeManager), "for transfer");
+        karma.setAllowedToTransfer(address(stakeManager), true);
+        console.log(
+            "Whitelisted reward distributor (SimpleKarmaDistributor)", address(simpleKarmaDistributor), "for transfer"
+        );
 
+        // configure Karma as reward supplier for reward distributors
         stakeManager.setRewardsSupplier(address(karma));
-        console.log("Set rewards supplier (Karma) for StakeManager:", address(karma));
+        console.log("Set rewards supplier (Karma) for StakeManager");
+        simpleKarmaDistributor.setRewardsSupplier(address(karma));
+        console.log("Set rewards supplier (Karma) for SimpleRewardDistributor");
 
+        // whitelist StakeVault proxy clone codehash in StakeManager
         stakeManager.setTrustedCodehash(vaultProxyClone.codehash, true);
         console.log("Set trusted codehash for StakeVault proxy clone:", vaultProxyClone);
         vm.stopBroadcast();

@@ -33,7 +33,7 @@ contract DeploySimpleKarmaDistributorScript is BaseScript {
         (distributor,) = _run(karmaAddress);
     }
 
-    function _run(address karmaAddress) internal broadcast returns (SimpleKarmaDistributor distributor, address impl) {
+    function _run(address karmaAddress) internal returns (SimpleKarmaDistributor distributor, address impl) {
         return deploy(broadcaster, karmaAddress);
     }
 
