@@ -7,7 +7,6 @@
   },
   "devDependencies": {
     "prettier": "^3.0.0",
-    "solhint-community": "^3.6.0",
     "commit-and-tag-version": "^12.2.0"
   },
   "keywords": [
@@ -29,7 +28,7 @@
     "verify:mp_less_equal_max_mp": "certoraRun certora/confs/MPLessEqualMaxMP.conf",
     "verify:emergency_mode": "certoraRun certora/confs/EmergencyMode.conf",
     "verify:karma": "certoraRun certora/confs/Karma.conf",
-    "lint:sol": "forge fmt --check && pnpm solhint {script,src,test,certora}/**/*.sol",
+    "lint:sol": "forge fmt --check && forge lint",
     "prettier:check": "prettier --check **/*.{json,md,yml} --ignore-path=.prettierignore",
     "prettier:write": "prettier --write **/*.{json,md,yml} --ignore-path=.prettierignore",
     "gas-report": "forge snapshot --gas-report 2>&1 | (tee /dev/tty | awk '/Suite result:/ {found=1; buffer=\"\"; next} found && !/Ran/ {buffer=buffer $0 ORS} /Ran/ {found=0} END {printf \"%s\", buffer}' > .gas-report)",

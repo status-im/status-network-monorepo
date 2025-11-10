@@ -33,39 +33,41 @@ contract KarmaAirdrop is Ownable2Step, Pausable {
     event MerkleRootSet(bytes32 merkleRoot);
 
     /// @notice The address of the Karma token contract
-    address public immutable token;
+    address public immutable TOKEN;
     /// @notice Whether the merkle root can be updated more than once
-    bool public immutable allowMerkleRootUpdate;
+    bool public immutable ALLOW_MERKLE_ROOT_UPDATE;
     /// @notice The default delegatee address for new claimers
-    address public immutable defaultDelegatee;
+    address public immutable DEFAULT_DELEGATEE;
     /// @notice The Merkle root of the airdrop
     bytes32 public merkleRoot;
     /// @notice Current epoch - incremented with each merkle root update
     uint256 public epoch;
     /// @notice A bitmap to track claimed indices per epoch
     mapping(uint256 => mapping(uint256 => uint256)) private claimedBitMap;
+    /// @notice Base value for creating bitmap masks
+    uint256 private constant BITMAP_MASK_BASE = 1;
 
     constructor(address _token, address _owner, bool _allowMerkleRootUpdate, address _defaultDelegatee) {
-        token = _token;
-        allowMerkleRootUpdate = _allowMerkleRootUpdate;
-        defaultDelegatee = _defaultDelegatee;
+        TOKEN = _token;
+        ALLOW_MERKLE_ROOT_UPDATE = _allowMerkleRootUpdate;
+        DEFAULT_DELEGATEE = _defaultDelegatee;
         _transferOwnership(_owner);
     }
 
     /**
      * @notice Sets the Merkle root for the airdrop. Can only be called by the owner.
-     * If allowMerkleRootUpdate is false, can only be called once.
+     * If ALLOW_MERKLE_ROOT_UPDATE;is false, can only be called once.
      * When updating an existing merkle root, the contract must be paused to prevent front-running.
      * When the merkle root is updated, the epoch is incremented, creating a new bitmap.
      * @param _merkleRoot The Merkle root to set
      */
     function setMerkleRoot(bytes32 _merkleRoot) external onlyOwner {
-        if (!allowMerkleRootUpdate && merkleRoot != bytes32(0)) {
+        if (!ALLOW_MERKLE_ROOT_UPDATE && merkleRoot != bytes32(0)) {
             revert KarmaAirdrop__MerkleRootAlreadySet();
         }
 
         // When updating an existing merkle root (not the first time), contract must be paused
-        if (allowMerkleRootUpdate && merkleRoot != bytes32(0) && !paused()) {
+        if (ALLOW_MERKLE_ROOT_UPDATE && merkleRoot != bytes32(0) && !paused()) {
             revert KarmaAirdrop__MustBePausedToUpdate();
         }
 
@@ -87,14 +89,15 @@ contract KarmaAirdrop is Ownable2Step, Pausable {
         uint256 claimedWordIndex = index / 256;
         uint256 claimedBitIndex = index % 256;
         uint256 claimedWord = claimedBitMap[epoch][claimedWordIndex];
-        uint256 mask = (1 << claimedBitIndex);
+        uint256 mask = (BITMAP_MASK_BASE << claimedBitIndex);
         return claimedWord & mask == mask;
     }
 
     function _setClaimed(uint256 index) private {
         uint256 claimedWordIndex = index / 256;
         uint256 claimedBitIndex = index % 256;
-        claimedBitMap[epoch][claimedWordIndex] = claimedBitMap[epoch][claimedWordIndex] | (1 << claimedBitIndex);
+        claimedBitMap[epoch][claimedWordIndex] =
+            claimedBitMap[epoch][claimedWordIndex] | (BITMAP_MASK_BASE << claimedBitIndex);
     }
 
     /**
@@ -130,6 +133,7 @@ contract KarmaAirdrop is Ownable2Step, Pausable {
         }
 
         // Verify the merkle proof.
+        /// forge-lint: disable-next-line(asm-keccak256)
         bytes32 node = keccak256(abi.encodePacked(index, account, amount));
         if (!MerkleProof.verify(merkleProof, merkleRoot, node)) {
             revert KarmaAirdrop__InvalidProof();
@@ -137,13 +141,13 @@ contract KarmaAirdrop is Ownable2Step, Pausable {
 
         // Mark it claimed and send the token.
         _setClaimed(index);
-        if (!IERC20(token).transfer(account, amount)) {
+        if (!IERC20(TOKEN).transfer(account, amount)) {
             revert KarmaAirdrop__TransferFailed();
         }
 
         // If the account has no karma balance before this claim, delegate to the default delegatee
-        if (IERC20(token).balanceOf(account) == amount) {
-            IVotes(token).delegateBySig(defaultDelegatee, nonce, expiry, v, r, s);
+        if (IERC20(TOKEN).balanceOf(account) == amount) {
+            IVotes(TOKEN).delegateBySig(DEFAULT_DELEGATEE, nonce, expiry, v, r, s);
         }
 
         emit Claimed(index, account, amount);

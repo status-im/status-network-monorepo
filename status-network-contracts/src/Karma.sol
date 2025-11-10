@@ -4,7 +4,6 @@ pragma solidity 0.8.26;
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import { ERC20VotesUpgradeable } from "./utils/ERC20VotesUpgradeable.sol";
 import { IRewardDistributor } from "./interfaces/IRewardDistributor.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
@@ -88,17 +87,13 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
 
     /// @notice Modifier to check if sender is admin or operator
     modifier onlyAdminOrOperator() {
-        if (!hasRole(DEFAULT_ADMIN_ROLE, msg.sender) && !hasRole(OPERATOR_ROLE, msg.sender)) {
-            revert Karma__Unauthorized();
-        }
+        _onlyAdminOrOperator(msg.sender);
         _;
     }
 
     /// @notice Modifier to check if sender has slasher role
     modifier onlySlasher() {
-        if (!hasRole(DEFAULT_ADMIN_ROLE, msg.sender) && !hasRole(SLASHER_ROLE, msg.sender)) {
-            revert Karma__Unauthorized();
-        }
+        _onlySlasher(msg.sender);
         _;
     }
 
@@ -395,6 +390,18 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
         }
 
         return (super.balanceOf(account) + externalBalance);
+    }
+
+    function _onlyAdminOrOperator(address sender) internal view {
+        if (!hasRole(DEFAULT_ADMIN_ROLE, sender) && !hasRole(OPERATOR_ROLE, sender)) {
+            revert Karma__Unauthorized();
+        }
+    }
+
+    function _onlySlasher(address sender) internal view {
+        if (!hasRole(DEFAULT_ADMIN_ROLE, sender) && !hasRole(SLASHER_ROLE, sender)) {
+            revert Karma__Unauthorized();
+        }
     }
 
     /*//////////////////////////////////////////////////////////////////////////

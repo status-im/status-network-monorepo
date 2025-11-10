@@ -3,7 +3,6 @@ pragma solidity ^0.8.26;
 
 import { Test } from "forge-std/Test.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import { DeployProtocolScript } from "../script/DeployProtocol.s.sol";
 import { DeploymentConfig } from "../script/DeploymentConfig.s.sol";
@@ -95,7 +94,7 @@ contract DeployProtocolTest is Test {
         assertTrue(karma.allowedToTransfer(address(stakeManager)), "StakeManager should be allowed to transfer");
     }
 
-    function testContractInitialization() public {
+    function testContractInitialization() public view {
         // Test Karma initialization
         assertEq(karma.name(), "Karma", "Karma should have correct name");
         assertEq(karma.symbol(), "KARMA", "Karma should have correct symbol");

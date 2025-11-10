@@ -5,8 +5,6 @@ import { BaseScript } from "./Base.s.sol";
 import { DeploymentConfig } from "./DeploymentConfig.s.sol";
 
 import { KarmaNFT } from "../src/KarmaNFT.sol";
-import { NFTMetadataGeneratorSVG } from "../src/nft-metadata-generators/NFTMetadataGeneratorSVG.sol";
-import { INFTMetadataGenerator } from "../src/interfaces/INFTMetadataGenerator.sol";
 
 /**
  * @dev Script for deploying KarmaNFT contract and its dependencies.
@@ -34,13 +32,7 @@ contract DeployKarmaNFTScript is BaseScript {
      * @return karmaNFT The deployed KarmaNFT contract instance.
      * @return deploymentConfig The DeploymentConfig instance for the current network.
      */
-    function runForTest(
-        address metadataGenerator,
-        address karmaAddress
-    )
-        public
-        returns (KarmaNFT, DeploymentConfig)
-    {
+    function runForTest(address metadataGenerator, address karmaAddress) public returns (KarmaNFT, DeploymentConfig) {
         DeploymentConfig deploymentConfig = new DeploymentConfig(broadcaster);
         KarmaNFT karmaNFT = deploy(broadcaster, metadataGenerator, karmaAddress);
         return (karmaNFT, deploymentConfig);

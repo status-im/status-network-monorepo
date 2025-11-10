@@ -42,6 +42,7 @@ contract KarmaDistributorMock is IRewardDistributor {
 
     function redeemRewards(address account) external override returns (uint256) {
         uint256 amount = userKarmaShare[account];
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         rewardToken.transfer(account, amount);
         return amount;
     }
