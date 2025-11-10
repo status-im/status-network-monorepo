@@ -2,10 +2,9 @@
 pragma solidity ^0.8.26;
 
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-import { Test, console } from "forge-std/Test.sol";
+import { Test } from "forge-std/Test.sol";
 import { DeployKarmaScript } from "../../script/DeployKarma.s.sol";
 import { DeploymentConfig } from "../../script/DeploymentConfig.s.sol";
 import { Karma } from "../../src/Karma.sol";
@@ -179,12 +178,14 @@ contract KarmaTest is Test {
 
     function testTransfersNotAllowed() public {
         vm.expectRevert(Karma.Karma__TransfersNotAllowed.selector);
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(alice, 100e18);
 
         vm.expectRevert(Karma.Karma__TransfersNotAllowed.selector);
         karma.approve(alice, 100e18);
 
         vm.expectRevert(Karma.Karma__TransfersNotAllowed.selector);
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transferFrom(alice, bob, 100e18);
 
         uint256 allowance = karma.allowance(alice, bob);

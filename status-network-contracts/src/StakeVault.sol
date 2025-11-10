@@ -65,16 +65,12 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
     bool public hasLeft;
 
     modifier validDestination(address _destination) {
-        if (_destination == address(0)) {
-            revert StakeVault__InvalidDestinationAddress();
-        }
+        _validDestination(_destination);
         _;
     }
 
     modifier onlyNotLeft() {
-        if (hasLeft) {
-            revert StakeVault__MarkedAsLeft();
-        }
+        _onlyNotLeft();
         _;
     }
 
@@ -412,6 +408,18 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
             // We still do a `!=` check to be extra safe, in case a stake manager upgrade
             // removes all other checks.
             revert StakeVault__InvalidLockEnd();
+        }
+    }
+
+    function _validDestination(address _destination) internal pure {
+        if (_destination == address(0)) {
+            revert StakeVault__InvalidDestinationAddress();
+        }
+    }
+
+    function _onlyNotLeft() internal view {
+        if (hasLeft) {
+            revert StakeVault__MarkedAsLeft();
         }
     }
 

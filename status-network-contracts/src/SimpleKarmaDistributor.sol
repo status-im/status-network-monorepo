@@ -53,16 +53,12 @@ contract SimpleKarmaDistributor is Initializable, UUPSUpgradeable, AccessControl
     uint256[50] private __gap_SimpleKarmaDistributor;
 
     modifier onlyAdminOrOperator() {
-        if (!hasRole(DEFAULT_ADMIN_ROLE, msg.sender) && !hasRole(OPERATOR_ROLE, msg.sender)) {
-            revert SimpleKarmaDistributor__Unauthorized();
-        }
+        _onlyAdminOrOperator(msg.sender);
         _;
     }
 
     modifier onlyRewardsSupplier() {
-        if (msg.sender != rewardsSupplier) {
-            revert SimpleKarmaDistributor__Unauthorized();
-        }
+        _onlyRewardsSupplier(msg.sender);
         _;
     }
 
@@ -188,6 +184,18 @@ contract SimpleKarmaDistributor is Initializable, UUPSUpgradeable, AccessControl
      */
     function _authorizeUpgrade(address) internal view override {
         if (!hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
+            revert SimpleKarmaDistributor__Unauthorized();
+        }
+    }
+
+    function _onlyAdminOrOperator(address sender) internal view {
+        if (!hasRole(DEFAULT_ADMIN_ROLE, sender) && !hasRole(OPERATOR_ROLE, sender)) {
+            revert SimpleKarmaDistributor__Unauthorized();
+        }
+    }
+
+    function _onlyRewardsSupplier(address sender) internal view {
+        if (sender != rewardsSupplier) {
             revert SimpleKarmaDistributor__Unauthorized();
         }
     }

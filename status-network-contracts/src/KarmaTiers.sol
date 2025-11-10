@@ -35,9 +35,7 @@ contract KarmaTiers is Ownable {
     }
 
     modifier onlyValidTierId(uint8 tierId) {
-        if (tierId >= tiers.length) {
-            revert TierNotFound();
-        }
+        _onlyValidTierId(tierId);
         _;
     }
 
@@ -152,5 +150,11 @@ contract KarmaTiers is Ownable {
      */
     function getTierById(uint8 tierId) external view onlyValidTierId(tierId) returns (Tier memory tier) {
         return tiers[tierId];
+    }
+
+    function _onlyValidTierId(uint8 tierId) internal view {
+        if (tierId >= tiers.length) {
+            revert TierNotFound();
+        }
     }
 }

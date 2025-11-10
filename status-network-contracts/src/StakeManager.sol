@@ -96,30 +96,22 @@ contract StakeManager is
     uint256[30] private __gap_StakeManager;
 
     modifier onlyAdminOrGuardian() {
-        if (!hasRole(GUARDIAN_ROLE, msg.sender) && !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
-            revert StakeManager__Unauthorized();
-        }
+        _onlyAdminOrGuardian(msg.sender);
         _;
     }
 
     modifier onlyRegisteredVault() {
-        if (vaultOwners[msg.sender] == address(0)) {
-            revert StakeManager__VaultNotRegistered();
-        }
+        _onlyRegisteredVault(msg.sender);
         _;
     }
 
     modifier onlyNotEmergencyMode() {
-        if (emergencyModeEnabled) {
-            revert StakeManager__EmergencyModeEnabled();
-        }
+        _onlyNotEmergencyMode();
         _;
     }
 
     modifier onlyRewardsSupplier() {
-        if (msg.sender != rewardsSupplier) {
-            revert StakeManager__Unauthorized();
-        }
+        _onlyRewardsSupplier(msg.sender);
         _;
     }
 
@@ -698,6 +690,30 @@ contract StakeManager is
      */
     function _authorizeUpgrade(address) internal view override {
         if (!hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
+            revert StakeManager__Unauthorized();
+        }
+    }
+
+    function _onlyAdminOrGuardian(address sender) internal view {
+        if (!hasRole(GUARDIAN_ROLE, sender) && !hasRole(DEFAULT_ADMIN_ROLE, sender)) {
+            revert StakeManager__Unauthorized();
+        }
+    }
+
+    function _onlyRegisteredVault(address sender) internal view {
+        if (vaultOwners[sender] == address(0)) {
+            revert StakeManager__VaultNotRegistered();
+        }
+    }
+
+    function _onlyNotEmergencyMode() internal view {
+        if (emergencyModeEnabled) {
+            revert StakeManager__EmergencyModeEnabled();
+        }
+    }
+
+    function _onlyRewardsSupplier(address sender) internal view {
+        if (sender != rewardsSupplier) {
             revert StakeManager__Unauthorized();
         }
     }

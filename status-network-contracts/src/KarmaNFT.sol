@@ -20,6 +20,7 @@ contract KarmaNFT is Ownable {
     error KarmaNFT__InvalidTokenId();
 
     /// @notice The ERC20 token used to determine karma
+    /// forge-lint: disable-next-line(screaming-snake-case-immutable)
     IERC20 public immutable karmaToken;
     /// @notice The metadata generator contract
     INFTMetadataGenerator public metadataGenerator;
@@ -33,9 +34,7 @@ contract KarmaNFT is Ownable {
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
 
     modifier onlyValidTokenId(uint256 tokenId) {
-        if (tokenId > type(uint160).max) {
-            revert KarmaNFT__InvalidTokenId();
-        }
+        _onlyValidTokenId(tokenId);
         _;
     }
 
@@ -75,6 +74,7 @@ contract KarmaNFT is Ownable {
      * @return address The owner address corresponding to the token ID.
      */
     function ownerOf(uint256 tokenId) external pure onlyValidTokenId(tokenId) returns (address) {
+        // forge-lint: disable-next-line(unsafe-typecast)
         address owner = address(uint160(tokenId));
         return owner;
     }
@@ -134,8 +134,15 @@ contract KarmaNFT is Ownable {
      * @return string The token URI containing metadata.
      */
     function tokenURI(uint256 tokenId) external view onlyValidTokenId(tokenId) returns (string memory) {
+        // forge-lint: disable-next-line(unsafe-typecast)
         address account = address(uint160(tokenId));
         uint256 balance = karmaToken.balanceOf(account);
         return metadataGenerator.generate(account, balance);
+    }
+
+    function _onlyValidTokenId(uint256 tokenId) internal pure {
+        if (tokenId > type(uint160).max) {
+            revert KarmaNFT__InvalidTokenId();
+        }
     }
 }

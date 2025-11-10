@@ -23,10 +23,7 @@ abstract contract TrustedCodehashAccess is ITrustedCodehashAccess, AccessControl
      *         Only contracts with trusted codehashes can execute functions using this modifier.
      */
     modifier onlyTrustedCodehash() {
-        bytes32 codehash = msg.sender.codehash;
-        if (!trustedCodehashes[codehash]) {
-            revert TrustedCodehashAccess__UnauthorizedCodehash();
-        }
+        _onlyTrustedCodehash(msg.sender.codehash);
         _;
     }
 
@@ -57,5 +54,11 @@ abstract contract TrustedCodehashAccess is ITrustedCodehashAccess, AccessControl
      */
     function isTrustedCodehash(bytes32 _codehash) external view returns (bool) {
         return trustedCodehashes[_codehash];
+    }
+
+    function _onlyTrustedCodehash(bytes32 codehash) internal view {
+        if (!trustedCodehashes[codehash]) {
+            revert TrustedCodehashAccess__UnauthorizedCodehash();
+        }
     }
 }

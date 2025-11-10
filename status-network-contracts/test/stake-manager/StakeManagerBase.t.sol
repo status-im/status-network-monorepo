@@ -1,25 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import { Test, console } from "forge-std/Test.sol";
-import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { Test } from "forge-std/Test.sol";
 import { DeployKarmaScript } from "../../script/DeployKarma.s.sol";
 import { DeployStakeManagerScript } from "../../script/DeployStakeManager.s.sol";
 import { DeployVaultFactoryScript } from "../../script/DeployVaultFactory.s.sol";
 import { UpgradeStakeManagerScript } from "../../script/UpgradeStakeManager.s.sol";
 import { DeploymentConfig } from "../../script/DeploymentConfig.s.sol";
-import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
-import { IStakeManager } from "../../src/interfaces/IStakeManager.sol";
-import { ITrustedCodehashAccess } from "../../src/interfaces/ITrustedCodehashAccess.sol";
 import { StakeManager } from "../../src/StakeManager.sol";
 import { StakeMath } from "../../src/math/StakeMath.sol";
 import { StakeVault } from "../../src/StakeVault.sol";
 import { VaultFactory } from "../../src/VaultFactory.sol";
 import { Karma } from "../../src/Karma.sol";
 import { MockToken } from "../mocks/MockToken.sol";
-import { StackOverflowStakeManager } from "../mocks/StackOverflowStakeManager.sol";
 
 contract StakeManagerTest is StakeMath, Test {
     MockToken internal stakingToken;

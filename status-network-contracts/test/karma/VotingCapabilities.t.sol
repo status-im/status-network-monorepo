@@ -362,6 +362,7 @@ contract VotingCapabilityTest is KarmaTest {
         // Transfer 1 token from alice to bob (neither have delegated)
         vm.prank(alice);
         vm.recordLogs();
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(bob, 1);
 
         // Verify DelegateVotesChanged was NOT emitted
@@ -397,6 +398,7 @@ contract VotingCapabilityTest is KarmaTest {
         // Transfer 1 token from alice to bob
         vm.prank(alice);
         vm.recordLogs();
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(bob, 1);
 
         // Find the Transfer and DelegateVotesChanged events
@@ -449,6 +451,7 @@ contract VotingCapabilityTest is KarmaTest {
         // Transfer 1 token from alice to bob
         vm.prank(alice);
         vm.recordLogs();
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(bob, 1);
 
         // Find the Transfer and DelegateVotesChanged events
@@ -504,6 +507,7 @@ contract VotingCapabilityTest is KarmaTest {
         // Transfer 1 token from alice to bob
         vm.prank(alice);
         vm.recordLogs();
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(bob, 1);
 
         // Find the Transfer and DelegateVotesChanged events
@@ -570,6 +574,7 @@ contract VotingCapabilityTest is KarmaTest {
 
         // Transfer 100 tokens to bob
         vm.prank(alice);
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(bob, 100);
 
         // Initially other1 has no checkpoints
@@ -584,6 +589,7 @@ contract VotingCapabilityTest is KarmaTest {
         // t2: Bob transfers 10 tokens to other2
         vm.roll(block.number + 1);
         vm.prank(bob);
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(other2, 10);
 
         assertEq(karma.numCheckpoints(other1), 2);
@@ -591,6 +597,7 @@ contract VotingCapabilityTest is KarmaTest {
         // t3: Bob transfers another 10 tokens to other2
         vm.roll(block.number + 1);
         vm.prank(bob);
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(other2, 10);
 
         assertEq(karma.numCheckpoints(other1), 3);
@@ -598,6 +605,7 @@ contract VotingCapabilityTest is KarmaTest {
         // t4: Alice transfers 20 tokens back to bob
         vm.roll(block.number + 1);
         vm.prank(alice);
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(bob, 20);
 
         assertEq(karma.numCheckpoints(other1), 4);
@@ -650,6 +658,7 @@ contract VotingCapabilityTest is KarmaTest {
 
         // Transfer 100 tokens to bob
         vm.prank(alice);
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(bob, 100);
 
         // Initially other1 has no checkpoints
@@ -666,9 +675,11 @@ contract VotingCapabilityTest is KarmaTest {
         karma.delegate(other1);
 
         vm.prank(bob);
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(other2, 10);
 
         vm.prank(bob);
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(other2, 10);
 
         // Should only have 1 checkpoint despite 3 operations
@@ -682,6 +693,7 @@ contract VotingCapabilityTest is KarmaTest {
         // Move to next block and perform another operation
         vm.roll(block.number + 1);
         vm.prank(alice);
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(bob, 20);
         uint256 t4Block = block.number;
 
@@ -785,6 +797,7 @@ contract VotingCapabilityTest is KarmaTest {
 
         // t2: Alice transfers 10 tokens to other2
         vm.prank(alice);
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(other2, 10);
 
         // Advance 2 blocks
@@ -793,6 +806,7 @@ contract VotingCapabilityTest is KarmaTest {
 
         // t3: Alice transfers another 10 tokens to other2
         vm.prank(alice);
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(other2, 10);
 
         // Advance 2 blocks
@@ -801,6 +815,7 @@ contract VotingCapabilityTest is KarmaTest {
 
         // t4: other2 transfers 20 tokens back to alice
         vm.prank(other2);
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(alice, 20);
 
         // Advance 2 blocks

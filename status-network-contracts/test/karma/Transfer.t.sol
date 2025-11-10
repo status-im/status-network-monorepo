@@ -11,6 +11,7 @@ contract TransferTest is KarmaTest {
 
     function test_RevertWhen_TransferIsNotAllowed() public {
         vm.expectRevert(Karma.Karma__TransfersNotAllowed.selector);
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(alice, 100e18);
     }
 
@@ -35,6 +36,7 @@ contract TransferTest is KarmaTest {
 
         vm.prank(alice);
         vm.expectRevert("ERC20: transfer amount exceeds balance");
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(bob, transferableAmount + 1);
     }
 
@@ -48,6 +50,7 @@ contract TransferTest is KarmaTest {
         karma.setAllowedToTransfer(alice, true);
 
         vm.prank(alice);
+        /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(bob, amount);
 
         assertEq(karma.balanceOf(alice), 0);

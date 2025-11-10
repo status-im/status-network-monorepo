@@ -97,6 +97,7 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
         _setupRole(DEFAULT_ADMIN_ROLE, _owner);
         _setupRole(SLASHER_ROLE, _slasher);
         _setupRole(REGISTER_ROLE, _register);
+        /// forge-lint: disable-next-line(incorrect-shift)
         SET_SIZE = 1 << depth;
 
         karma = Karma(_token);
@@ -144,6 +145,7 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
             revert RLN__IdCommitmentAlreadyRegistered();
         }
 
+        /// forge-lint: disable-next-line(named-struct-fields)
         members[identityCommitment] = User(user, index);
         emit MemberRegistered(identityCommitment, index);
 
@@ -210,6 +212,7 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
         external
         onlyRole(SLASHER_ROLE)
     {
+        /// forge-lint: disable-next-line(asm-keccak256)
         bytes32 hash = keccak256(abi.encodePacked(privateKey, rewardRecipient));
         uint256 revealStartTime = slashCommitments[account][hash];
 

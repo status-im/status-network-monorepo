@@ -42,8 +42,10 @@
   tab_width = 4
   wrap_comments = true
 
-[profile.lint]
+[lint]
 lint_on_build = false # Since we are using our own linting solution, we can disable built in one
+exclude_lints = ["mixed-case-variable", "mixed-case-function"]
+ignore = ["src/utils/ERC20VotesUpgradeable.sol"]
 
 [rpc_endpoints]
   arbitrum = "https://arbitrum-mainnet.infura.io/v3/${API_KEY_INFURA}"
