@@ -4,7 +4,7 @@ The staking system is a core component of the Status Network and a reward distri
 system, that allows users to stake SNT tokens to earn Karma token. The illustration below provides an overview of the
 main components and their interactions within the staking system.
 
-![System Overview](assets/reward-distributor-staking-overview.png)
+![System Overview](../assets/reward-distributor-staking-overview.png)
 
 1. **Vault Factory**: A smart contract that allows accounts to create stake vaults. It interacts with the stake manager
    proxy to register newly created stake vaults.
