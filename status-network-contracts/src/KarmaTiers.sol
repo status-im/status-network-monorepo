@@ -81,7 +81,7 @@ contract KarmaTiers is Ownable {
             Tier calldata input = newTiers[i];
 
             _validateTierName(input.name);
-            if (input.maxKarma <= input.minKarma) {
+            if (input.maxKarma < input.minKarma) {
                 revert InvalidTierRange(input.minKarma, input.maxKarma);
             }
 
