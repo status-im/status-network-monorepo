@@ -122,4 +122,23 @@ contract KarmaTiersTest is Test {
         assertEq(karmaTiers.getTierIdByKarmaBalance(200), 1);
         assertEq(karmaTiers.getTierIdByKarmaBalance(250), 1);
     }
+
+    function test_Success_When_MinKarmaEqualsMaxKarma() public {
+        KarmaTiers.Tier[] memory newTiers = new KarmaTiers.Tier[](3);
+        newTiers[0] = KarmaTiers.Tier({ minKarma: 0, maxKarma: 0, name: "Zero", txPerEpoch: 1 });
+        newTiers[1] = KarmaTiers.Tier({ minKarma: 1, maxKarma: 1, name: "One", txPerEpoch: 2 });
+        newTiers[2] = KarmaTiers.Tier({ minKarma: 2, maxKarma: 100, name: "High", txPerEpoch: 10 });
+
+        vm.expectEmit(false, false, false, true);
+        emit KarmaTiers.TiersUpdated();
+
+        vm.prank(owner);
+        karmaTiers.updateTiers(newTiers);
+
+        assertEq(karmaTiers.getTierCount(), 3);
+        assertEq(karmaTiers.getTierIdByKarmaBalance(0), 0);
+        assertEq(karmaTiers.getTierIdByKarmaBalance(1), 1);
+        assertEq(karmaTiers.getTierIdByKarmaBalance(2), 2);
+        assertEq(karmaTiers.getTierIdByKarmaBalance(50), 2);
+    }
 }

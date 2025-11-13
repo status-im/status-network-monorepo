@@ -12,6 +12,7 @@ import { DeployKarmaNFTScript } from "./DeployKarmaNFT.s.sol";
 import { DeployStakeManagerScript } from "./DeployStakeManager.s.sol";
 import { DeployVaultFactoryScript } from "./DeployVaultFactory.s.sol";
 import { DeploySimpleKarmaDistributorScript } from "./DeploySimpleKarmaDistributor.s.sol";
+import { DeployKarmaTiersScript } from "./DeployKarmaTiers.s.sol";
 
 import { INFTMetadataGenerator } from "../src/interfaces/INFTMetadataGenerator.sol";
 import { Karma } from "../src/Karma.sol";
@@ -19,6 +20,7 @@ import { KarmaNFT } from "../src/KarmaNFT.sol";
 import { StakeManager } from "../src/StakeManager.sol";
 import { VaultFactory } from "../src/VaultFactory.sol";
 import { SimpleKarmaDistributor } from "../src/SimpleKarmaDistributor.sol";
+import { KarmaTiers } from "../src/KarmaTiers.sol";
 
 /**
  * @dev This script deploys the entire protocol including Karma, KarmaNFT, StakeManager, and VaultFactory.
@@ -38,6 +40,8 @@ contract DeployProtocolScript is BaseScript {
 
     DeploySimpleKarmaDistributorScript deploySimpleKarmaDistributor;
 
+    DeployKarmaTiersScript deployKarmaTiers;
+
     constructor() BaseScript() {
         deployKarma = new DeployKarmaScript();
         deployMetadataGenerator = new DeployMetadataGeneratorScript();
@@ -45,6 +49,7 @@ contract DeployProtocolScript is BaseScript {
         deployStakeManager = new DeployStakeManagerScript();
         deployVaultFactory = new DeployVaultFactoryScript();
         deploySimpleKarmaDistributor = new DeploySimpleKarmaDistributorScript();
+        deployKarmaTiers = new DeployKarmaTiersScript();
     }
 
     /**
@@ -161,6 +166,9 @@ contract DeployProtocolScript is BaseScript {
         (SimpleKarmaDistributor simpleKarmaDistributor, address simpleKarmaDistributorImpl) =
             deploySimpleKarmaDistributor.deploy(broadcaster, address(karma));
 
+        console.log("Deploying KarmaTiers...");
+        KarmaTiers karmaTiers = deployKarmaTiers.deploy(broadcaster);
+
         console.log("\nContract addresses:");
         console.log(address(karma), ": Karma (proxy)");
         console.log(karmaImpl, ": Karma (implementation)");
@@ -173,6 +181,7 @@ contract DeployProtocolScript is BaseScript {
         console.log(vaultProxyClone, ": StakeVault (proxy clone)");
         console.log(address(simpleKarmaDistributor), ": SimpleKarmaDistributor (proxy)");
         console.log(simpleKarmaDistributorImpl, ": SimpleKarmaDistributor (implementation)");
+        console.log(address(karmaTiers), ": KarmaTiers");
 
         /// INITIALIZATION
         vm.startBroadcast(broadcaster);
