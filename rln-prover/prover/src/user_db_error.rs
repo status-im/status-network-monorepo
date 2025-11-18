@@ -1,6 +1,7 @@
 use std::num::TryFromIntError;
 // third-party
 use alloy::primitives::Address;
+use sea_orm::DbErr;
 use zerokit_utils::error::{FromConfigError, ZerokitMerkleTreeError};
 // internal
 use crate::tier::ValidateTierLimitsError;
@@ -91,4 +92,34 @@ pub enum UserTierInfoError<E: std::error::Error> {
     TxCounter(#[from] TxCounterError),
     #[error(transparent)]
     Db(#[from] rocksdb::Error),
+}
+
+// UserDb2
+
+#[derive(thiserror::Error, Debug, PartialEq)]
+pub enum TxCounterError2 {
+    #[error("User (address: {0:?}) is not registered")]
+    NotRegistered(Address),
+    #[error(transparent)]
+    Db(#[from] DbErr),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SetTierLimitsError2 {
+    #[error(transparent)]
+    Validate(#[from] ValidateTierLimitsError),
+    #[error(transparent)]
+    Db(#[from] DbErr),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum UserTierInfoError2<E: std::error::Error> {
+    #[error("User {0} not registered")]
+    NotRegistered(Address),
+    #[error(transparent)]
+    Contract(E),
+    #[error(transparent)]
+    TxCounter(#[from] TxCounterError),
+    #[error(transparent)]
+    Db(#[from] DbErr),
 }
