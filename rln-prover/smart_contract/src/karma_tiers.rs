@@ -6,6 +6,7 @@ use alloy::{
     sol,
     transports::{RpcError, TransportErrorKind},
 };
+use serde::{Deserialize, Serialize};
 // internal
 // use crate::common::AlloyWsProvider;
 
@@ -235,7 +236,7 @@ impl<P: Provider> KarmaTiers::KarmaTiersInstance<P> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Tier {
     pub min_karma: U256,
     pub max_karma: U256,

@@ -4,6 +4,7 @@
 use ark_bn254::{Bn254, Fr};
 use ark_groth16::{Proof, ProvingKey};
 use ark_relations::r1cs::ConstraintMatrices;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use rln::utils::IdSecret;
 use rln::{
     circuit::zkey_from_folder,
@@ -15,12 +16,16 @@ use rln::{
     },
 };
 use zerokit_utils::ZerokitMerkleProof;
+use serde::{Deserialize, Serialize};
 
 /// A RLN user identity & limit
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RlnUserIdentity {
+    #[serde(serialize_with = "ark_se", deserialize_with = "ark_de")]
     pub commitment: Fr,
+    #[serde(serialize_with = "ark_se", deserialize_with = "ark_de")]
     pub secret_hash: IdSecret,
+    #[serde(serialize_with = "ark_se", deserialize_with = "ark_de")]
     pub user_limit: Fr,
 }
 
@@ -32,6 +37,26 @@ impl From<(Fr, IdSecret, Fr)> for RlnUserIdentity {
             user_limit,
         }
     }
+}
+
+fn ark_se<S, A: CanonicalSerialize>(a: &A, s: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    // TODO: with_capacity?
+    let mut bytes = vec![];
+    a.serialize_compressed(&mut bytes)
+        .map_err(serde::ser::Error::custom)?;
+    s.serialize_bytes(&bytes)
+}
+
+fn ark_de<'de, D, A: CanonicalDeserialize>(data: D) -> Result<A, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    let s: Vec<u8> = serde::de::Deserialize::deserialize(data)?;
+    let a = A::deserialize_compressed_unchecked(s.as_slice());
+    a.map_err(serde::de::Error::custom)
 }
 
 /// RLN info for a channel / group

@@ -20,6 +20,7 @@ mod user_db_types;
 mod epoch_service_tests;
 mod proof_service_tests;
 mod user_db_tests;
+mod user_db_2;
 
 // std
 use alloy::network::EthereumWallet;
