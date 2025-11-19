@@ -1099,6 +1099,7 @@ dependencies = [
  "arrayvec",
  "digest 0.10.7",
  "num-bigint",
+ "rayon",
 ]
 
 [[package]]
@@ -2404,6 +2405,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
+name = "function_name"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1ab577a896d09940b5fe12ec5ae71f9d8211fff62c919c03a3750a9901e98a7"
+dependencies = [
+ "function_name-proc-macro",
+]
+
+[[package]]
+name = "function_name-proc-macro"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673464e1e314dd67a0fd9544abc99e8eb28d0c7e3b69b033bcff9b2d00b87333"
+
+[[package]]
 name = "funty"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2686,6 +2702,12 @@ checksum = "5313b072ce3c597065a808dbf612c4c8e8590bdbf8b579508bf7a762c5eae6cd"
 dependencies = [
  "arrayvec",
 ]
+
+[[package]]
+name = "hex-literal"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ebdb29d2ea9ed0083cd8cece49bbd968021bd99b0849edb4a9a7ee0fdf6a4e0"
 
 [[package]]
 name = "hkdf"
@@ -3527,6 +3549,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-packer"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dca6ebc301ac35719463119b0bec0eb0e99644e6fc5f554cf1cd2564200cb6c1"
+
+[[package]]
 name = "num-traits"
 version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4258,6 +4286,32 @@ version = "0.1.0"
 dependencies = [
  "sea-orm-migration",
  "tokio",
+]
+
+[[package]]
+name = "prover_merkle_tree"
+version = "0.1.0"
+dependencies = [
+ "function_name",
+ "hex-literal",
+ "itertools 0.14.0",
+ "log",
+ "num-packer",
+ "prover_db_entity",
+ "prover_db_migration",
+ "prover_pmtree",
+ "sea-orm",
+ "thiserror",
+ "tokio",
+ "tracing-test",
+]
+
+[[package]]
+name = "prover_pmtree"
+version = "0.1.0"
+dependencies = [
+ "ark-serialize 0.5.0",
+ "rayon",
 ]
 
 [[package]]
