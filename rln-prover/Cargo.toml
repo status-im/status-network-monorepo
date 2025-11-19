@@ -7,6 +7,8 @@ members = [
     "prover_client",
     "prover_db_migration",
     "prover_db_entity",
+    "prover_pmtree",
+    "prover_merkle_tree",
 ]
 resolver = "2"
 

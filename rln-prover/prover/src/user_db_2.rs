@@ -3,6 +3,11 @@ use std::sync::Arc;
 use alloy::primitives::Address;
 use ark_bn254::Fr;
 use parking_lot::RwLock;
+// RLN
+use rln::{
+    hashers::poseidon_hash,
+    protocol::keygen,
+};
 // db
 use sea_orm::{DatabaseConnection, DbErr, EntityTrait, QueryFilter, ColumnTrait, TransactionTrait, IntoActiveModel, ActiveModelTrait, Set, Iden};
 use sea_orm::sea_query::OnConflict;
@@ -13,7 +18,7 @@ use smart_contract::KarmaAmountExt;
 use crate::epoch_service::{Epoch, EpochSlice};
 use crate::tier::{TierLimit, TierLimits, TierMatch};
 use crate::user_db::UserTierInfo;
-use crate::user_db_error::{RegisterError, SetTierLimitsError2, TxCounterError, TxCounterError2, UserTierInfoError2};
+use crate::user_db_error::{RegisterError, RegisterError2, SetTierLimitsError2, TxCounterError, TxCounterError2, UserTierInfoError2};
 use crate::user_db_types::{EpochCounter, EpochSliceCounter, IndexInMerkleTree, RateLimit, TreeIndex};
 
 const TIER_LIMITS_KEY: &str = "CURRENT";
@@ -245,6 +250,29 @@ impl UserDb2 {
                 (EpochCounter::from(0), EpochSliceCounter::from(0))
             }
         }
+    }
+
+    // user register
+
+    async fn register_user(&self, address: Address) -> Result<Fr, RegisterError2> {
+
+        // Generate RLN identity
+        let (identity_secret_hash, id_commitment) = keygen();
+
+        let rln_identity = RlnUserIdentity::from((
+            id_commitment,
+            identity_secret_hash,
+            Fr::from(self.rate_limit),
+        ));
+
+        if !self.has_user(&address).await? {
+            return Err(RegisterError2::AlreadyRegistered(address))
+        }
+
+        let rate_commit =
+            poseidon_hash(&[id_commitment, Fr::from(u64::from(self.rate_limit))]); 
+        
+        todo!()
     }
 
     // external UserDb methods

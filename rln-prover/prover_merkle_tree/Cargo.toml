@@ -1,0 +1,26 @@
+[package]
+name = "prover_merkle_tree"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+thiserror.workspace = true
+itertools = "0.14.0"
+num-packer = "0.1.2"
+prover_db_entity = { path = "../prover_db_entity" }
+prover_pmtree = { path = "../prover_pmtree" }
+
+[dependencies.sea-orm]
+version = "2.0.0-rc.18"
+features = [
+    "runtime-tokio-native-tls",
+    "sqlx-postgres",
+]
+
+[dev-dependencies]
+tokio.workspace = true
+hex-literal = "0.3.4"
+tracing-test = "0.2.5"
+prover_db_migration = { path = "../prover_db_migration" }
+log = "0.4.28"
+function_name = "0.3.0"
