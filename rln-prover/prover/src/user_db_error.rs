@@ -120,6 +120,22 @@ pub enum RegisterError2 {
     FromConfig(#[from] FromConfigError),
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum RegisterError2 {
+    #[error("User (address: {0:?}) has already been registered")]
+    AlreadyRegistered(Address),
+    #[error(transparent)]
+    Db(#[from] DbErr),
+    #[error("Too many users, exceeding merkle tree capacity...")]
+    TooManyUsers,
+    #[error("Merkle tree error: {0}")]
+    TreeError(ZerokitMerkleTreeError),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    FromConfig(#[from] FromConfigError),
+}
+
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum TxCounterError2 {
     #[error("User (address: {0:?}) is not registered")]
