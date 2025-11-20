@@ -13,8 +13,8 @@ pub mod persistent_db;
 
 use std::fmt::{Debug, Display};
 
-pub use database::*;
-pub use hasher::*;
+pub use database::Database;
+pub use hasher::Hasher;
 pub use tree::MerkleTree;
 
 /// Denotes keys in a database
