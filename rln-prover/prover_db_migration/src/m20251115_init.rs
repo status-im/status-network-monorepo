@@ -27,12 +27,13 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(TxCounter::Table)
                     .col(big_pk_auto(TxCounter::Id))
+                    // TODO: should be a foreign key to user table so we could drop user and tx_counter as well (cascade)
                     // TODO: address as binary + length limit (20 bytes)
                     .col(text(TxCounter::Address).unique_key())
-                    .col(big_integer(TxCounter::Epoch))
-                    .col(big_integer(TxCounter::EpochSlice))
-                    .col(big_integer(TxCounter::EpochCounter))
-                    .col(big_integer(TxCounter::EpochSliceCounter))
+                    .col(big_integer(TxCounter::Epoch).default(0))
+                    .col(big_integer(TxCounter::EpochSlice).default(0))
+                    .col(big_integer(TxCounter::EpochCounter).default(0))
+                    .col(big_integer(TxCounter::EpochSliceCounter).default(0))
                     .to_owned()
             ).await?;
 
@@ -44,6 +45,18 @@ impl MigrationTrait for Migration {
                     // TODO: Name limit
                     .col(text(TierLimits::Name).unique_key())
                     .col(json_null(TierLimits::TierLimits))
+                    .to_owned()
+            ).await?;
+
+        // The merkle tree configurations
+        manager
+            .create_table(
+                Table::create()
+                    .table(MTreeConfig::Table)
+                    .col(pk_auto(MTreeConfig::Id))
+                    .col(small_unsigned(MTreeConfig::TreeIndex).unique_key())
+                    .col(big_integer(MTreeConfig::Depth))
+                    .col(big_integer(MTreeConfig::NextIndex))
                     .to_owned()
             ).await?;
 
@@ -72,18 +85,6 @@ impl MigrationTrait for Migration {
                 .unique()
                 .to_owned()
         ).await?;
-
-        // The merkle tree configurations
-        manager
-            .create_table(
-                Table::create()
-                    .table(MTreeConfig::Table)
-                    .col(pk_auto(MTreeConfig::Id))
-                    .col(small_unsigned(MTreeConfig::TreeIndex).unique_key())
-                    .col(big_integer(MTreeConfig::Depth))
-                    .col(big_integer(MTreeConfig::NextIndex))
-                    .to_owned()
-            ).await?;
 
         Ok(())
     }

@@ -1,4 +1,4 @@
-use crate::{PmtreeResult, Value};
+use crate::Value;
 use crate::tree::Key;
 
 pub trait PersistentDatabase {

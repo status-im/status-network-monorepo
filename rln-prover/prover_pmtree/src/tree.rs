@@ -249,10 +249,10 @@ where
     }
 
     /// Inserts a leaf to the next available index
-    pub async fn update_next(&mut self, leaf: H::Fr) -> Result<(), E> {
-        self.set(self.next_index, leaf).await?;
-
-        Ok(())
+    pub async fn update_next(&mut self, leaf: H::Fr) -> Result<usize, E> {
+        let next_index = self.next_index;
+        self.set(next_index, leaf).await?;
+        Ok(next_index)
     }
 
     /// Batch insertion from starting index
