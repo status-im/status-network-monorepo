@@ -80,6 +80,7 @@ impl MigrationTrait for Migration {
         manager.create_index(
             Index::create()
                 .table(MTree::Table)
+                .name("unique_tree_index_index_in_tree")
                 .col(MTree::TreeIndex)
                 .col(MTree::IndexInTree)
                 .unique()
@@ -104,11 +105,18 @@ impl MigrationTrait for Migration {
         ).await?;
 
         manager.drop_table(
-            Table::drop().table(MTree::Table).if_exists().to_owned()
+            Table::drop().table(MTreeConfig::Table).if_exists().to_owned()
         ).await?;
 
         manager.drop_table(
-            Table::drop().table(MTreeConfig::Table).if_exists().to_owned()
+            Table::drop().table(MTree::Table).if_exists().to_owned()
+        ).await?;
+
+        manager.drop_index(
+            Index::drop().table(MTree::Table)
+                .name("unique_tree_index_index_in_tree")
+                .if_exists()
+                .to_owned()
         ).await?;
 
         Ok(())

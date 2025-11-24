@@ -51,7 +51,8 @@ prover_merkle_tree = { path = "../prover_merkle_tree" }
 prover_pmtree = { path = "../prover_pmtree" }
 sea-orm = { version = "2.0.0-rc.18", features = [
     "runtime-tokio-native-tls",
-    "sqlx-postgres"
+    "sqlx-postgres",
+    "debug-print"
 ]}
 
 [build-dependencies]
@@ -70,7 +71,8 @@ version = "2.0.0-rc.18"
 features = [
     "runtime-tokio-native-tls",
     "sqlx-postgres",
-    "sqlx-sqlite"
+    "sqlx-sqlite",
+    "debug-print"
 ]
 
 [[bench]]
