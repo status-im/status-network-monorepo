@@ -129,7 +129,7 @@ pub enum RegisterError2 {
     #[error("Too many users, exceeding merkle tree capacity...")]
     TooManyUsers,
     #[error("Merkle tree error: {0}")]
-    TreeError(ZerokitMerkleTreeError),
+    TreeError(MerkleTreeError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
