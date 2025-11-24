@@ -137,7 +137,7 @@ pub enum UserTierInfoError2<E: std::error::Error> {
     #[error(transparent)]
     Contract(E),
     #[error(transparent)]
-    TxCounter(#[from] TxCounterError),
+    TxCounter(#[from] TxCounterError2),
     #[error(transparent)]
     Db(#[from] DbErr),
 }

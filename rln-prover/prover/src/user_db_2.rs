@@ -21,8 +21,9 @@ use rln_proof::RlnUserIdentity;
 use smart_contract::KarmaAmountExt;
 use crate::epoch_service::{Epoch, EpochSlice};
 use crate::tier::{TierLimit, TierLimits, TierMatch};
-use crate::user_db::UserTierInfo;
-use crate::user_db_error::{RegisterError, RegisterError2, SetTierLimitsError2, TxCounterError2, UserTierInfoError2};
+use crate::user_db::{UserDb, UserTierInfo};
+use crate::user_db_error::{DbError, RegisterError, RegisterError2, SetTierLimitsError2, TxCounterError2, UserTierInfoError2};
+use crate::user_db_serialization::U64Deserializer;
 use crate::user_db_types::{EpochCounter, EpochSliceCounter, RateLimit};
 
 const TIER_LIMITS_KEY: &str = "CURRENT";
@@ -38,7 +39,7 @@ pub struct UserDb2Config {
 }
 
 #[derive(Clone)]
-struct UserDb2 {
+pub(crate) struct UserDb2 {
     db: DatabaseConnection,
     config: UserDb2Config,
     rate_limit: RateLimit,
@@ -78,6 +79,8 @@ impl UserDb2 {
         let merkle_tree_count = Self::get_merkle_tree_count(&db).await?;
         let mut merkle_trees = Vec::with_capacity(merkle_tree_count as usize);
 
+        println!("merkle tree count: {}", merkle_tree_count);
+
         if merkle_tree_count == 0 {
 
             // FIXME: 'as'
@@ -98,7 +101,22 @@ impl UserDb2 {
             }
 
         } else {
-            unimplemented!()
+
+            for i in 0..(config.tree_count as i16) {
+                let persistent_db_config = PersistentDbConfig {
+                    db_conn: db.clone(),
+                    tree_index: i,
+                    insert_batch_size: 10_000, // TODO: no hardcoded value
+                };
+
+                let mt = ProverMerkleTree::load(
+                    MemoryDbConfig,
+                    persistent_db_config.clone()
+                ).await.unwrap();
+
+                merkle_trees.push(mt);
+            }
+
         }
 
         Ok(Self {
@@ -112,7 +130,7 @@ impl UserDb2 {
 
     // (Internal) Simple Db related methods
 
-    async fn has_user(&self, address: &Address) -> Result<bool, DbErr> {
+    pub(crate) async fn has_user(&self, address: &Address) -> Result<bool, DbErr> {
         let res = user::Entity::find()
             .filter(user::Column::Address.eq(address.to_string()))
             .one(&self.db)
@@ -120,7 +138,7 @@ impl UserDb2 {
         Ok(res.is_some())
     }
 
-    async fn get_user(&self, address: &Address) -> Result<Option<user::Model>, DbErr> {
+    pub(crate) async fn get_user(&self, address: &Address) -> Result<Option<user::Model>, DbErr> {
 
         user::Entity::find()
             .filter(user::Column::Address.eq(address.to_string()))
@@ -209,6 +227,7 @@ impl UserDb2 {
                 res_active.epoch_slice_counter = Set(incr_value);
             } else if epoch_slice != EpochSlice::from(model_epoch_slice) {
                 // New epoch slice
+                res_active.epoch = Set(epoch.into());
                 res_active.epoch_slice = Set(epoch_slice.into());
                 res_active.epoch_counter = Set(model_epoch_counter.saturating_add(incr_value));
                 res_active.epoch_slice_counter = Set(incr_value);
@@ -244,19 +263,20 @@ impl UserDb2 {
         Ok((new_tx_counter.epoch_slice_counter as u64).into())
     }
 
-    async fn get_tx_counter(
+    pub(crate) async fn get_tx_counter(
         &self,
         address: &Address,
-    ) -> Result<(EpochCounter, EpochSliceCounter), DbErr> {
+    ) -> Result<(EpochCounter, EpochSliceCounter), TxCounterError2> {
 
         let res = tx_counter::Entity::find()
             .filter(tx_counter::Column::Address.eq(address.to_string()))
             .one(&self.db)
-            .await?
-            // TODO: return NotRegisteredError
-            .unwrap(); // FIXME
+            .await?;
 
-        Ok(self.counters_from_key(address, res))
+        match res {
+            None => Err(TxCounterError2::NotRegistered(address.clone())),
+            Some(res) => Ok(self.counters_from_key(address, res))
+        }
     }
 
     fn counters_from_key(
@@ -303,7 +323,7 @@ impl UserDb2 {
 
     // user register & delete (with app logic)
 
-    async fn register_user(&self, address: Address) -> Result<Fr, RegisterError2> {
+    pub(crate) async fn register_user(&self, address: Address) -> Result<Fr, RegisterError2> {
 
         // Generate RLN identity
         let (identity_secret_hash, id_commitment) = keygen();
@@ -349,7 +369,22 @@ impl UserDb2 {
                     return Err(RegisterError2::TooManyUsers);
                 }
 
-                unimplemented!("Create new tree")
+                let persistent_db_config = PersistentDbConfig {
+                    db_conn: self.db.clone(),
+                    tree_index: tree_count as i16, // FIXME: as
+                    insert_batch_size: 10_000, // TODO: no hardcoded value
+                };
+
+                let mut mt = ProverMerkleTree::load(
+                    MemoryDbConfig,
+                    persistent_db_config.clone()
+                ).await.unwrap();
+
+                mt.set(0, rate_commit).await.map_err(RegisterError2::TreeError)?;
+
+                guard.push(mt);
+
+                (tree_count as usize, 0)
             };
 
         drop(guard);
@@ -386,7 +421,6 @@ impl UserDb2 {
 
         if user.is_none() {
             // User not found (User not registered)
-            println!("User not found: {:?}", address);
             return Ok(false);
         }
 
@@ -403,6 +437,7 @@ impl UserDb2 {
         if mt.leaves_set().saturating_sub(1) == index_in_merkle_tree {
             mt.delete(index_in_merkle_tree).await?;
         } else {
+            // FIXME
             println!("Not the last {} {}", index_in_merkle_tree, mt.leaves_set());
         }
 
@@ -442,11 +477,9 @@ impl UserDb2 {
         let has_user = self
             .has_user(address)
             .await?;
-            // .map_err(TxCounterError2::Db)?;
 
         if has_user {
             let epoch_slice_counter = self.incr_tx_counter(address, incr_value).await?;
-            // FIXME: return? should we handle check against rate_limit here?
             Ok(epoch_slice_counter)
         } else {
             Err(TxCounterError2::NotRegistered(*address))
@@ -506,6 +539,27 @@ impl UserDb2 {
         };
 
         Ok(user_tier_info)
+    }
+}
+
+// Test only functions
+#[cfg(test)]
+impl UserDb2 {
+
+    pub(crate) async fn get_db_tree_count(&self) -> Result<u64, DbErr> {
+        m_tree_config::Entity::find().count(&self.db).await
+    }
+
+    pub(crate) async fn get_vec_tree_count(&self) -> usize {
+        self.merkle_trees.read().await.len()
+    }
+
+    pub(crate) async fn get_user_indexes(&self, address: &Address) -> (i64, i64) {
+
+        let user_model = self.get_user(address).await
+            .unwrap().unwrap();
+
+        (user_model.tree_index, user_model.index_in_merkle_tree)
     }
 }
 
