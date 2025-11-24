@@ -43,7 +43,7 @@ struct UserDb2 {
     config: UserDb2Config,
     rate_limit: RateLimit,
     pub(crate) epoch_store: Arc<RwLock<(Epoch, EpochSlice)>>,
-    merkle_trees: Vec<Arc<TokioRwLock<ProverMerkleTree>>>,
+    merkle_trees: Arc<TokioRwLock<Vec<ProverMerkleTree>>>,
 }
 
 impl UserDb2 {
@@ -94,7 +94,7 @@ impl UserDb2 {
                     persistent_db_config.clone()
                 ).await.unwrap();
 
-                merkle_trees.push(Arc::new(TokioRwLock::new(mt)));
+                merkle_trees.push(mt);
             }
 
         } else {
@@ -106,7 +106,7 @@ impl UserDb2 {
             config,
             rate_limit,
             epoch_store,
-            merkle_trees,
+            merkle_trees: Arc::new(TokioRwLock::new(merkle_trees)),
         })
     }
 
@@ -321,23 +321,47 @@ impl UserDb2 {
         let rate_commit =
             poseidon_hash(&[id_commitment, Fr::from(u64::from(self.rate_limit))]);
 
-        let tree_index = 0; // FIXME
-        let mut mt = self.merkle_trees[tree_index].write().await;
+        let mut guard = self.merkle_trees.write().await;
+
+        let found = guard
+            .iter_mut()
+            .enumerate()
+            .find(|(_, tree)| tree.leaves_set() < tree.capacity());
+
+        let (last_tree_index, last_index_in_mt) =
+            if let Some((tree_index, tree_to_set)) = found {
+                // Found a tree that can accept our new user
+                let index_in_mt = tree_to_set.leaves_set();
+                tree_to_set
+                    .set(index_in_mt, rate_commit)
+                    .await
+                    .map_err(RegisterError2::TreeError)?;
+
+                (tree_index, index_in_mt)
+            } else {
+
+                // All trees are full, let's create a new one that can accept our new user
+
+                // as safe : assume sizeof usize == sizeof 64 (see user_db_types.rs)
+                let tree_count = guard.len() as u64;
+
+                if tree_count == self.config.max_tree_count {
+                    return Err(RegisterError2::TooManyUsers);
+                }
+
+                unimplemented!("Create new tree")
+            };
+
+        drop(guard);
 
         let txn = self.db.begin().await?;
-
-        // mt.set(mt.next_index, leaf).await?;
-
-        // FIXME: no unwrap
-        let index_in_merkle_tree = mt.update_next(rate_commit).await.unwrap();
-        println!("[reg {}] index_in_merkle_tree: {}", address, index_in_merkle_tree);
 
         // TODO: unwrap safe?
         let user_active_model = user::ActiveModel {
             address: Set(address.to_string()),
             rln_id: Set(serde_json::to_value(rln_identity).unwrap()),
-            tree_index: Set(tree_index as i64),
-            index_in_merkle_tree: Set(index_in_merkle_tree as i64), // FIXME
+            tree_index: Set(last_tree_index as i64),
+            index_in_merkle_tree: Set(last_index_in_mt as i64), // FIXME
             ..Default::default()
         };
 
@@ -370,14 +394,16 @@ impl UserDb2 {
         let tree_index = user.tree_index as usize;
         let index_in_merkle_tree = user.index_in_merkle_tree as usize;
 
-        let mut guard = self.merkle_trees[tree_index].write().await;
+        let mut guard = self.merkle_trees.write().await;
+        // FIXME: unwrap safe?
+        let mt = guard.get_mut(tree_index).unwrap();
         // Only delete it if this is the last index
         // Note: No reuse of index in PmTree (as this is a generic impl and could lead to security issue:
         // like replay attack...)
-        if guard.leaves_set().saturating_sub(1) == index_in_merkle_tree {
-            guard.delete(index_in_merkle_tree).await?;
+        if mt.leaves_set().saturating_sub(1) == index_in_merkle_tree {
+            mt.delete(index_in_merkle_tree).await?;
         } else {
-            println!("Not the last {} {}", index_in_merkle_tree, guard.leaves_set());
+            println!("Not the last {} {}", index_in_merkle_tree, mt.leaves_set());
         }
 
         // TODO: delete in merkle tree in txn
@@ -519,7 +545,6 @@ pub enum MerkleTreeError {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
     use super::*;
     // std
     // third-party
@@ -527,12 +552,10 @@ mod tests {
     use async_trait::async_trait;
     use claims::assert_matches;
     use derive_more::Display;
-    use sea_orm::Database;
+    use sea_orm::{ConnectionTrait, Database, Statement};
     use tracing_test::traced_test;
-    use zerokit_utils::ZerokitMerkleTree;
     // internal
     use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
-    use crate::user_db::{UserDb, UserDbConfig};
 
     #[derive(Debug, Display, thiserror::Error)]
     struct DummyError();
@@ -552,6 +575,38 @@ mod tests {
     const ADDR_2: Address = address!("0xb20a608c624Ca5003905aA834De7156C68b2E1d0");
     pub(crate) const MERKLE_TREE_HEIGHT: u8 = 20;
 
+    async fn create_database_connection(db_name: &str) -> Result<DatabaseConnection, DbErr> {
+
+        // Drop / Create db_name then return a connection to it
+
+        let db_url_base = "postgres://myuser:mysecretpassword@localhost";
+        let db_url = format!("{}/{}", db_url_base, "mydatabase");
+        let db = Database::connect(db_url)
+            .await
+            .expect("Database connection 0 failed");
+
+        db.execute_raw(Statement::from_string(
+            db.get_database_backend(),
+            format!("DROP DATABASE IF EXISTS \"{}\";", db_name),
+        ))
+        .await?;
+        db.execute_raw(Statement::from_string(
+            db.get_database_backend(),
+            format!("CREATE DATABASE \"{}\";", db_name),
+        ))
+        .await?;
+
+        db.close().await?;
+
+        let db_url_final = format!("{}/{}", db_url_base, db_name);
+        let db = Database::connect(db_url_final)
+            .await
+            .expect("Database connection failed");
+        MigratorCreate::up(&db, None).await?;
+
+        Ok(db)
+    }
+
     #[tokio::test]
     // #[traced_test]
     async fn test_user_register() {
@@ -567,18 +622,9 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-
-        // Note: use postgresql until sea-orm fixes
-        // let db_url = "sqlite::memory:";
-        let db_url = "sqlite://user_db_test_user_register.sqlite?mode=rwc";
-        // let db_url = format!(
-        //     "postgres://myuser:mysecretpassword@localhost/{}",
-        //     "user_db_test_user_register"
-        // );
-        let db_conn = Database::connect(db_url)
+        let db_conn = create_database_connection("user_db_test_user_register")
             .await
-            .expect("Database connection failed");
-        MigratorCreate::up(&db_conn, None).await.unwrap();
+            .unwrap();
 
         let user_db = UserDb2::new(db_conn, config, epoch_store, Default::default(), Default::default())
             .await
@@ -608,23 +654,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_tx_counter() {
-        // let temp_folder = tempfile::tempdir().unwrap();
-        // let temp_folder_tree = tempfile::tempdir().unwrap();
         let epoch_store = Arc::new(RwLock::new(Default::default()));
         let config = UserDb2Config {
             tree_count: 1,
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-
-        let db_url = format!(
-            "postgres://myuser:mysecretpassword@localhost/{}",
-            "user_db_test_tx_counter"
-        );
-        let db_conn = Database::connect(db_url)
+        let db_conn = create_database_connection("user_db_test_tx_counter")
             .await
-            .expect("Database connection failed");
-        MigratorCreate::up(&db_conn, None).await.unwrap();
+            .unwrap();
 
         let user_db = UserDb2::new(db_conn, config, epoch_store, Default::default(), Default::default())
             .await
@@ -652,14 +690,9 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let db_url = format!(
-            "postgres://myuser:mysecretpassword@localhost/{}",
-            "user_db_test_incr_tx_counter"
-        );
-        let db_conn = Database::connect(db_url)
+        let db_conn = create_database_connection("user_db_test_incr_tx_counter")
             .await
-            .expect("Database connection failed");
-        MigratorCreate::up(&db_conn, None).await.unwrap();
+            .unwrap();
 
         let user_db = UserDb2::new(db_conn, config, epoch_store, Default::default(), Default::default())
             .await
@@ -703,29 +736,32 @@ mod tests {
             max_tree_count: 1,
             tree_depth: crate::user_db::MERKLE_TREE_HEIGHT,
         };
-        let db_url = format!(
-            "postgres://myuser:mysecretpassword@localhost/{}",
-            "user_db_test_user_remove"
-        );
-        let db_conn = Database::connect(db_url)
+        let db_conn = create_database_connection("user_db_test_user_remove")
             .await
-            .expect("Database connection failed");
-        MigratorCreate::up(&db_conn, None).await.unwrap();
+            .unwrap();
 
         let user_db = UserDb2::new(db_conn, config, epoch_store, Default::default(), Default::default())
             .await
             .expect("Cannot create UserDb");
 
         user_db.register_user(ADDR_1).await.unwrap();
-        let mtree_index_add_addr_1 = user_db.merkle_trees[0].read().await.leaves_set();
+        let guard = user_db.merkle_trees.read().await;
+        let mtree_index_add_addr_1 = guard[0].leaves_set();
+        // Note: need to drop read guard before registering user as register_user tries to acquire
+        // write lock on merkle trees (and will wait indefinitely if a read lock is held)
+        drop(guard);
         user_db.register_user(ADDR_2).await.unwrap();
-        let mtree_index_add_addr_2 = user_db.merkle_trees[0].read().await.leaves_set();
+        let guard = user_db.merkle_trees.read().await;
+        let mtree_index_add_addr_2 = guard[0].leaves_set();
+        drop(guard);
         assert_ne!(mtree_index_add_addr_1, mtree_index_add_addr_2);
         println!("index addr 1: {}", mtree_index_add_addr_1);
         println!("index addr 2: {}", mtree_index_add_addr_2);
 
         user_db.remove_user(&ADDR_2).await.unwrap();
-        let mtree_index_after_rm_addr_2 = user_db.merkle_trees[0].read().await.leaves_set();
+        let guard = user_db.merkle_trees.read().await;
+        let mtree_index_after_rm_addr_2 = guard[0].leaves_set();
+        drop(guard);
         assert_eq!(user_db.has_user(&ADDR_1).await, Ok(true));
         assert_eq!(user_db.has_user(&ADDR_2).await, Ok(false));
         // No reuse of index in PmTree (as this is a generic impl and could lead to security issue:
@@ -733,4 +769,53 @@ mod tests {
         assert_eq!(mtree_index_after_rm_addr_2, mtree_index_add_addr_2);
     }
 
+    #[tokio::test]
+    // #[traced_test]
+    async fn test_user_reg_merkle_tree_fail() {
+        // Try to register some users but init UserDb so the merkle tree write will fail (after 1st register)
+        // This tests ensures that the DB and the MerkleTree stays in sync
+
+        let epoch_store = Arc::new(RwLock::new(Default::default()));
+        let config = UserDb2Config {
+            tree_count: 1,
+            max_tree_count: 1,
+            tree_depth: 1,
+        };
+        let db_conn = create_database_connection("user_db_test_user_reg_merkle_tree_fail")
+            .await
+            .unwrap();
+
+        let user_db = UserDb2::new(db_conn, config, epoch_store, Default::default(), Default::default())
+            .await
+            .expect("Cannot create UserDb");
+
+        let addr = Address::new([0; 20]);
+        {
+            let guard = user_db.merkle_trees.read().await;
+            let mt = guard.get(0).unwrap();
+            assert_eq!(mt.leaves_set(), 0);
+        }
+        user_db.register_user(addr).await.unwrap();
+        {
+            let guard = user_db.merkle_trees.read().await;
+            let mt = guard.get(0).unwrap();
+            assert_eq!(mt.leaves_set(), 1);
+        }
+        user_db.register_user(ADDR_1).await.unwrap();
+        {
+            let guard = user_db.merkle_trees.read().await;
+            let mt = guard.get(0).unwrap();
+            assert_eq!(mt.leaves_set(), 2);
+        }
+
+        let res = user_db.register_user(ADDR_2).await;
+        assert_matches!(res, Err(RegisterError2::TooManyUsers));
+        assert_eq!(user_db.has_user(&ADDR_1).await, Ok(true));
+        assert_eq!(user_db.has_user(&ADDR_2).await, Ok(false));
+        {
+            let guard = user_db.merkle_trees.read().await;
+            let mt = guard.get(0).unwrap();
+            assert_eq!(mt.leaves_set(), 2);
+        }
+    }
 }
