@@ -702,6 +702,11 @@ mod tests {
         //     .with_test_writer()
         //     .init();
 
+        // tracing_subscriber::fmt()
+        //     .with_max_level(tracing::Level::DEBUG)
+        //     .with_test_writer()
+        //     .init();
+
         let epoch_store = Arc::new(RwLock::new(Default::default()));
         let config = UserDb2Config {
             tree_count: 1,
