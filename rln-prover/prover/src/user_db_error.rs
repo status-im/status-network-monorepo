@@ -5,6 +5,8 @@ use sea_orm::DbErr;
 use zerokit_utils::error::{FromConfigError, ZerokitMerkleTreeError};
 // internal
 use crate::tier::ValidateTierLimitsError;
+// TODO: define MerkleTreeError here?
+use crate::user_db_2::MerkleTreeError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum UserDbOpenError {
@@ -105,7 +107,7 @@ pub enum RegisterError2 {
     #[error("Too many users, exceeding merkle tree capacity...")]
     TooManyUsers,
     #[error("Merkle tree error: {0}")]
-    TreeError(ZerokitMerkleTreeError),
+    TreeError(MerkleTreeError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
