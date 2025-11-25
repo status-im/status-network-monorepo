@@ -620,6 +620,7 @@ pub enum MerkleTreeError {
     PDb(#[from] PersistentDbError),
 }
 
+#[cfg(feature = "postgres")]
 #[cfg(test)]
 mod tests {
     use super::*;

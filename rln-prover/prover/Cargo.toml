@@ -82,3 +82,6 @@ harness = false
 [[bench]]
 name = "prover_many_subscribers"
 harness = false
+
+[features]
+postgres = []

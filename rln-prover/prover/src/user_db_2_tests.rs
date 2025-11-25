@@ -1,3 +1,4 @@
+#[cfg(feature = "postgres")]
 #[cfg(test)]
 mod tests {
     // std
