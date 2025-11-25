@@ -104,8 +104,6 @@ impl UserDb2 {
         let merkle_tree_count = Self::get_merkle_tree_count_from_db(&db).await?;
         let mut merkle_trees = Vec::with_capacity(merkle_tree_count as usize);
 
-        println!("merkle tree count: {}", merkle_tree_count);
-
         if merkle_tree_count == 0 {
             // FIXME: 'as'
             for i in 0..(config.tree_count as i16) {
