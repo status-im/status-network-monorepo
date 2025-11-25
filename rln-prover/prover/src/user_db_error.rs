@@ -3,6 +3,7 @@ use std::num::TryFromIntError;
 use alloy::primitives::Address;
 use sea_orm::DbErr;
 use zerokit_utils::error::{FromConfigError, ZerokitMerkleTreeError};
+use prover_pmtree::PmtreeErrorKind;
 // internal
 use crate::tier::ValidateTierLimitsError;
 // TODO: define MerkleTreeError here?
@@ -97,6 +98,11 @@ pub enum UserTierInfoError<E: std::error::Error> {
 }
 
 // UserDb2
+#[derive(Debug, thiserror::Error)]
+pub enum UserDb2OpenError {
+    #[error(transparent)]
+    Db(#[from] DbErr),
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum RegisterError2 {
@@ -121,6 +127,26 @@ pub enum TxCounterError2 {
     #[error(transparent)]
     Db(#[from] DbErr),
 }
+
+#[derive(thiserror::Error, Debug)]
+pub enum GetMerkleTreeProofError2 {
+    #[error("User (address: {0:?}) is not registered")]
+    NotRegistered(Address),
+    #[error(transparent)]
+    Db(#[from] DbErr),
+    #[error(transparent)]
+    MerkleTree(#[from] PmtreeErrorKind)
+}
+
+/*
+#[derive(thiserror::Error, Debug, PartialEq, Clone)]
+pub enum UserMerkleTreeIndexError2 {
+    #[error("User (address: {0:?}) is not registered")]
+    NotRegistered(Address),
+    #[error(transparent)]
+    Db(#[from] DbErr),
+}
+*/
 
 #[derive(Debug, thiserror::Error)]
 pub enum SetTierLimitsError2 {

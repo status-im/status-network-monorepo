@@ -1,6 +1,7 @@
 // std
 use parking_lot::RwLock;
 use std::sync::Arc;
+use sea_orm::{Database, DatabaseConnection};
 // third-party
 use tokio::sync::Notify;
 use tracing::debug;
@@ -9,32 +10,36 @@ use crate::epoch_service::{Epoch, EpochSlice};
 use crate::error::AppError;
 use crate::tier::TierLimits;
 use crate::user_db::{UserDb, UserDbConfig};
-use crate::user_db_error::UserDbOpenError;
+use crate::user_db_2::{UserDb2, UserDb2Config};
+use crate::user_db_error::{UserDb2OpenError, UserDbOpenError};
 use crate::user_db_types::RateLimit;
 
 /// Async service to update a UserDb on epoch changes
 #[derive(Debug)]
 pub struct UserDbService {
-    user_db: UserDb,
+    user_db: UserDb2,
     epoch_changes: Arc<Notify>,
 }
 
 impl UserDbService {
-    pub fn new(
-        config: UserDbConfig,
+    pub async fn new(
+        db_conn: DatabaseConnection,
+        config: UserDb2Config,
         epoch_changes_notifier: Arc<Notify>,
         epoch_store: Arc<RwLock<(Epoch, EpochSlice)>>,
         rate_limit: RateLimit,
         tier_limits: TierLimits,
-    ) -> Result<Self, UserDbOpenError> {
-        let user_db = UserDb::new(config, epoch_store, tier_limits, rate_limit)?;
+    ) -> Result<Self, UserDb2OpenError> {
+
+        let user_db = UserDb2::new(db_conn, config, epoch_store, tier_limits, rate_limit)
+            .await?;
         Ok(Self {
             user_db,
             epoch_changes: epoch_changes_notifier,
         })
     }
 
-    pub fn get_user_db(&self) -> UserDb {
+    pub fn get_user_db(&self) -> UserDb2 {
         self.user_db.clone()
     }
 
@@ -65,11 +70,13 @@ impl UserDbService {
         current_epoch_slice: &mut EpochSlice,
         new_epoch_slice: EpochSlice,
     ) {
+        /*
         if new_epoch > *current_epoch {
             self.user_db.on_new_epoch()
         } else if new_epoch_slice > *current_epoch_slice {
             self.user_db.on_new_epoch_slice()
         }
+        */
 
         *current_epoch = new_epoch;
         *current_epoch_slice = new_epoch_slice;

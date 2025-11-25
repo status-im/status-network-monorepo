@@ -15,7 +15,7 @@ use std::fmt::{Debug, Display};
 
 pub use database::Database;
 pub use hasher::Hasher;
-pub use tree::MerkleTree;
+pub use tree::{MerkleTree, MerkleProof};
 
 /// Denotes keys in a database
 pub type DBKey = [u8; 8];

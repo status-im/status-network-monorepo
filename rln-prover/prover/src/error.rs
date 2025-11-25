@@ -6,9 +6,7 @@ use smart_contract::{KarmaScError, KarmaTiersError, RlnScError};
 // internal
 use crate::epoch_service::WaitUntilError;
 use crate::tier::ValidateTierLimitsError;
-use crate::user_db_error::{
-    RegisterError, TxCounterError, UserDbOpenError, UserMerkleTreeIndexError,
-};
+use crate::user_db_error::{RegisterError, TxCounterError, TxCounterError2, UserDb2OpenError, UserDbOpenError, UserMerkleTreeIndexError};
 
 #[derive(thiserror::Error, Debug)]
 pub enum AppError {
@@ -41,6 +39,39 @@ pub enum AppError {
     #[error(transparent)]
     MockUserTxCounterError(#[from] TxCounterError),
 }
+
+#[derive(thiserror::Error, Debug)]
+pub enum AppError2 {
+    #[error("Tonic (grpc) error: {0}")]
+    Tonic(#[from] tonic::transport::Error),
+    #[error("Tonic reflection (grpc) error: {0}")]
+    TonicReflection(#[from] tonic_reflection::server::Error),
+    #[error("Rpc error 1: {0}")]
+    RpcError(#[from] RpcError<RpcError<TransportErrorKind>>),
+    #[error("Rpc transport error 2: {0}")]
+    RpcTransportError(#[from] RpcError<TransportErrorKind>),
+    #[error("Epoch service error: {0}")]
+    EpochError(#[from] WaitUntilError),
+    #[error(transparent)]
+    RegistryError(#[from] HandleTransferError),
+    #[error(transparent)]
+    KarmaScError(#[from] KarmaScError),
+    #[error(transparent)]
+    KarmaTiersError(#[from] KarmaTiersError),
+    #[error(transparent)]
+    RlnScError(#[from] RlnScError),
+    #[error(transparent)]
+    SignerInitError(#[from] LocalSignerError),
+    #[error(transparent)]
+    ValidateTierError(#[from] ValidateTierLimitsError),
+    #[error(transparent)]
+    UserDbOpenError(#[from] UserDb2OpenError),
+    #[error(transparent)]
+    MockUserRegisterError(#[from] RegisterError),
+    #[error(transparent)]
+    MockUserTxCounterError(#[from] TxCounterError2),
+}
+
 
 #[derive(thiserror::Error, Debug)]
 pub enum ProofGenerationError {

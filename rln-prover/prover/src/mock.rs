@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MockUser {
     pub address: Address,
-    pub tx_count: u64,
+    pub tx_count: i64,
 }
 
 pub fn read_mock_user(path: &PathBuf) -> Result<Vec<MockUser>, MockUserError> {
