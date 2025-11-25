@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 // third-party
 use num_packer::U32Packer;
-use itertools::Itertools;
 // use sea-orm
 use sea_orm::{
     DatabaseConnection, DbErr, Set,
