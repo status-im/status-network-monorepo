@@ -21,14 +21,14 @@ use tower_http::cors::{Any, CorsLayer};
 use tracing::{debug, error, info, warn};
 use url::Url;
 // internal
-use crate::error::{AppError, ProofGenerationStringError};
+use crate::error::{AppError2, ProofGenerationStringError};
 use crate::metrics::{
     GET_PROOFS_LISTENERS, GET_USER_TIER_INFO_REQUESTS, GaugeWrapper,
     PROOF_SERVICES_CHANNEL_QUEUE_LEN, SEND_TRANSACTION_REQUESTS,
 };
 use crate::proof_generation::{ProofGenerationData, ProofSendingData};
-use crate::user_db::{UserDb, UserTierInfo};
-use rln_proof::{RlnIdentifier, RlnUserIdentity};
+use crate::user_db::{UserTierInfo};
+use rln_proof::{RlnIdentifier};
 use smart_contract::{KarmaAmountExt, KarmaSC::KarmaSCInstance, MockKarmaSc};
 
 pub mod prover_proto {
@@ -60,7 +60,6 @@ use prover_proto::{
     rln_prover_server::{RlnProver, RlnProverServer},
 };
 use crate::user_db_2::UserDb2;
-use crate::user_db_error::UserTierInfoError2;
 
 const PROVER_SERVICE_LIMIT_PER_CONNECTION: usize = 16;
 // Timeout for all handlers of a request (increased to 5 minutes for streaming support)
@@ -360,7 +359,7 @@ pub(crate) struct GrpcProverService<P: Provider> {
 }
 
 impl<P: Provider + Clone + Send + Sync + 'static> GrpcProverService<P> {
-    pub(crate) async fn serve(&self) -> Result<(), AppError> {
+    pub(crate) async fn serve(&self) -> Result<(), AppError2> {
         let karma_sc = if let Some(karma_sc_info) = self.karma_sc_info.as_ref()
             && let Some(provider) = self.provider.as_ref()
         {
@@ -433,11 +432,11 @@ impl<P: Provider + Clone + Send + Sync + 'static> GrpcProverService<P> {
             .add_optional_service(reflection_service)
             .add_service(r)
             .serve(self.addr)
-            .map_err(AppError::from)
+            .map_err(AppError2::from)
             .await
     }
 
-    pub(crate) async fn serve_with_mock(&self) -> Result<(), AppError> {
+    pub(crate) async fn serve_with_mock(&self) -> Result<(), AppError2> {
         let prover_service = ProverService {
             proof_sender: self.proof_sender.clone(),
             user_db: self.user_db.clone(),
@@ -503,7 +502,7 @@ impl<P: Provider + Clone + Send + Sync + 'static> GrpcProverService<P> {
             .add_optional_service(reflection_service)
             .add_service(r)
             .serve(self.addr)
-            .map_err(AppError::from)
+            .map_err(AppError2::from)
             .await
     }
 }

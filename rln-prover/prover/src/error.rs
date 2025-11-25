@@ -6,7 +6,7 @@ use smart_contract::{KarmaScError, KarmaTiersError, RlnScError};
 // internal
 use crate::epoch_service::WaitUntilError;
 use crate::tier::ValidateTierLimitsError;
-use crate::user_db_error::{RegisterError, TxCounterError, TxCounterError2, UserDb2OpenError, UserDbOpenError, UserMerkleTreeIndexError};
+use crate::user_db_error::{RegisterError, RegisterError2, TxCounterError, TxCounterError2, UserDb2OpenError, UserDbOpenError, UserMerkleTreeIndexError};
 
 #[derive(thiserror::Error, Debug)]
 pub enum AppError {
@@ -53,7 +53,7 @@ pub enum AppError2 {
     #[error("Epoch service error: {0}")]
     EpochError(#[from] WaitUntilError),
     #[error(transparent)]
-    RegistryError(#[from] HandleTransferError),
+    RegistryError(#[from] HandleTransferError2),
     #[error(transparent)]
     KarmaScError(#[from] KarmaScError),
     #[error(transparent)]
@@ -67,7 +67,7 @@ pub enum AppError2 {
     #[error(transparent)]
     UserDbOpenError(#[from] UserDb2OpenError),
     #[error(transparent)]
-    MockUserRegisterError(#[from] RegisterError),
+    MockUserRegisterError(#[from] RegisterError2),
     #[error(transparent)]
     MockUserTxCounterError(#[from] TxCounterError2),
 }
@@ -126,6 +126,16 @@ pub enum HandleTransferError {
     #[error(transparent)]
     Register(#[from] RegisterError),
 
+    #[error("Fail to register user in RLN SC: {0}")]
+    ScRegister(#[from] RegisterSCError),
+    #[error("Unable to query balance: {0}")]
+    FetchBalanceOf(#[from] alloy::contract::Error),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum HandleTransferError2 {
+    #[error(transparent)]
+    Register(#[from] RegisterError2),
     #[error("Fail to register user in RLN SC: {0}")]
     ScRegister(#[from] RegisterSCError),
     #[error("Unable to query balance: {0}")]

@@ -9,7 +9,7 @@ use parking_lot::RwLock;
 use tokio::sync::Notify;
 use tracing::{debug, error};
 // internal
-use crate::error::AppError;
+use crate::error::{AppError2};
 use crate::metrics::{
     EPOCH_SERVICE_CURRENT_EPOCH, EPOCH_SERVICE_CURRENT_EPOCH_SLICE, EPOCH_SERVICE_DRIFT_MILLIS,
 };
@@ -44,7 +44,7 @@ impl EpochService {
     // Note: listen_for_new_epoch never ends so no log will happen with #[instrument]
     //       + metrics already tracks the current epoch / epoch_slice
     // #[instrument(skip(self), fields(self.epoch_slice_duration, self.genesis, self.current_epoch))]
-    pub(crate) async fn listen_for_new_epoch(&self) -> Result<(), AppError> {
+    pub(crate) async fn listen_for_new_epoch(&self) -> Result<(), AppError2> {
         let epoch_slice_count =
             Self::compute_epoch_slice_count(EPOCH_DURATION, self.epoch_slice_duration);
         debug!("epoch slice in an epoch: {}", epoch_slice_count);
@@ -70,14 +70,14 @@ impl EpochService {
                         error!(
                             "Too many errors while computing the initial wait until, aborting..."
                         );
-                        return Err(AppError::EpochError(WaitUntilError::TooLow(d1, d2)));
+                        return Err(AppError2::EpochError(WaitUntilError::TooLow(d1, d2)));
                     }
                 }
                 Err(e) => {
                     // Another error (like OutOfRange) - exiting...
 
                     error!("Error computing the initial wait until: {}", e);
-                    return Err(AppError::EpochError(e));
+                    return Err(AppError2::EpochError(e));
                 }
             };
         };

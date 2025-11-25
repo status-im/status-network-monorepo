@@ -11,12 +11,12 @@ use rln::protocol::serialize_proof_values;
 use tracing::{Instrument, debug, debug_span, error, info, warn};
 // internal
 use crate::epoch_service::{Epoch, EpochSlice};
-use crate::error::{AppError, ProofGenerationError, ProofGenerationStringError};
+use crate::error::{AppError2, ProofGenerationError, ProofGenerationStringError};
 use crate::metrics::{
     BROADCAST_CHANNEL_QUEUE_LEN, PROOF_SERVICE_GEN_PROOF_TIME, PROOF_SERVICE_PROOF_COMPUTED,
 };
 use crate::proof_generation::{ProofGenerationData, ProofSendingData};
-use crate::user_db::UserDb;
+// use crate::user_db::UserDb;
 use crate::user_db_types::RateLimit;
 use rln_proof::{RlnData, compute_rln_proof_and_values};
 use crate::user_db_2::UserDb2;
@@ -57,7 +57,7 @@ impl ProofService {
         }
     }
 
-    pub(crate) async fn serve(&self) -> Result<(), AppError> {
+    pub(crate) async fn serve(&self) -> Result<(), AppError2> {
         info!(
             "[ProofService {}] Starting serve() - waiting for messages on channel",
             self.id
@@ -279,7 +279,7 @@ mod tests {
         protocol::{deserialize_proof_values, verify_proof},
     };
     // internal
-    use crate::user_db::{MERKLE_TREE_HEIGHT, UserDbConfig};
+    use crate::user_db::{MERKLE_TREE_HEIGHT, UserDbConfig, UserDb};
     use crate::user_db_service::UserDbService;
     use rln_proof::RlnIdentifier;
 
@@ -291,7 +291,7 @@ mod tests {
     #[derive(thiserror::Error, Debug)]
     enum AppErrorExt {
         #[error("AppError: {0}")]
-        AppError(#[from] AppError),
+        AppError(#[from] AppError2),
         #[error("Future timeout")]
         Elapsed,
         #[error("Proof generation failed: {0}")]

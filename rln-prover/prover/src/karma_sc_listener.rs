@@ -10,9 +10,9 @@ use num_bigint::BigUint;
 use tonic::codegen::tokio_stream::StreamExt;
 use tracing::{debug, error, info};
 // internal
-use crate::error::{AppError, HandleTransferError, RegisterSCError};
-use crate::user_db::UserDb;
-use crate::user_db_error::RegisterError;
+use crate::error::{AppError2, HandleTransferError2, RegisterSCError};
+// use crate::user_db::UserDb;
+use crate::user_db_error::{RegisterError2};
 use smart_contract::{KarmaAmountExt, KarmaRLNSC, KarmaSC, RLNRegister};
 use crate::user_db_2::UserDb2;
 
@@ -43,7 +43,7 @@ impl KarmaScEventListener {
         &self,
         provider: P,
         provider_with_signer: PS,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), AppError2> {
         let karma_sc = KarmaSC::new(self.karma_sc_address, provider.clone());
         let rln_sc = KarmaRLNSC::new(self.rln_sc_address, provider_with_signer);
 
@@ -66,7 +66,7 @@ impl KarmaScEventListener {
                 Some(&KarmaSC::Transfer::SIGNATURE_HASH) => {
                     self.transfer_event(&log, &karma_sc, &rln_sc)
                         .await
-                        .map_err(AppError::RegistryError)?;
+                        .map_err(AppError2::RegistryError)?;
                 }
                 Some(&KarmaSC::AccountSlashed::SIGNATURE_HASH) => {
                     self.slash_event(&log).await;
@@ -132,7 +132,7 @@ impl KarmaScEventListener {
         log: &Log,
         karma_sc: &KSC,
         rln_sc: &RLNSC,
-    ) -> Result<(), HandleTransferError> {
+    ) -> Result<(), HandleTransferError2> {
         match KarmaSC::Transfer::decode_log_data(log.data()) {
             Ok(transfer_event) => {
                 match self
@@ -142,7 +142,7 @@ impl KarmaScEventListener {
                     Ok(addr) => {
                         info!("Registered new user: {}", addr);
                     }
-                    Err(HandleTransferError::Register(RegisterError::AlreadyRegistered(
+                    Err(HandleTransferError2::Register(RegisterError2::AlreadyRegistered(
                         address,
                     ))) => {
                         debug!("Already registered: {}", address);
@@ -190,7 +190,7 @@ impl KarmaScEventListener {
         karma_sc: &KSC,
         rln_sc: &RLNSC,
         transfer_event: KarmaSC::Transfer,
-    ) -> Result<Address, HandleTransferError> {
+    ) -> Result<Address, HandleTransferError2> {
         let from_address: Address = transfer_event.from;
         let to_address: Address = transfer_event.to;
         let amount: U256 = transfer_event.value;
@@ -204,7 +204,7 @@ impl KarmaScEventListener {
                     let balance = karma_sc
                         .karma_amount(&to_address)
                         .await
-                        .map_err(|e| HandleTransferError::FetchBalanceOf(e.into()))?;
+                        .map_err(|e| HandleTransferError2::FetchBalanceOf(e.into()))?;
                     // Only register the user if he has a minimal amount of Karma token
                     balance >= self.minimal_amount
                 }
@@ -214,11 +214,12 @@ impl KarmaScEventListener {
                 let id_commitment = self
                     .user_db
                     .on_new_user(&to_address)
-                    .map_err(HandleTransferError::Register);
+                    .await
+                    .map_err(HandleTransferError2::Register);
 
                 // Don't stop the registry_listener if the user_db is full
                 // Prover will still be functional
-                if let Err(HandleTransferError::Register(RegisterError::TooManyUsers)) =
+                if let Err(HandleTransferError2::Register(RegisterError2::TooManyUsers)) =
                     id_commitment
                 {
                     error!("Cannot register a new user: {:?}", id_commitment);
@@ -251,7 +252,7 @@ impl KarmaScEventListener {
                     }
 
                     let e_ = RegisterSCError::from(e.into());
-                    return Err(HandleTransferError::ScRegister(e_));
+                    return Err(HandleTransferError2::ScRegister(e_));
                 }
             }
         }
