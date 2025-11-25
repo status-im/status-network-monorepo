@@ -76,10 +76,8 @@ impl UserDb2 {
         tier_limits::Entity::insert(tier_limits_active_model).exec(&db).await?;
 
         // merkle trees
-        let merkle_tree_count = Self::get_merkle_tree_count(&db).await?;
+        let merkle_tree_count = Self::get_merkle_tree_count_from_db(&db).await?;
         let mut merkle_trees = Vec::with_capacity(merkle_tree_count as usize);
-
-        println!("merkle tree count: {}", merkle_tree_count);
 
         if merkle_tree_count == 0 {
 
@@ -102,7 +100,7 @@ impl UserDb2 {
 
         } else {
 
-            for i in 0..(config.tree_count as i16) {
+            for i in 0..(merkle_tree_count as i16) {
                 let persistent_db_config = PersistentDbConfig {
                     db_conn: db.clone(),
                     tree_index: i,
@@ -187,7 +185,7 @@ impl UserDb2 {
         Ok(())
     }
 
-    async fn get_merkle_tree_count(db: &DatabaseConnection) -> Result<u64, DbErr> {
+    async fn get_merkle_tree_count_from_db(db: &DatabaseConnection) -> Result<u64, DbErr> {
         m_tree_config::Entity::find().count(db).await
     }
 
@@ -358,6 +356,7 @@ impl UserDb2 {
                     .map_err(RegisterError2::TreeError)?;
 
                 (tree_index, index_in_mt)
+
             } else {
 
                 // All trees are full, let's create a new one that can accept our new user
@@ -375,7 +374,8 @@ impl UserDb2 {
                     insert_batch_size: 10_000, // TODO: no hardcoded value
                 };
 
-                let mut mt = ProverMerkleTree::load(
+                let mut mt = ProverMerkleTree::new(
+                    self.config.tree_depth as usize,
                     MemoryDbConfig,
                     persistent_db_config.clone()
                 ).await.unwrap();
@@ -547,7 +547,7 @@ impl UserDb2 {
 impl UserDb2 {
 
     pub(crate) async fn get_db_tree_count(&self) -> Result<u64, DbErr> {
-        m_tree_config::Entity::find().count(&self.db).await
+        Self::get_merkle_tree_count_from_db(&self.db).await
     }
 
     pub(crate) async fn get_vec_tree_count(&self) -> usize {
