@@ -1,17 +1,17 @@
 // std
 use parking_lot::RwLock;
 use std::sync::Arc;
-use sea_orm::{Database, DatabaseConnection};
+use sea_orm::DatabaseConnection;
 // third-party
 use tokio::sync::Notify;
 use tracing::debug;
 // internal
 use crate::epoch_service::{Epoch, EpochSlice};
-use crate::error::AppError;
+use crate::error::{AppError2};
 use crate::tier::TierLimits;
-use crate::user_db::{UserDb, UserDbConfig};
+// use crate::user_db::{UserDb, UserDbConfig};
 use crate::user_db_2::{UserDb2, UserDb2Config};
-use crate::user_db_error::{UserDb2OpenError, UserDbOpenError};
+use crate::user_db_error::UserDb2OpenError;
 use crate::user_db_types::RateLimit;
 
 /// Async service to update a UserDb on epoch changes
@@ -43,7 +43,7 @@ impl UserDbService {
         self.user_db.clone()
     }
 
-    pub async fn listen_for_epoch_changes(&self) -> Result<(), AppError> {
+    pub async fn listen_for_epoch_changes(&self) -> Result<(), AppError2> {
         let (mut current_epoch, mut current_epoch_slice) = *self.user_db.epoch_store.read();
 
         loop {

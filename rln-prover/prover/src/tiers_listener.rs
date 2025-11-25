@@ -3,9 +3,9 @@ use alloy::{primitives::Address, providers::Provider, sol_types::SolEvent};
 use futures::StreamExt;
 use tracing::error;
 // internal
-use crate::error::AppError;
+use crate::error::AppError2;
 use crate::tier::TierLimits;
-use crate::user_db::UserDb;
+// use crate::user_db::UserDb;
 use smart_contract::KarmaTiers;
 use smart_contract::KarmaTiers::KarmaTiersInstance;
 use crate::user_db_2::UserDb2;
@@ -24,7 +24,7 @@ impl TiersListener {
     }
 
     /// Listen to Smart Contract specified events
-    pub(crate) async fn listen<P: Provider + Clone>(&self, provider: P) -> Result<(), AppError> {
+    pub(crate) async fn listen<P: Provider + Clone>(&self, provider: P) -> Result<(), AppError2> {
         // let provider = self.setup_provider_ws().await.map_err(AppError::from)?;
 
         let filter = alloy::rpc::types::Filter::new()
@@ -48,7 +48,7 @@ impl TiersListener {
                                 "Error while getting tiers limits from smart contract: {}",
                                 e
                             );
-                            return Err(AppError::KarmaTiersError(e));
+                            return Err(AppError2::KarmaTiersError(e));
                         }
                     };
 

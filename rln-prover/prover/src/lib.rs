@@ -38,7 +38,7 @@ use zeroize::Zeroizing;
 // internal
 pub use crate::args::{ARGS_DEFAULT_GENESIS, AppArgs, AppArgsConfig};
 use crate::epoch_service::EpochService;
-use crate::error::{AppError, AppError2};
+use crate::error::AppError2;
 use crate::grpc_service::GrpcProverService;
 use crate::karma_sc_listener::KarmaScEventListener;
 pub use crate::mock::MockUser;
@@ -46,8 +46,8 @@ use crate::mock::read_mock_user;
 use crate::proof_service::ProofService;
 use crate::tier::TierLimits;
 use crate::tiers_listener::TiersListener;
-use crate::user_db::{MERKLE_TREE_HEIGHT, UserDbConfig};
-use crate::user_db_error::{RegisterError, UserDb2OpenError};
+use crate::user_db::{MERKLE_TREE_HEIGHT};
+use crate::user_db_error::{RegisterError2, UserDb2OpenError};
 use crate::user_db_service::UserDbService;
 use crate::user_db_types::RateLimit;
 use rln_proof::RlnIdentifier;
@@ -113,7 +113,7 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
         tree_depth: MERKLE_TREE_HEIGHT,
     };
     let db_conn = Database::connect(app_args.db_url.as_str()).await
-        .map_err(|e| UserDb2OpenError::from(e))?; 
+        .map_err(|e| UserDb2OpenError::from(e))?;
     let user_db_service = UserDbService::new(
         db_conn,
         user_db_config,
@@ -136,9 +136,9 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
             );
 
             let user_db = user_db_service.get_user_db();
-            if let Err(e) = user_db.on_new_user(&mock_user.address) {
+            if let Err(e) = user_db.on_new_user(&mock_user.address).await {
                 match e {
-                    RegisterError::AlreadyRegistered(_) => {
+                    RegisterError2::AlreadyRegistered(_) => {
                         debug!("User {} already registered", mock_user.address);
                     }
                     _ => {

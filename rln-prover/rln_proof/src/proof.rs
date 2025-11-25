@@ -15,7 +15,6 @@ use rln::{
         RLNProofValues, generate_proof, proof_values_from_witness, rln_witness_from_values,
     },
 };
-use zerokit_utils::ZerokitMerkleProof;
 use serde::{Deserialize, Serialize};
 use prover_pmtree::{Hasher, Value};
 // internal

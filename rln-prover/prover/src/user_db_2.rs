@@ -3,7 +3,6 @@ use std::sync::Arc;
 // third-party
 use alloy::primitives::Address;
 use ark_bn254::Fr;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use parking_lot::RwLock;
 use tokio::sync::RwLock as TokioRwLock;
 // RLN
@@ -11,14 +10,12 @@ use rln::{
     hashers::poseidon_hash,
     protocol::keygen,
 };
-use rln::hashers::PoseidonHash;
 // db
-use sea_orm::{DatabaseConnection, DbErr, EntityTrait, QueryFilter, ColumnTrait, TransactionTrait, IntoActiveModel, ActiveModelTrait, Set, Iden, PaginatorTrait};
+use sea_orm::{DatabaseConnection, DbErr, EntityTrait, QueryFilter, ColumnTrait, TransactionTrait, IntoActiveModel, Set, PaginatorTrait};
 use sea_orm::sea_query::OnConflict;
-use zerokit_utils::pmtree;
 // internal
 use prover_db_entity::{tx_counter, user, tier_limits, m_tree_config};
-use prover_pmtree::{Hasher, MerkleTree, PmtreeErrorKind, Value};
+use prover_pmtree::{MerkleTree, PmtreeErrorKind};
 use prover_merkle_tree::{MemoryDb, MemoryDbConfig, PersistentDb, PersistentDbConfig, PersistentDbError};
 use prover_pmtree::tree::MerkleProof;
 use rln_proof::{
@@ -27,11 +24,9 @@ use rln_proof::{
 };
 use smart_contract::KarmaAmountExt;
 use crate::epoch_service::{Epoch, EpochSlice};
-use crate::error::GetMerkleTreeProofError;
 use crate::tier::{TierLimit, TierLimits, TierMatch};
-use crate::user_db::{UserDb, UserTierInfo};
-use crate::user_db_error::{DbError, GetMerkleTreeProofError2, RegisterError, RegisterError2, SetTierLimitsError2, TxCounterError2, UserTierInfoError2};
-use crate::user_db_serialization::U64Deserializer;
+use crate::user_db::{UserTierInfo};
+use crate::user_db_error::{GetMerkleTreeProofError2, RegisterError2, SetTierLimitsError2, TxCounterError2, UserTierInfoError2};
 use crate::user_db_types::{EpochCounter, EpochSliceCounter, RateLimit};
 
 const TIER_LIMITS_KEY: &str = "CURRENT";
@@ -80,7 +75,7 @@ impl UserDb2 {
 
         // tier limits
         debug_assert!(tier_limits.validate().is_ok());
-        let res_delete = tier_limits::Entity::delete_many()
+        let _res_delete = tier_limits::Entity::delete_many()
             .filter(tier_limits::Column::Name.eq(TIER_LIMITS_KEY))
             .exec(&db)
             .await?;
@@ -511,9 +506,8 @@ impl UserDb2 {
 
     // external UserDb methods
 
-    pub fn on_new_user(&self, address: &Address) -> Result<Fr, RegisterError> {
-        // self.register(*address)
-        unimplemented!()
+    pub async fn on_new_user(&self, address: &Address) -> Result<Fr, RegisterError2> {
+        self.register_user(*address).await
     }
 
     pub async fn on_new_tx(
