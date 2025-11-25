@@ -25,8 +25,6 @@ pub mod tests_common;
 mod user_db_2;
 mod user_db_2_tests;
 mod user_db_tests;
-mod user_db_2;
-mod user_db_2_tests;
 
 // std
 use alloy::network::EthereumWallet;

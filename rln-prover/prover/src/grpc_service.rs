@@ -60,6 +60,7 @@ use prover_proto::{
     rln_proof_reply::Resp as GetProofsResp,
     rln_prover_server::{RlnProver, RlnProverServer},
 };
+use crate::user_db_error::UserTierInfoError2;
 
 const PROVER_SERVICE_LIMIT_PER_CONNECTION: usize = 16;
 // Timeout for all handlers of a request (increased to 5 minutes for streaming support)

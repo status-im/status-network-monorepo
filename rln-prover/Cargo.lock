@@ -4778,6 +4778,10 @@ dependencies = [
  "ark-groth16",
  "ark-relations",
  "ark-serialize 0.5.0",
+<<<<<<< HEAD
+=======
+ "criterion",
+>>>>>>> 7a5da2d2 (Initial use of UserDb2 in prover)
  "prover_pmtree",
  "rln",
  "serde",

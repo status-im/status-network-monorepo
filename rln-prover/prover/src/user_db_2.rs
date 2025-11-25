@@ -232,7 +232,7 @@ impl UserDb2 {
             // let model_epoch_slice = res_active.epoch_slice.clone().unwrap();
             // let model_epoch_slice_counter = res_active.epoch_slice_counter.clone().unwrap();
 
-if model_epoch == 0 {
+            if model_epoch == 0 {
                 res_active.epoch = Set(epoch.into());
                 res_active.epoch_counter = Set(incr_value);
                 // res_active.epoch_slice = Set(epoch_slice.into());
