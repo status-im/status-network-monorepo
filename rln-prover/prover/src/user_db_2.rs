@@ -217,7 +217,12 @@ impl UserDb2 {
             let model_epoch_counter = res_active.epoch_counter.clone().unwrap();
             let model_epoch_slice_counter = res_active.epoch_slice_counter.clone().unwrap();
 
-            if epoch != Epoch::from(model_epoch) {
+            if model_epoch == 0 && model_epoch_slice == 0 {
+                res_active.epoch = Set(epoch.into());
+                res_active.epoch_slice = Set(epoch_slice.into());
+                res_active.epoch_counter = Set(incr_value);
+                res_active.epoch_slice_counter = Set(incr_value);
+            } else if epoch != Epoch::from(model_epoch) {
                 // New epoch
                 res_active.epoch = Set(epoch.into());
                 res_active.epoch_slice = Set(0);
