@@ -143,6 +143,7 @@ impl PersistentDatabase for PersistentDb {
             .update_column(<m_tree::Entity as EntityTrait>::Column::Value)
             .to_owned();
 
+        /*
         // Chunk put_list into batches (postgres limit is around ~ 15_000 params)
         let put_list_ = &put_list
             .into_iter()
@@ -155,6 +156,14 @@ impl PersistentDatabase for PersistentDb {
                 .await
                 ?;
         }
+        */
+
+        // FIXME: chunk
+        m_tree::Entity::insert_many::<m_tree::ActiveModel, _>(put_list)
+            .on_conflict(on_conflict.clone())
+            .exec(&txn)
+            .await
+            ?;
 
         txn.commit().await?;
 

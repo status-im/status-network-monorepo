@@ -8,14 +8,15 @@ use crate::tier::TierLimits;
 use crate::user_db::UserDb;
 use smart_contract::KarmaTiers;
 use smart_contract::KarmaTiers::KarmaTiersInstance;
+use crate::user_db_2::UserDb2;
 
 pub(crate) struct TiersListener {
     sc_address: Address,
-    user_db: UserDb,
+    user_db: UserDb2,
 }
 
 impl TiersListener {
-    pub(crate) fn new(sc_address: Address, user_db: UserDb) -> Self {
+    pub(crate) fn new(sc_address: Address, user_db: UserDb2) -> Self {
         Self {
             sc_address,
             user_db,
@@ -53,7 +54,7 @@ impl TiersListener {
 
                 if let Err(e) = self
                     .user_db
-                    .on_tier_limits_updated(TierLimits::from(tier_limits))
+                    .on_tier_limits_updated(TierLimits::from(tier_limits)).await
                 {
                     // If there is an error here, we assume this is an error by the user
                     // updating the Tier limits (and thus we don't want to shut down the prover)

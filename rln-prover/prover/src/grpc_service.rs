@@ -28,7 +28,7 @@ use crate::metrics::{
 };
 use crate::proof_generation::{ProofGenerationData, ProofSendingData};
 use crate::user_db::{UserDb, UserTierInfo};
-use rln_proof::RlnIdentifier;
+use rln_proof::{RlnIdentifier, RlnUserIdentity};
 use smart_contract::{KarmaAmountExt, KarmaSC::KarmaSCInstance, MockKarmaSc};
 
 pub mod prover_proto {
@@ -59,6 +59,8 @@ use prover_proto::{
     rln_proof_reply::Resp as GetProofsResp,
     rln_prover_server::{RlnProver, RlnProverServer},
 };
+use crate::user_db_2::UserDb2;
+use crate::user_db_error::UserTierInfoError2;
 
 const PROVER_SERVICE_LIMIT_PER_CONNECTION: usize = 16;
 // Timeout for all handlers of a request (increased to 5 minutes for streaming support)
@@ -77,7 +79,7 @@ const PROVER_TX_HASH_BYTESIZE: usize = 32;
 #[derive(Debug)]
 pub struct ProverService<KSC: KarmaAmountExt> {
     proof_sender: Sender<ProofGenerationData>,
-    user_db: UserDb,
+    user_db: UserDb2,
     rln_identifier: Arc<RlnIdentifier>,
     broadcast_channel: (
         broadcast::Sender<Result<ProofSendingData, ProofGenerationStringError>>,
@@ -115,8 +117,8 @@ where
             return Err(Status::invalid_argument("No sender address"));
         };
 
-        let user_id = if let Some(id) = self.user_db.get_user(&sender) {
-            id.clone()
+        let user_id = if let Some(rln_id) = self.user_db.get_user_identity(&sender).await {
+            rln_id
         } else {
             return Err(Status::not_found("Sender not registered"));
         };
@@ -130,7 +132,8 @@ where
         // Update the counter as soon as possible (should help to prevent spamming...)
         let counter = self
             .user_db
-            .on_new_tx(&sender, tx_counter_incr)
+            .on_new_tx(&sender, tx_counter_incr.map(|v| v as i64)) // FIXME: 'as'
+            .await
             .unwrap_or_default();
 
         if counter > self.rate_limit {
@@ -346,7 +349,7 @@ pub(crate) struct GrpcProverService<P: Provider> {
     ),
     pub addr: SocketAddr,
     pub rln_identifier: RlnIdentifier,
-    pub user_db: UserDb,
+    pub user_db: UserDb2,
     pub karma_sc_info: Option<(Url, Address)>,
     // pub rln_sc_info: Option<(Url, Address)>,
     pub provider: Option<P>,
@@ -532,6 +535,18 @@ where
     E: std::error::Error,
 {
     fn from(value: crate::user_db_error::UserTierInfoError<E>) -> Self {
+        UserTierInfoError {
+            message: value.to_string(),
+        }
+    }
+}
+
+/// UserTierInfoError to UserTierInfoError (Grpc message) conversion
+impl<E> From<crate::user_db_error::UserTierInfoError2<E>> for UserTierInfoError
+where
+    E: std::error::Error,
+{
+    fn from(value: crate::user_db_error::UserTierInfoError2<E>) -> Self {
         UserTierInfoError {
             message: value.to_string(),
         }

@@ -1,3 +1,4 @@
+use std::fmt::Formatter;
 use std::sync::Arc;
 // third-party
 use alloy::primitives::Address;
@@ -10,19 +11,26 @@ use rln::{
     hashers::poseidon_hash,
     protocol::keygen,
 };
+use rln::hashers::PoseidonHash;
 // db
 use sea_orm::{DatabaseConnection, DbErr, EntityTrait, QueryFilter, ColumnTrait, TransactionTrait, IntoActiveModel, ActiveModelTrait, Set, Iden, PaginatorTrait};
 use sea_orm::sea_query::OnConflict;
+use zerokit_utils::pmtree;
 // internal
 use prover_db_entity::{tx_counter, user, tier_limits, m_tree_config};
 use prover_pmtree::{Hasher, MerkleTree, PmtreeErrorKind, Value};
 use prover_merkle_tree::{MemoryDb, MemoryDbConfig, PersistentDb, PersistentDbConfig, PersistentDbError};
-use rln_proof::RlnUserIdentity;
+use prover_pmtree::tree::MerkleProof;
+use rln_proof::{
+    RlnUserIdentity,
+    ProverPoseidonHash,
+};
 use smart_contract::KarmaAmountExt;
 use crate::epoch_service::{Epoch, EpochSlice};
+use crate::error::GetMerkleTreeProofError;
 use crate::tier::{TierLimit, TierLimits, TierMatch};
 use crate::user_db::{UserDb, UserTierInfo};
-use crate::user_db_error::{DbError, RegisterError, RegisterError2, SetTierLimitsError2, TxCounterError2, UserTierInfoError2};
+use crate::user_db_error::{DbError, GetMerkleTreeProofError2, RegisterError, RegisterError2, SetTierLimitsError2, TxCounterError2, UserTierInfoError2};
 use crate::user_db_serialization::U64Deserializer;
 use crate::user_db_types::{EpochCounter, EpochSliceCounter, RateLimit};
 
@@ -31,7 +39,7 @@ const TIER_LIMITS_NEXT_KEY: &str = "NEXT";
 
 type ProverMerkleTree = MerkleTree<MemoryDb, ProverPoseidonHash, PersistentDb, MerkleTreeError>;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct UserDb2Config {
     pub(crate) tree_count: u64,
     pub(crate) max_tree_count: u64,
@@ -45,6 +53,16 @@ pub(crate) struct UserDb2 {
     rate_limit: RateLimit,
     pub(crate) epoch_store: Arc<RwLock<(Epoch, EpochSlice)>>,
     merkle_trees: Arc<TokioRwLock<Vec<ProverMerkleTree>>>,
+}
+
+impl std::fmt::Debug for UserDb2 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UserDb2")
+            .field("db", &self.db)
+            .field("config", &self.config)
+            .field("rate_limit", &self.rate_limit)
+            .finish()
+    }
 }
 
 impl UserDb2 {
@@ -144,7 +162,7 @@ impl UserDb2 {
             .await
     }
 
-    async fn get_user_identity(&self, address: &Address) -> Option<RlnUserIdentity> {
+    pub(crate) async fn get_user_identity(&self, address: &Address) -> Option<RlnUserIdentity> {
 
         let res = self.get_user(address).await
             .ok()??;
@@ -419,7 +437,7 @@ impl UserDb2 {
         Ok(id_commitment)
     }
 
-    async fn remove_user(&self, address: &Address) -> Result<bool, MerkleTreeError> {
+    pub(crate) async fn remove_user(&self, address: &Address) -> Result<bool, MerkleTreeError> {
 
         let user = self.get_user(address).await
             .map_err(|e| MerkleTreeError::PDb(e.into()))?;
@@ -464,6 +482,31 @@ impl UserDb2 {
             .map_err(|e| MerkleTreeError::PDb(e.into()))?;
 
         Ok(true)
+    }
+
+    // Merkle tree methods
+    pub async fn get_merkle_proof(
+        &self,
+        address: &Address,
+    ) -> Result<MerkleProof<ProverPoseidonHash>, GetMerkleTreeProofError2> {
+
+        let (tree_index, index_in_mt) = {
+            let user = self.get_user(address).await?;
+            if user.is_none() {
+                return Err(GetMerkleTreeProofError2::NotRegistered(*address));
+            }
+            let user = user.unwrap();
+            (user.tree_index, user.index_in_merkle_tree)
+        };
+
+        let guard = self.merkle_trees.read().await;
+        // FIXME: no 'as'
+        let proof = guard[tree_index as usize]
+            .proof(index_in_mt as usize)
+            .map_err(|e| GetMerkleTreeProofError2::from(e))
+            ?;
+
+        Ok(proof)
     }
 
     // external UserDb methods
@@ -568,31 +611,6 @@ impl UserDb2 {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct ProverPoseidonHash;
-
-impl Hasher for ProverPoseidonHash {
-    type Fr = Fr;
-
-    fn serialize(value: Self::Fr) -> Value {
-        let mut buffer = vec![];
-        // FIXME: unwrap safe?
-        value.serialize_compressed(&mut buffer).unwrap();
-        buffer
-    }
-
-    fn deserialize(value: Value) -> Self::Fr {
-        // FIXME: unwrap safe?
-        CanonicalDeserialize::deserialize_compressed(value.as_slice()).unwrap()
-    }
-
-    fn default_leaf() -> Self::Fr {
-        Self::Fr::from(0)
-    }
-    fn hash(inputs: &[Self::Fr]) -> Self::Fr {
-        poseidon_hash(inputs)
-    }
-}
 
 #[derive(thiserror::Error, Debug)]
 pub enum MerkleTreeError {

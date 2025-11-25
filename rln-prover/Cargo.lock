@@ -4776,6 +4776,7 @@ dependencies = [
  "ark-relations",
  "ark-serialize 0.5.0",
  "criterion",
+ "prover_pmtree",
  "rln",
  "serde",
  "zerokit_utils",
