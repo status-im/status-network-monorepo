@@ -158,10 +158,10 @@ impl Hasher for ProverPoseidonHash {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use rln::poseidon_tree::PoseidonTree;
-    use rln::protocol::{compute_id_secret, keygen};
-    use zerokit_utils::ZerokitMerkleTree;
+    // use super::*;
+    // use rln::poseidon_tree::PoseidonTree;
+    // use rln::protocol::{compute_id_secret, keygen};
+    // use zerokit_utils::ZerokitMerkleTree;
 
     // FIXME
     /*

@@ -128,7 +128,7 @@ pub enum TxCounterError2 {
     Db(#[from] DbErr),
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 pub enum GetMerkleTreeProofError2 {
     #[error("User (address: {0:?}) is not registered")]
     NotRegistered(Address),

@@ -85,3 +85,7 @@ harness = false
 
 [features]
 postgres = []
+
+[lints.rust]
+dead_code = "allow"
+unused = "allow"

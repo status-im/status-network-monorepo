@@ -24,7 +24,7 @@ pub type DBKey = [u8; 8];
 pub type Value = Vec<u8>;
 
 /// Denotes pmtree Merkle tree errors
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TreeErrorKind {
     MerkleTreeIsFull,
     InvalidKey,
@@ -33,7 +33,7 @@ pub enum TreeErrorKind {
 }
 
 /// Denotes pmtree database errors
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DatabaseErrorKind {
     CannotLoadDatabase,
     DatabaseExists,
@@ -41,7 +41,7 @@ pub enum DatabaseErrorKind {
 }
 
 /// Denotes pmtree errors
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PmtreeErrorKind {
     /// Error in database
     DatabaseError(DatabaseErrorKind),

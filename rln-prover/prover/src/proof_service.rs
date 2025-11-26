@@ -103,15 +103,9 @@ impl ProofService {
             // Communicate between rayon & current task
             let (send, recv) = tokio::sync::oneshot::channel();
 
-            let merkle_proof = match user_db.get_merkle_proof(&proof_generation_data.tx_sender).await
-            {
-                Ok(merkle_proof) => merkle_proof,
-                Err(e) => {
-                    // let _ = send.send(Err(ProofGenerationError::MerkleProofError(e)));
-                    // return;
-                    unimplemented!("{:?}", e);
-                }
-            };
+            let merkle_proof_ = user_db
+                .get_merkle_proof(&proof_generation_data.tx_sender)
+                .await;
 
             // Move to a task (as generating the proof can take quite some time) - avoid blocking the tokio runtime
             // Note: avoid tokio spawn_blocking as it does not perform great for CPU bounds tasks
@@ -124,6 +118,14 @@ impl ProofService {
             rayon::spawn(move || {
                 debug!("[ProofService {}] Rayon task started", counter_id);
                 let proof_generation_start = std::time::Instant::now();
+
+                let merkle_proof = match merkle_proof_ {
+                    Ok(proof) => proof,
+                    Err(e) => {
+                        let _ = send.send(Err(ProofGenerationError::MerkleProofError(e)));
+                        return;
+                    }
+                };
 
                 let message_id = {
                     let mut m_id = proof_generation_data.tx_counter;
@@ -147,8 +149,6 @@ impl ProofService {
                     v
                 };
                 let epoch = hash_to_field_le(epoch_bytes.as_slice());
-
-
 
                 // let compute_proof_start = std::time::Instant::now();
                 let (proof, proof_values) = match compute_rln_proof_and_values(

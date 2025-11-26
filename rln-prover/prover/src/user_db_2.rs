@@ -291,13 +291,12 @@ impl UserDb2 {
 
         match res {
             None => Err(TxCounterError2::NotRegistered(address.clone())),
-            Some(res) => Ok(self.counters_from_key(address, res))
+            Some(res) => Ok(self.counters_from_key(res))
         }
     }
 
     fn counters_from_key(
         &self,
-        address: &Address,
         model: tx_counter::Model
     ) -> (EpochCounter, EpochSliceCounter) {
 

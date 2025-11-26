@@ -13,12 +13,12 @@ mod tests {
     use tracing_test::traced_test;
     // internal
     use crate::epoch_service::{EpochService, WAIT_UNTIL_MIN_DURATION};
-    use crate::error::AppError;
+    use crate::error::AppError2;
 
     #[derive(thiserror::Error, Debug)]
     enum AppErrorExt {
         #[error("AppError: {0}")]
-        AppError(#[from] AppError),
+        AppError(#[from] AppError2),
         #[error("Future timeout")]
         Elapsed,
     }
