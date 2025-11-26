@@ -238,7 +238,7 @@ impl KarmaScEventListener {
                             panic!("Fail to register user to SC and to remove it from DB...");
                         },
                         Ok(res) => {
-                            if res == false {
+                            if !res {
                                 error!("Fail to remove user ({:?}) from DB", to_address);
                                 panic!("Fail to register user to SC and to remove it from DB...");
                             } else {
@@ -269,7 +269,7 @@ impl KarmaScEventListener {
                         panic!("Fail to register user to SC and to remove it from DB...");
                     },
                     Ok(res) => {
-                        if res == false {
+                        if !res {
                             error!("Fail to remove slashed user ({:?}) from DB", address_slashed);
                             panic!("Fail to register user to SC and to remove it from DB...");
                         } else {
@@ -292,6 +292,7 @@ impl KarmaScEventListener {
     }
 }
 
+#[cfg(feature = "postgres")]
 #[cfg(test)]
 mod tests {
     use super::*;

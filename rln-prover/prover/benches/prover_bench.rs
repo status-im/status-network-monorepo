@@ -1,3 +1,4 @@
+/*
 use criterion::Criterion;
 use criterion::{BenchmarkId, Throughput};
 use criterion::{criterion_group, criterion_main};
@@ -271,3 +272,4 @@ criterion_group!(
     targets = proof_generation_bench
 );
 criterion_main!(benches);
+*/

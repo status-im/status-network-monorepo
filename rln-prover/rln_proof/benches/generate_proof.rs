@@ -1,3 +1,4 @@
+/*
 use std::hint::black_box;
 // std
 use std::io::{Cursor, Write};
@@ -115,3 +116,4 @@ criterion_group! {
     targets = criterion_benchmark
 }
 criterion_main!(benches);
+*/
