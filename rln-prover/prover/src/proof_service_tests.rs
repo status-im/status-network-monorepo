@@ -178,7 +178,8 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
-        let db_conn = create_database_connection("proof_service_tests_test_user_not_registered").await.unwrap();
+        let db_conn = create_database_connection("proof_service_tests_test_user_not_registered")
+            .await.unwrap();
 
         let user_db_service = UserDbService::new(
             db_conn,

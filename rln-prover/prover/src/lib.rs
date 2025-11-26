@@ -22,6 +22,8 @@ mod proof_service_tests;
 mod user_db_tests;
 mod user_db_2;
 mod user_db_2_tests;
+#[cfg(test)]
+mod tests_common;
 
 // std
 use alloy::network::EthereumWallet;
