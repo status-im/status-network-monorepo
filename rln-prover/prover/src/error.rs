@@ -6,7 +6,7 @@ use smart_contract::{KarmaScError, KarmaTiersError, RlnScError};
 // internal
 use crate::epoch_service::WaitUntilError;
 use crate::tier::ValidateTierLimitsError;
-use crate::user_db_error::{RegisterError, RegisterError2, TxCounterError, TxCounterError2, UserDb2OpenError, UserDbOpenError, UserMerkleTreeIndexError};
+use crate::user_db_error::{GetMerkleTreeProofError2, RegisterError, RegisterError2, TxCounterError, TxCounterError2, UserDb2OpenError, UserDbOpenError, UserMerkleTreeIndexError};
 
 #[derive(thiserror::Error, Debug)]
 pub enum AppError {
@@ -82,7 +82,7 @@ pub enum ProofGenerationError {
     #[error("Proof serialization failed: {0}")]
     SerializationWrite(#[from] std::io::Error),
     #[error(transparent)]
-    MerkleProofError(#[from] GetMerkleTreeProofError),
+    MerkleProofError(#[from] GetMerkleTreeProofError2),
 }
 
 /// Same as ProofGenerationError but can be Cloned (can be used in Tokio broadcast channels)
@@ -95,7 +95,7 @@ pub enum ProofGenerationStringError {
     #[error("Proof serialization failed: {0}")]
     SerializationWrite(String),
     #[error(transparent)]
-    MerkleProofError(#[from] GetMerkleTreeProofError),
+    MerkleProofError(#[from] GetMerkleTreeProofError2),
 }
 
 impl From<ProofGenerationError> for ProofGenerationStringError {
