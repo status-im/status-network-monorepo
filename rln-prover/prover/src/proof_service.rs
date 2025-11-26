@@ -435,5 +435,4 @@ mod tests {
         // Everything ok if proof_verifier return AppErrorExt::Exit else there is a real error
         assert_matches!(res, Err(AppErrorExt::Exit));
     }
-
 }
