@@ -194,7 +194,7 @@ impl PersistentDatabase for PersistentDb {
             .into_iter()
             .map(|m| {
                 let (depth, index) = i64::unpack_u32(&m.index_in_tree);
-                (depth as usize, index as usize, m.value.into())
+                (depth as usize, index as usize, m.value)
             })
             .collect()
         )

@@ -283,7 +283,11 @@ impl UserDb2 {
 
         match res {
             None => Err(TxCounterError2::NotRegistered(*address)),
+<<<<<<< HEAD
             Some(res) => Ok(self.counters_from_key(res)),
+=======
+            Some(res) => Ok(self.counters_from_key(res))
+>>>>>>> 533283bc (Cargo clippy fixes)
         }
     }
 

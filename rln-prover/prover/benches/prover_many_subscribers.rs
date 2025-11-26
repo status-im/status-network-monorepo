@@ -135,6 +135,7 @@ async fn proof_collector(ip: IpAddr, port: u16, proof_count: usize) -> Vec<RlnPr
     std::mem::take(&mut *result.write())
 }
 
+/*
 fn proof_generation_bench(c: &mut Criterion) {
     let rayon_num_threads = std::env::var("RAYON_NUM_THREADS").unwrap_or("".to_string());
     let proof_service_count_default = 4;
@@ -304,3 +305,4 @@ criterion_group!(
     targets = proof_generation_bench
 );
 criterion_main!(benches);
+*/
