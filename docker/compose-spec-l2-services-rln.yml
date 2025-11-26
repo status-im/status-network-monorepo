@@ -7,7 +7,7 @@ services:
   rln-prover:
     hostname: rln-prover
     container_name: rln-prover
-    image: docker.io/0xnadeem/status-rln-prover:20251029125050-dev
+    image: status-rln-prover:20251126193838
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo", "rln" ]
     ports:
       - "50051:50051"  # RLN proof service
@@ -38,7 +38,7 @@ services:
   karma-service:
     hostname: karma-service
     container_name: karma-service
-    image: docker.io/0xnadeem/status-rln-prover:20251029125050-dev
+    image: status-rln-prover:20251126193838
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo", "rln" ]
     ports:
       - "50053:50052"
@@ -63,7 +63,7 @@ services:
   sequencer:
     hostname: sequencer
     container_name: sequencer
-    image: docker.io/0xnadeem/linea-besu-minimal-rln:20251029125050-dev
+    image: linea-besu-minimal-rln:20251126210242
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     ports:
       - "8545:8545"
@@ -174,7 +174,7 @@ services:
   l2-node-besu:
     hostname: l2-node-besu
     container_name: l2-node-besu
-    image: docker.io/0xnadeem/linea-besu-minimal-rln:20251029125050-dev
+    image: linea-besu-minimal-rln:20251126210242
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     depends_on:
       sequencer:

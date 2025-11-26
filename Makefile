@@ -90,7 +90,7 @@ start-env-with-rln:
 
 start-env-with-rln-and-contracts:
 	@echo "Starting complete RLN environment with automated contract deployment..."
-	make start-env COMPOSE_FILE=docker/compose-tracing-v2-rln.yml LINEA_PROTOCOL_CONTRACTS_ONLY=true STATUS_NETWORK_CONTRACTS_ENABLED=true
+	make start-env COMPOSE_FILE=docker/compose-tracing-v2-rln.yml LINEA_PROTOCOL_CONTRACTS_ONLY=true STATUS_NETWORK_CONTRACTS_ENABLED=true SKIP_CONTRACTS_DEPLOYMENT=true
 	@echo "Environment started. Beginning contract deployment with automatic RLN handling..."
 	make deploy-contracts LINEA_PROTOCOL_CONTRACTS_ONLY=true STATUS_NETWORK_CONTRACTS_ENABLED=true
 	@echo "Complete RLN environment with contracts is ready!"

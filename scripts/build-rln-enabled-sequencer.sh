@@ -12,12 +12,14 @@ NC='\033[0m' # No Color
 
 # Build paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LINEA_SEQUENCER_DIR="${SCRIPT_DIR}/besu-plugins/linea-sequencer"
-STATUS_RLN_PROVER_DIR="${SCRIPT_DIR}/rln-prover"
-CUSTOM_BESU_DIR="${SCRIPT_DIR}/custom-besu-minimal"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+LINEA_SEQUENCER_DIR="${REPO_ROOT}/besu-plugins/linea-sequencer"
+STATUS_RLN_PROVER_DIR="${REPO_ROOT}/rln-prover"
+CUSTOM_BESU_DIR="${REPO_ROOT}/custom-besu-minimal"
 
 echo -e "${BLUE}📁 Working directories:${NC}"
 echo -e "  Script: ${SCRIPT_DIR}"
+echo -e "  Repo Root: ${REPO_ROOT}"
 echo -e "  Sequencer: ${LINEA_SEQUENCER_DIR}"
 echo -e "  RLN Prover: ${STATUS_RLN_PROVER_DIR}"
 echo -e "  Custom Besu: ${CUSTOM_BESU_DIR}"
@@ -25,6 +27,10 @@ echo -e "  Custom Besu: ${CUSTOM_BESU_DIR}"
 # Use the exact same image version as the official Linea setup
 BESU_PACKAGE_TAG="beta-v2.1-rc16.2-20250521134911-f6cb0f2"
 BESU_BASE_IMAGE="consensys/linea-besu-package:${BESU_PACKAGE_TAG}"
+
+# Build options
+BUILD_PROVER=${BUILD_PROVER:-false}
+RESTART_SERVICES=${RESTART_SERVICES:-false}
 
 # Publish options (can be overridden by flags or env)
 PUSH_IMAGES=${PUSH_IMAGES:-false}
@@ -39,6 +45,9 @@ print_usage() {
 Usage: $(basename "$0") [options]
 
 Options:
+  --all                        Build everything (Besu + RLN Prover) - default: Besu only
+  --with-prover                Same as --all
+  --restart                    Restart services after build
   --push                       Push images to a registry after build (default: ${PUSH_IMAGES})
   --registry <host>            Registry host (e.g. ghcr.io, docker.io)
   --namespace <ns>             Namespace/org (e.g. status-im)
@@ -48,13 +57,17 @@ Options:
   -h, --help                   Show this help
 
 Environment vars:
-  PUSH_IMAGES, REGISTRY, NAMESPACE, BESU_IMAGE_NAME, RLN_PROVER_IMAGE_NAME, IMAGE_TAG_SUFFIX
+  BUILD_PROVER, PUSH_IMAGES, REGISTRY, NAMESPACE, BESU_IMAGE_NAME, RLN_PROVER_IMAGE_NAME, IMAGE_TAG_SUFFIX
 USAGE
 }
 
 # Simple args parser
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --all|--with-prover)
+            BUILD_PROVER=true; shift ;;
+        --restart)
+            RESTART_SERVICES=true; shift ;;
         --push)
             PUSH_IMAGES=true; shift ;;
         --registry)
@@ -110,9 +123,12 @@ fi
 echo -e "${GREEN}✅ RLN Bridge library ready: $RLN_LIB_FILE${NC}"
 
 echo -e "${BLUE}☕ Building Custom Sequencer JAR with Dependencies...${NC}"
-cd "$SCRIPT_DIR"
+cd "$REPO_ROOT"
+
 # Build with distPlugin to include dependencies not provided by Besu
-./gradlew clean :besu-plugins:linea-sequencer:sequencer:distPlugin -x test -x checkSpdxHeader -x spotlessJavaCheck -x spotlessGroovyGradleCheck --no-daemon
+# Note: Removed 'clean' task to avoid re-downloading 181MB Besu tarball every build
+# Gradle's incremental build handles changes automatically
+./gradlew :besu-plugins:linea-sequencer:sequencer:distPlugin -x test -x checkSpdxHeader -x spotlessJavaCheck -x spotlessGroovyGradleCheck --no-daemon
 
 # Look for both JAR and ZIP files from distPlugin
 SEQUENCER_JAR=$(find "${LINEA_SEQUENCER_DIR}/sequencer/build/libs" -name "linea-sequencer-*.jar" | head -1)
@@ -126,16 +142,20 @@ if [[ ! -f "$SEQUENCER_JAR" ]]; then
 fi
 echo -e "${GREEN}✅ Custom Sequencer JAR built: $SEQUENCER_JAR${NC}"
 
-echo -e "${BLUE}🦀 Building RLN Prover Service...${NC}"
-cd "$STATUS_RLN_PROVER_DIR"
-cargo build --release
+if [[ "$BUILD_PROVER" == "true" ]]; then
+    echo -e "${BLUE}🦀 Building RLN Prover Service...${NC}"
+    cd "$STATUS_RLN_PROVER_DIR"
+    cargo build --release
 
-PROVER_BINARY="${STATUS_RLN_PROVER_DIR}/target/release/prover_cli"
-if [[ ! -f "$PROVER_BINARY" ]]; then
-    echo -e "${RED}❌ Error: RLN Prover binary not found!${NC}"
-    exit 1
+    PROVER_BINARY="${STATUS_RLN_PROVER_DIR}/target/release/prover_cli"
+    if [[ ! -f "$PROVER_BINARY" ]]; then
+        echo -e "${RED}❌ Error: RLN Prover binary not found!${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✅ RLN Prover service built: $PROVER_BINARY${NC}"
+else
+    echo -e "${YELLOW}⏭️  Skipping RLN Prover build (use --all to include)${NC}"
 fi
-echo -e "${GREEN}✅ RLN Prover service built: $PROVER_BINARY${NC}"
 
 echo -e "${BLUE}🐳 Building Minimal Custom Besu Image...${NC}"
 mkdir -p "$CUSTOM_BESU_DIR"
@@ -267,12 +287,14 @@ docker build --platform linux/amd64 -t "$BESU_IMAGE_TAG" .
 
 echo -e "${GREEN}✅ Minimal custom Besu image built: $BESU_IMAGE_TAG${NC}"
 
-echo -e "${BLUE}🐳 Building RLN Prover Docker image...${NC}"
-cd "$STATUS_RLN_PROVER_DIR"
-RLN_PROVER_TAG="${RLN_PROVER_IMAGE_NAME}:${TAG_WITH_TIME}"
-docker build --platform linux/amd64 -t "$RLN_PROVER_TAG" .
-
-echo -e "${GREEN}✅ RLN Prover image built: $RLN_PROVER_TAG${NC}"
+RLN_PROVER_TAG=""
+if [[ "$BUILD_PROVER" == "true" ]]; then
+    echo -e "${BLUE}🐳 Building RLN Prover Docker image...${NC}"
+    cd "$STATUS_RLN_PROVER_DIR"
+    RLN_PROVER_TAG="${RLN_PROVER_IMAGE_NAME}:${TAG_WITH_TIME}"
+    docker build --platform linux/amd64 -t "$RLN_PROVER_TAG" .
+    echo -e "${GREEN}✅ RLN Prover image built: $RLN_PROVER_TAG${NC}"
+fi
 
 ###############################################
 # Optional: Push images to a registry
@@ -289,79 +311,125 @@ fi
 if [[ "$PUSH_IMAGES" == "true" ]]; then
     echo -e "${BLUE}📤 Pushing images to registry...${NC}"
     echo -e "  Besu: ${BESU_IMAGE_REMOTE}"
-    echo -e "  RLN Prover: ${RLN_PROVER_IMAGE_REMOTE}"
     docker tag "$BESU_IMAGE_TAG" "$BESU_IMAGE_REMOTE"
     docker push "$BESU_IMAGE_REMOTE"
-    docker tag "$RLN_PROVER_TAG" "$RLN_PROVER_IMAGE_REMOTE"
-    docker push "$RLN_PROVER_IMAGE_REMOTE"
+    
+    if [[ -n "$RLN_PROVER_TAG" ]]; then
+        echo -e "  RLN Prover: ${RLN_PROVER_IMAGE_REMOTE}"
+        docker tag "$RLN_PROVER_TAG" "$RLN_PROVER_IMAGE_REMOTE"
+        docker push "$RLN_PROVER_IMAGE_REMOTE"
+    fi
     echo -e "${GREEN}✅ Images pushed successfully${NC}"
 
     # Post-push: print convenient pull commands and (where possible) web links
     echo -e "${BLUE}🔗 Published image references:${NC}"
     echo -e "  • Besu: ${GREEN}${BESU_IMAGE_REMOTE}${NC}"
     echo -e "    docker pull ${BESU_IMAGE_REMOTE}"
-    echo -e "  • RLN Prover: ${GREEN}${RLN_PROVER_IMAGE_REMOTE}${NC}"
-    echo -e "    docker pull ${RLN_PROVER_IMAGE_REMOTE}"
+    if [[ -n "$RLN_PROVER_TAG" ]]; then
+        echo -e "  • RLN Prover: ${GREEN}${RLN_PROVER_IMAGE_REMOTE}${NC}"
+        echo -e "    docker pull ${RLN_PROVER_IMAGE_REMOTE}"
+    fi
 
     # Best-effort clickable links for common registries
     if [[ "$REGISTRY" == "docker.io" ]]; then
         echo -e "  🌐 Besu (Docker Hub): https://hub.docker.com/r/${NAMESPACE}/${BESU_IMAGE_NAME}/tags?name=${TAG_WITH_TIME}"
-        echo -e "  🌐 RLN  (Docker Hub): https://hub.docker.com/r/${NAMESPACE}/${RLN_PROVER_IMAGE_NAME}/tags?name=${TAG_WITH_TIME}"
+        if [[ -n "$RLN_PROVER_TAG" ]]; then
+            echo -e "  🌐 RLN  (Docker Hub): https://hub.docker.com/r/${NAMESPACE}/${RLN_PROVER_IMAGE_NAME}/tags?name=${TAG_WITH_TIME}"
+        fi
     elif [[ "$REGISTRY" == "ghcr.io" ]]; then
         # GitHub Container Registry doesn't have a stable per-tag public URL; point to package page
         echo -e "  🌐 Besu (GHCR package page): https://github.com/${NAMESPACE}/packages/container/${BESU_IMAGE_NAME}"
-        echo -e "  🌐 RLN  (GHCR package page): https://github.com/${NAMESPACE}/packages/container/${RLN_PROVER_IMAGE_NAME}"
+        if [[ -n "$RLN_PROVER_TAG" ]]; then
+            echo -e "  🌐 RLN  (GHCR package page): https://github.com/${NAMESPACE}/packages/container/${RLN_PROVER_IMAGE_NAME}"
+        fi
     fi
 fi
 
 echo -e "${BLUE}📝 Updating Docker Compose...${NC}"
-COMPOSE_FILE="${SCRIPT_DIR}/docker/compose-spec-l2-services-rln.yml"
+COMPOSE_FILE="${REPO_ROOT}/docker/compose-spec-l2-services-rln.yml"
 if [[ -f "$COMPOSE_FILE" ]]; then
     # Create backup
     cp "$COMPOSE_FILE" "${COMPOSE_FILE}.backup.$(date +%Y%m%d%H%M%S)"
 
     # Update image lines for specific services only
-    awk -v besu_img="$BESU_IMAGE_REMOTE" -v rln_img="$RLN_PROVER_IMAGE_REMOTE" '
-        /^[[:space:]]*container_name:[[:space:]]*sequencer$/ { tgt = "besu" }
-        /^[[:space:]]*container_name:[[:space:]]*l2-node-besu$/ { tgt = "besu" }
-        /^[[:space:]]*container_name:[[:space:]]*rln-prover$/ { tgt = "rln" }
-        /^[[:space:]]*container_name:[[:space:]]*karma-service$/ { tgt = "rln" }
-        {
-          if (tgt != "" && $0 ~ /^[[:space:]]*image:[[:space:]]*/) {
-            match($0, /^[[:space:]]*/); lead = substr($0, 1, RLENGTH);
-            if (tgt == "besu") {
-              print lead "image: " besu_img;
-            } else {
-              print lead "image: " rln_img;
+    # Only update prover images if we built them
+    if [[ -n "$RLN_PROVER_TAG" ]]; then
+        awk -v besu_img="$BESU_IMAGE_REMOTE" -v rln_img="$RLN_PROVER_IMAGE_REMOTE" '
+            /^[[:space:]]*container_name:[[:space:]]*sequencer$/ { tgt = "besu" }
+            /^[[:space:]]*container_name:[[:space:]]*l2-node-besu$/ { tgt = "besu" }
+            /^[[:space:]]*container_name:[[:space:]]*rln-prover$/ { tgt = "rln" }
+            /^[[:space:]]*container_name:[[:space:]]*karma-service$/ { tgt = "rln" }
+            {
+              if (tgt != "" && $0 ~ /^[[:space:]]*image:[[:space:]]*/) {
+                match($0, /^[[:space:]]*/); lead = substr($0, 1, RLENGTH);
+                if (tgt == "besu") {
+                  print lead "image: " besu_img;
+                } else {
+                  print lead "image: " rln_img;
+                }
+                tgt = "";
+                next;
+              }
+              print $0;
             }
-            tgt = "";
-            next;
-          }
-          print $0;
-        }
-    ' "$COMPOSE_FILE" > "${COMPOSE_FILE}.tmp" && mv "${COMPOSE_FILE}.tmp" "$COMPOSE_FILE"
-
-    echo -e "${GREEN}✅ Updated Docker Compose with minimal images:${NC}"
-    echo -e "  sequencer, l2-node-besu -> ${BESU_IMAGE_REMOTE}"
-    echo -e "  rln-prover, karma-service -> ${RLN_PROVER_IMAGE_REMOTE}"
+        ' "$COMPOSE_FILE" > "${COMPOSE_FILE}.tmp" && mv "${COMPOSE_FILE}.tmp" "$COMPOSE_FILE"
+        echo -e "${GREEN}✅ Updated Docker Compose with images:${NC}"
+        echo -e "  sequencer, l2-node-besu -> ${BESU_IMAGE_REMOTE}"
+        echo -e "  rln-prover, karma-service -> ${RLN_PROVER_IMAGE_REMOTE}"
+    else
+        # Only update Besu images
+        awk -v besu_img="$BESU_IMAGE_REMOTE" '
+            /^[[:space:]]*container_name:[[:space:]]*sequencer$/ { tgt = "besu" }
+            /^[[:space:]]*container_name:[[:space:]]*l2-node-besu$/ { tgt = "besu" }
+            {
+              if (tgt == "besu" && $0 ~ /^[[:space:]]*image:[[:space:]]*/) {
+                match($0, /^[[:space:]]*/); lead = substr($0, 1, RLENGTH);
+                print lead "image: " besu_img;
+                tgt = "";
+                next;
+              }
+              print $0;
+            }
+        ' "$COMPOSE_FILE" > "${COMPOSE_FILE}.tmp" && mv "${COMPOSE_FILE}.tmp" "$COMPOSE_FILE"
+        echo -e "${GREEN}✅ Updated Docker Compose with Besu image:${NC}"
+        echo -e "  sequencer, l2-node-besu -> ${BESU_IMAGE_REMOTE}"
+    fi
 fi
 
 # Clean up build directory
-cd "$SCRIPT_DIR"
+cd "$REPO_ROOT"
 rm -rf "$CUSTOM_BESU_DIR"
 
-echo -e "${GREEN}🎉 Minimal Build Complete!${NC}"
+echo -e "${GREEN}🎉 Build Complete!${NC}"
 echo -e "${BLUE}📋 Built Components:${NC}"
 echo -e "  Custom Sequencer JAR: $(basename "$SEQUENCER_JAR")"
 echo -e "  RLN Library: librln_bridge.so (Linux x86-64)"
-echo -e "  Minimal Besu Image: $BESU_IMAGE_REMOTE"
-echo -e "  RLN Prover Image: $RLN_PROVER_IMAGE_REMOTE"
+echo -e "  Besu Image: $BESU_IMAGE_REMOTE"
+if [[ -n "$RLN_PROVER_TAG" ]]; then
+    echo -e "  RLN Prover Image: $RLN_PROVER_IMAGE_REMOTE"
+fi
+
+# Restart services if requested
+if [[ "$RESTART_SERVICES" == "true" ]]; then
+    echo -e "${BLUE}🔄 Restarting services...${NC}"
+    cd "$REPO_ROOT"
+    docker compose -f "$COMPOSE_FILE" up -d --force-recreate sequencer l2-node-besu
+    if [[ -n "$RLN_PROVER_TAG" ]]; then
+        docker compose -f "$COMPOSE_FILE" up -d --force-recreate rln-prover karma-service
+    fi
+    echo -e "${GREEN}✅ Services restarted${NC}"
+fi
+
 echo
 echo -e "${YELLOW}🚀 Next Steps:${NC}"
-echo -e "  1. Run: ${GREEN}make start-env-with-rln${NC}"
-echo -e "  2. Test gasless transactions"
-echo -e "  3. Check logs: ${GREEN}docker logs sequencer${NC}"
+if [[ "$RESTART_SERVICES" != "true" ]]; then
+    echo -e "  1. Restart services: ${GREEN}cd $REPO_ROOT && docker compose -f docker/compose-spec-l2-services-rln.yml up -d --force-recreate sequencer l2-node-besu${NC}"
+fi
+echo -e "  Test gasless transactions"
+echo -e "  Check logs: ${GREEN}docker logs sequencer${NC}"
 echo
 echo -e "${BLUE}🔧 Environment Variables:${NC}"
 echo -e "  export BESU_IMAGE_REF=${BESU_IMAGE_REMOTE}"
-echo -e "  export RLN_PROVER_IMAGE_REF=${RLN_PROVER_IMAGE_REMOTE}"
+if [[ -n "$RLN_PROVER_TAG" ]]; then
+    echo -e "  export RLN_PROVER_IMAGE_REF=${RLN_PROVER_IMAGE_REMOTE}"
+fi

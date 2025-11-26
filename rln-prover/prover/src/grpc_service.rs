@@ -18,10 +18,7 @@ use tonic::{
 };
 use tonic_web::GrpcWebLayer;
 use tower_http::cors::{Any, CorsLayer};
-use tracing::{
-    debug,
-    // error
-};
+use tracing::{debug, error, info, warn};
 use url::Url;
 // internal
 use crate::error::{AppError, ProofGenerationStringError};
@@ -64,8 +61,8 @@ use prover_proto::{
 };
 
 const PROVER_SERVICE_LIMIT_PER_CONNECTION: usize = 16;
-// Timeout for all handlers of a request
-const PROVER_SERVICE_GRPC_TIMEOUT: Duration = Duration::from_secs(30);
+// Timeout for all handlers of a request (increased to 5 minutes for streaming support)
+const PROVER_SERVICE_GRPC_TIMEOUT: Duration = Duration::from_secs(300);
 //
 const PROVER_SERVICE_HTTP2_MAX_CONCURRENT_STREAM: u32 = 64;
 // Http2 max frame size (e.g. 16 Kb)
@@ -160,10 +157,18 @@ where
         ));
 
         // Send some data to one of the proof services
+        info!("[gRPC] Sending proof_data to channel. Channel len before: {}, capacity: {}", 
+              self.proof_sender.len(), self.proof_sender_channel_size);
+        
         self.proof_sender
             .send(proof_data)
             .await
-            .map_err(|e| Status::from_error(Box::new(e)))?;
+            .map_err(|e| {
+                warn!("[gRPC] Failed to send to channel: {:?}", e);
+                Status::from_error(Box::new(e))
+            })?;
+
+        info!("[gRPC] Successfully sent to channel. Channel len after: {}", self.proof_sender.len());
 
         // Note: based on this link https://doc.rust-lang.org/reference/expressions/operator-expr.html#type-cast-expressions
         //       "Casting from an integer to float will produce the closest possible float *"
@@ -240,29 +245,54 @@ where
         let (tx, rx) = mpsc::channel(self.proof_sender_channel_size);
         // Channel to receive a RLN proof (from one proof service)
         let mut rx2 = self.broadcast_channel.0.subscribe();
+        
+        info!("[gRPC] New get_proofs subscription, total subscribers: {}", self.broadcast_channel.0.receiver_count());
+        
         tokio::spawn(async move {
-            // FIXME: Should we send the error here?
-
             let gauge_ = gauge;
 
-            while let Ok(Ok(data)) = rx2.recv().await {
-                let rln_proof = RlnProof {
-                    sender: data.tx_sender.to_vec(),
-                    tx_hash: data.tx_hash,
-                    proof: data.proof,
-                };
+            // Stream proofs to client, with proper disconnect detection
+            loop {
+                tokio::select! {
+                    // Check if client disconnected (receiver dropped)
+                    _ = tx.closed() => {
+                        info!("[gRPC] Client disconnected (stream closed), cleaning up subscriber");
+                        break;
+                    }
+                    // Receive proofs from broadcast channel
+                    result = rx2.recv() => {
+                        match result {
+                            Ok(Ok(data)) => {
+                                let rln_proof = RlnProof {
+                                    sender: data.tx_sender.to_vec(),
+                                    tx_hash: data.tx_hash.clone(),
+                                    proof: data.proof,
+                                };
 
-                let resp = RlnProofReply {
-                    resp: Some(GetProofsResp::Proof(rln_proof)),
-                };
+                                info!("[gRPC] Streaming proof for tx_hash: {:?}", &data.tx_hash[..4]);
+                                
+                                let resp = RlnProofReply {
+                                    resp: Some(GetProofsResp::Proof(rln_proof)),
+                                };
 
-                if let Err(e) = tx.send(Ok(resp)).await {
-                    debug!("Done: sending dummy rln proofs: {}", e);
-                    break;
-                };
+                                if let Err(e) = tx.send(Ok(resp)).await {
+                                    debug!("[gRPC] Client disconnected during send: {}", e);
+                                    break;
+                                };
+                            }
+                            Ok(Err(e)) => {
+                                warn!("[gRPC] Proof generation error: {:?}", e);
+                            }
+                            Err(e) => {
+                                error!("[gRPC] Broadcast channel error: {:?}", e);
+                                break;
+                            }
+                        }
+                    }
+                }
             }
 
-            // Note: will be dropped anyway but better be explicit here :)
+            info!("[gRPC] Proof stream subscription ended");
             drop(gauge_);
         });
 
