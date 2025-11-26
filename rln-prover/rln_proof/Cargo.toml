@@ -13,8 +13,8 @@ ark-serialize.workspace = true
 serde = { version = "1.0.228", features = ["derive"] }
 prover_pmtree = { path = "../prover_pmtree" }
 
-[dev-dependencies]
-criterion.workspace = true
+# [dev-dependencies]
+# criterion.workspace = true
 
 # [[bench]]
 # name = "generate_proof"
