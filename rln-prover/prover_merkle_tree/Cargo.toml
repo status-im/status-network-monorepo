@@ -17,10 +17,10 @@ features = [
     "sqlx-postgres",
 ]
 
-[dev-dependencies]
-tokio.workspace = true
-hex-literal = "0.3.4"
-tracing-test = "0.2.5"
-prover_db_migration = { path = "../prover_db_migration" }
-log = "0.4.28"
-function_name = "0.3.0"
+# [dev-dependencies]
+# tokio.workspace = true
+# hex-literal = "0.3.4"
+# tracing-test = "0.2.5"
+# prover_db_migration = { path = "../prover_db_migration" }
+# log = "0.4.28"
+# function_name = "0.3.0"
