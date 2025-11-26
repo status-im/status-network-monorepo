@@ -1,7 +1,7 @@
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
 use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
 
-pub(crate) async fn create_database_connection_1(f_name: &str, test_name: &str) -> Result<DatabaseConnection, DbErr> {
+pub(crate) async fn create_database_connection_1(f_name: &str, test_name: &str) -> Result<(String, DatabaseConnection), DbErr> {
 
     // Drop / Create db_name then return a connection to it
 
@@ -31,10 +31,10 @@ pub(crate) async fn create_database_connection_1(f_name: &str, test_name: &str) 
     db.close().await?;
 
     let db_url_final = format!("{}/{}", db_url_base, db_name);
-    let db = Database::connect(db_url_final)
+    let db = Database::connect(&db_url_final)
         .await
         .expect("Database connection failed");
     MigratorCreate::up(&db, None).await?;
 
-    Ok(db)
+    Ok((db_url_final, db))
 }

@@ -24,6 +24,7 @@ mod user_db_2;
 mod user_db_2_tests;
 #[cfg(test)]
 mod tests_common;
+mod grpc_e2e;
 
 // std
 use alloy::network::EthereumWallet;

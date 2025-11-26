@@ -227,9 +227,11 @@ mod tests {
         protocol::{deserialize_proof_values, verify_proof},
     };
     // internal
-    use crate::user_db::{MERKLE_TREE_HEIGHT, UserDbConfig, UserDb};
-    use crate::user_db_service::UserDbService;
     use rln_proof::RlnIdentifier;
+    use crate::tests_common::create_database_connection_1;
+    use crate::user_db::MERKLE_TREE_HEIGHT;
+    use crate::user_db_2::UserDb2Config;
+    use crate::user_db_service::UserDbService;
 
     const ADDR_1: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
     const ADDR_2: Address = address!("0xb20a608c624Ca5003905aA834De7156C68b2E1d0");
@@ -254,7 +256,7 @@ mod tests {
         sender: Address,
         proof_tx: &mut async_channel::Sender<ProofGenerationData>,
         rln_identifier: Arc<RlnIdentifier>,
-        user_db: &UserDb,
+        user_db: &UserDb2,
     ) -> Result<(), AppErrorExt> {
         // used by test_proof_generation unit test
 
@@ -262,9 +264,10 @@ mod tests {
         debug!("Waiting a bit before sending proof...");
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         debug!("Sending proof...");
+        let user_identity = user_db.get_user_identity(&ADDR_1).await.unwrap();
         proof_tx
             .send(ProofGenerationData {
-                user_identity: user_db.get_user(&ADDR_1).unwrap(),
+                user_identity,
                 rln_identifier,
                 tx_counter: 0,
                 tx_sender: sender,
@@ -315,8 +318,8 @@ mod tests {
         Err::<(), AppErrorExt>(AppErrorExt::Exit)
     }
 
-    /*
     #[tokio::test]
+    #[function_name::named]
     // #[tracing_test::traced_test]
     async fn test_proof_generation() {
         // Queues
@@ -330,27 +333,26 @@ mod tests {
         let epoch_store = Arc::new(RwLock::new((epoch, epoch_slice)));
 
         // User db
-        let temp_folder = tempfile::tempdir().unwrap();
-        let temp_folder_tree = tempfile::tempdir().unwrap();
-        let config = UserDbConfig {
-            db_path: PathBuf::from(temp_folder.path()),
-            merkle_tree_folder: PathBuf::from(temp_folder_tree.path()),
+        let config = UserDb2Config {
             tree_count: 1,
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
+        let (_, db_conn) = create_database_connection_1(file!(), function_name!())
+            .await.unwrap();
         let user_db_service = UserDbService::new(
+            db_conn,
             config,
             Default::default(),
             epoch_store.clone(),
             10.into(),
             Default::default(),
         )
-        .unwrap();
+        .await.unwrap();
         let user_db = user_db_service.get_user_db();
-        user_db.on_new_user(&ADDR_1).unwrap();
-        user_db.on_new_user(&ADDR_2).unwrap();
+        user_db.on_new_user(&ADDR_1).await.unwrap();
+        user_db.on_new_user(&ADDR_2).await.unwrap();
 
         let rln_identifier = Arc::new(RlnIdentifier::new(b"foo bar baz"));
 
@@ -378,5 +380,5 @@ mod tests {
         // Everything ok if proof_verifier return AppErrorExt::Exit else there is a real error
         assert_matches!(res, Err(AppErrorExt::Exit));
     }
-    */
+
 }
