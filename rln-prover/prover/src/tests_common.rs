@@ -1,13 +1,21 @@
-use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
 use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
+use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
 
-pub(crate) async fn create_database_connection_1(f_name: &str, test_name: &str) -> Result<(String, DatabaseConnection), DbErr> {
-
+pub(crate) async fn create_database_connection_1(
+    f_name: &str,
+    test_name: &str,
+) -> Result<(String, DatabaseConnection), DbErr> {
     // Drop / Create db_name then return a connection to it
 
-    let db_name = format!("{}_{}",
-        std::path::Path::new(f_name).file_stem().unwrap().to_str().unwrap(),
-        test_name);
+    let db_name = format!(
+        "{}_{}",
+        std::path::Path::new(f_name)
+            .file_stem()
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        test_name
+    );
 
     println!("db_name: {}", db_name);
 
@@ -21,12 +29,12 @@ pub(crate) async fn create_database_connection_1(f_name: &str, test_name: &str) 
         db.get_database_backend(),
         format!("DROP DATABASE IF EXISTS \"{}\";", db_name),
     ))
-        .await?;
+    .await?;
     db.execute_raw(Statement::from_string(
         db.get_database_backend(),
         format!("CREATE DATABASE \"{}\";", db_name),
     ))
-        .await?;
+    .await?;
 
     db.close().await?;
 

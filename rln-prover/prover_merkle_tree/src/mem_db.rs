@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use prover_pmtree::{DBKey, DatabaseErrorKind, PmtreeErrorKind, PmtreeResult, Value};
 use prover_pmtree::Database as PmtreeDatabase;
+use prover_pmtree::{DBKey, DatabaseErrorKind, PmtreeErrorKind, PmtreeResult, Value};
+use std::collections::HashMap;
 
 pub struct MemoryDb(HashMap<DBKey, Value>);
 
@@ -29,7 +29,7 @@ impl PmtreeDatabase for MemoryDb {
         Ok(())
     }
 
-    fn put_batch(&mut self, subtree: impl IntoIterator<Item=(DBKey, Value)>) -> PmtreeResult<()> {
+    fn put_batch(&mut self, subtree: impl IntoIterator<Item = (DBKey, Value)>) -> PmtreeResult<()> {
         self.0.extend(subtree);
         Ok(())
     }

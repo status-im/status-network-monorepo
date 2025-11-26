@@ -61,10 +61,12 @@ where
     PDB: PersistentDatabase,
     E: Error + From<PmtreeErrorKind> + From<PDB::Error>,
 {
-
     /// Creates new `MerkleTree` and store it to the specified path/db
-    pub async fn new(depth: usize, db_config: D::Config, persistent_db_config: PDB::Config) -> Result<Self, E> {
-
+    pub async fn new(
+        depth: usize,
+        db_config: D::Config,
+        persistent_db_config: PDB::Config,
+    ) -> Result<Self, E> {
         // Create new db instance
         let mut db = D::new(db_config)?;
         let mut persistent_db = PDB::new(persistent_db_config);
@@ -118,26 +120,31 @@ where
 
     /// Loads existing Merkle Tree from the specified path/db
     pub async fn load(db_config: D::Config, persistent_db_config: PDB::Config) -> Result<Self, E> {
-
         let persistent_db = PDB::new(persistent_db_config);
 
-        let root_ = persistent_db.get((0, 0))
+        let root_ = persistent_db
+            .get((0, 0))
             .await?
             .ok_or(PmtreeErrorKind::CustomError("Root not found".to_string()))?;
         let root = H::deserialize(root_);
 
-        let cfg = persistent_db.get_cfg()
+        let cfg = persistent_db
+            .get_cfg()
             .await?
-            .ok_or(PmtreeErrorKind::CustomError("Pdb cfg not found".to_string()))?;
+            .ok_or(PmtreeErrorKind::CustomError(
+                "Pdb cfg not found".to_string(),
+            ))?;
 
         // FIXME: return iterator here?
         let all_nodes = persistent_db.get_all().await?;
 
         let mut db = D::new(db_config)?;
 
-        db.put_batch(all_nodes.into_iter().map(|(depth, index, v)| {
-            (Key(depth, index).into(), v)
-        }))?;
+        db.put_batch(
+            all_nodes
+                .into_iter()
+                .map(|(depth, index, v)| (Key(depth, index).into(), v)),
+        )?;
 
         // Load cache vec
         let depth = cfg.0;
@@ -167,14 +174,12 @@ where
 
     /// Sets a leaf at the specified tree index
     pub async fn set(&mut self, key: usize, leaf: H::Fr) -> Result<(), E> {
-
         if key >= self.capacity() {
             return Err(PmtreeErrorKind::TreeError(TreeErrorKind::IndexOutOfBounds).into());
         }
 
         let value = H::serialize(leaf);
-        self.db
-            .put(Key(self.depth, key).into(), value.clone())?;
+        self.db.put(Key(self.depth, key).into(), value.clone())?;
         self.persistent_db.put((self.depth, key), value);
 
         self.recalculate_from(key)?;
@@ -221,10 +226,7 @@ where
 
         let elem_a = self.get_elem(Key(depth, b));
         let elem_b = self.get_elem(Key(depth, b + 1));
-        Ok(H::hash(&[
-            elem_a?,
-            elem_b?,
-        ]))
+        Ok(H::hash(&[elem_a?, elem_b?]))
     }
 
     // Returns elem by the key
@@ -264,7 +266,8 @@ where
         self.batch_insert(
             Some(start),
             leaves.into_iter().collect::<Vec<_>>().as_slice(),
-        ).await
+        )
+        .await
     }
 
     /// Batch insertion, updates the tree in parallel.
@@ -291,19 +294,13 @@ where
 
         let subtree_iter = subtree
             .iter()
-            .map(|(key, value)| (key, H::serialize(*value)))
-            ;
+            .map(|(key, value)| (key, H::serialize(*value)));
 
-        self.db.put_batch(
-            subtree_iter
-                .clone()
-                .map(|(k, v)| ((*k).into(), v))
-        )?;
+        self.db
+            .put_batch(subtree_iter.clone().map(|(k, v)| ((*k).into(), v)))?;
 
         // FIXME
-        self.persistent_db.put_batch(
-            subtree_iter
-        );
+        self.persistent_db.put_batch(subtree_iter);
 
         // Update next_index value in db
         if end > self.next_index {

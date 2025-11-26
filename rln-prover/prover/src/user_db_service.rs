@@ -1,13 +1,13 @@
 // std
 use parking_lot::RwLock;
-use std::sync::Arc;
 use sea_orm::DatabaseConnection;
+use std::sync::Arc;
 // third-party
 use tokio::sync::Notify;
 use tracing::debug;
 // internal
 use crate::epoch_service::{Epoch, EpochSlice};
-use crate::error::{AppError2};
+use crate::error::AppError2;
 use crate::tier::TierLimits;
 // use crate::user_db::{UserDb, UserDbConfig};
 use crate::user_db_2::{UserDb2, UserDb2Config};
@@ -30,9 +30,7 @@ impl UserDbService {
         rate_limit: RateLimit,
         tier_limits: TierLimits,
     ) -> Result<Self, UserDb2OpenError> {
-
-        let user_db = UserDb2::new(db_conn, config, epoch_store, tier_limits, rate_limit)
-            .await?;
+        let user_db = UserDb2::new(db_conn, config, epoch_store, tier_limits, rate_limit).await?;
         Ok(Self {
             user_db,
             epoch_changes: epoch_changes_notifier,

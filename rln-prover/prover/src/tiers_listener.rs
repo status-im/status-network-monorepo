@@ -6,9 +6,9 @@ use tracing::error;
 use crate::error::AppError2;
 use crate::tier::TierLimits;
 // use crate::user_db::UserDb;
+use crate::user_db_2::UserDb2;
 use smart_contract::KarmaTiers;
 use smart_contract::KarmaTiers::KarmaTiersInstance;
-use crate::user_db_2::UserDb2;
 
 pub(crate) struct TiersListener {
     sc_address: Address,
@@ -54,7 +54,8 @@ impl TiersListener {
 
                 if let Err(e) = self
                     .user_db
-                    .on_tier_limits_updated(TierLimits::from(tier_limits)).await
+                    .on_tier_limits_updated(TierLimits::from(tier_limits))
+                    .await
                 {
                     // If there is an error here, we assume this is an error by the user
                     // updating the Tier limits (and thus we don't want to shut down the prover)

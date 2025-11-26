@@ -8,14 +8,14 @@
 
 pub mod database;
 pub mod hasher;
-pub mod tree;
 pub mod persistent_db;
+pub mod tree;
 
 use std::fmt::{Debug, Display};
 
 pub use database::Database;
 pub use hasher::Hasher;
-pub use tree::{MerkleTree, MerkleProof};
+pub use tree::{MerkleProof, MerkleTree};
 
 /// Denotes keys in a database
 pub type DBKey = [u8; 8];

@@ -21,8 +21,8 @@ pub trait Database {
     /// Puts the value to the db by the key
     fn put(&mut self, key: DBKey, value: Value) -> PmtreeResult<()>;
 
-    /// Puts the leaves batch to the db 
-    fn put_batch(&mut self, subtree: impl IntoIterator<Item=(DBKey, Value)>) -> PmtreeResult<()>;
+    /// Puts the leaves batch to the db
+    fn put_batch(&mut self, subtree: impl IntoIterator<Item = (DBKey, Value)>) -> PmtreeResult<()>;
 
     /// Closes the db connection
     fn close(&mut self) -> PmtreeResult<()>;

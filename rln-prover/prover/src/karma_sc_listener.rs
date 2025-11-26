@@ -12,9 +12,9 @@ use tracing::{debug, error, info};
 // internal
 use crate::error::{AppError2, HandleTransferError2, RegisterSCError};
 // use crate::user_db::UserDb;
-use crate::user_db_error::{RegisterError2};
-use smart_contract::{KarmaAmountExt, KarmaRLNSC, KarmaSC, RLNRegister};
 use crate::user_db_2::UserDb2;
+use crate::user_db_error::RegisterError2;
+use smart_contract::{KarmaAmountExt, KarmaRLNSC, KarmaSC, RLNRegister};
 
 pub(crate) struct KarmaScEventListener {
     karma_sc_address: Address,
@@ -240,13 +240,16 @@ impl KarmaScEventListener {
                             // Fails if DB & SC are inconsistent
                             error!("Fail to remove user ({:?}) from DB: {:?}", to_address, e);
                             panic!("Fail to register user to SC and to remove it from DB...");
-                        },
+                        }
                         Ok(res) => {
                             if !res {
                                 error!("Fail to remove user ({:?}) from DB", to_address);
                                 panic!("Fail to register user to SC and to remove it from DB...");
                             } else {
-                                debug!("Successfully removed user ({:?}), after failing to register him", to_address);
+                                debug!(
+                                    "Successfully removed user ({:?}), after failing to register him",
+                                    to_address
+                                );
                             }
                         }
                     }
@@ -269,12 +272,18 @@ impl KarmaScEventListener {
                 match rem_res {
                     Err(e) => {
                         // Fails if DB & SC are inconsistent
-                        error!("Fail to remove slashed user ({:?}) from DB: {:?}", address_slashed, e);
+                        error!(
+                            "Fail to remove slashed user ({:?}) from DB: {:?}",
+                            address_slashed, e
+                        );
                         panic!("Fail to register user to SC and to remove it from DB...");
-                    },
+                    }
                     Ok(res) => {
                         if !res {
-                            error!("Fail to remove slashed user ({:?}) from DB", address_slashed);
+                            error!(
+                                "Fail to remove slashed user ({:?}) from DB",
+                                address_slashed
+                            );
                             panic!("Fail to register user to SC and to remove it from DB...");
                         } else {
                             debug!("Removed slashed user ({:?})", address_slashed);
@@ -311,9 +320,9 @@ mod tests {
     use crate::epoch_service::{Epoch, EpochSlice};
     use crate::user_db::MERKLE_TREE_HEIGHT;
     // use crate::user_db::{MERKLE_TREE_HEIGHT, UserDbConfig};
+    use crate::tests_common::create_database_connection_1;
     use crate::user_db_2::UserDb2Config;
     use crate::user_db_service::UserDbService;
-    use crate::tests_common::create_database_connection_1;
     // use function_name::named;
 
     // const ADDR_1: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
@@ -371,10 +380,18 @@ mod tests {
             10.into(),
             Default::default(),
         )
-        .await.unwrap();
+        .await
+        .unwrap();
         let user_db = user_db_service.get_user_db();
 
-        assert!(user_db_service.get_user_db().get_user(&ADDR_2).await.unwrap().is_none());
+        assert!(
+            user_db_service
+                .get_user_db()
+                .get_user(&ADDR_2)
+                .await
+                .unwrap()
+                .is_none()
+        );
 
         let minimal_amount = U256::from(25);
         let registry = KarmaScEventListener {
@@ -397,6 +414,13 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(user_db_service.get_user_db().get_user(&ADDR_2).await.unwrap().is_some());
+        assert!(
+            user_db_service
+                .get_user_db()
+                .get_user(&ADDR_2)
+                .await
+                .unwrap()
+                .is_some()
+        );
     }
 }

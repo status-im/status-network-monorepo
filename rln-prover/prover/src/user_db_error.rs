@@ -1,9 +1,9 @@
 use std::num::TryFromIntError;
 // third-party
 use alloy::primitives::Address;
+use prover_pmtree::PmtreeErrorKind;
 use sea_orm::DbErr;
 use zerokit_utils::error::{FromConfigError, ZerokitMerkleTreeError};
-use prover_pmtree::PmtreeErrorKind;
 // internal
 use crate::tier::ValidateTierLimitsError;
 // TODO: define MerkleTreeError here?
@@ -135,7 +135,7 @@ pub enum GetMerkleTreeProofError2 {
     #[error(transparent)]
     Db(#[from] DbErr),
     #[error(transparent)]
-    MerkleTree(#[from] PmtreeErrorKind)
+    MerkleTree(#[from] PmtreeErrorKind),
 }
 
 /*

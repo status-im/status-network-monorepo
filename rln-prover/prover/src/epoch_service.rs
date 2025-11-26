@@ -9,7 +9,7 @@ use parking_lot::RwLock;
 use tokio::sync::Notify;
 use tracing::{debug, error};
 // internal
-use crate::error::{AppError2};
+use crate::error::AppError2;
 use crate::metrics::{
     EPOCH_SERVICE_CURRENT_EPOCH, EPOCH_SERVICE_CURRENT_EPOCH_SLICE, EPOCH_SERVICE_DRIFT_MILLIS,
 };
