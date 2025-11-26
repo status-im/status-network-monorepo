@@ -289,7 +289,7 @@ impl UserDb2 {
 
     fn counters_from_key(&self, model: tx_counter::Model) -> EpochCounter {
         let (epoch, _epoch_slice) = *self.epoch_store.read();
-        let cmp = (model.epoch == i64::from(epoch));
+        let cmp = model.epoch == i64::from(epoch);
 
         match cmp {
             true => {
