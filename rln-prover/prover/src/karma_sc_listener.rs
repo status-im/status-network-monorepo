@@ -304,8 +304,12 @@ mod tests {
     use parking_lot::RwLock;
     // internal
     use crate::epoch_service::{Epoch, EpochSlice};
-    use crate::user_db::{MERKLE_TREE_HEIGHT, UserDbConfig};
+    use crate::user_db::MERKLE_TREE_HEIGHT;
+    // use crate::user_db::{MERKLE_TREE_HEIGHT, UserDbConfig};
+    use crate::user_db_2::UserDb2Config;
     use crate::user_db_service::UserDbService;
+    use crate::tests_common::create_database_connection_1;
+    // use function_name::named;
 
     // const ADDR_1: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
     const ADDR_2: Address = address!("0xb20a608c624Ca5003905aA834De7156C68b2E1d0");
@@ -339,34 +343,33 @@ mod tests {
         }
     }
 
-    // TODO
-    /*
     #[tokio::test]
+    #[function_name::named]
     async fn test_handle_transfer_event() {
         let epoch = Epoch::from(11);
         let epoch_slice = EpochSlice::from(42);
         let epoch_store = Arc::new(RwLock::new((epoch, epoch_slice)));
-        let temp_folder = tempfile::tempdir().unwrap();
-        let temp_folder_tree = tempfile::tempdir().unwrap();
-        let config = UserDbConfig {
-            db_path: PathBuf::from(temp_folder.path()),
-            merkle_tree_folder: PathBuf::from(temp_folder_tree.path()),
+        let config = UserDb2Config {
             tree_count: 1,
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
+        let db_conn = create_database_connection_1(file!(), function_name!())
+            .await
+            .unwrap();
         let user_db_service = UserDbService::new(
+            db_conn,
             config,
             Default::default(),
             epoch_store,
             10.into(),
             Default::default(),
         )
-        .unwrap();
+        .await.unwrap();
         let user_db = user_db_service.get_user_db();
 
-        assert!(user_db_service.get_user_db().get_user(&ADDR_2).is_none());
+        assert!(user_db_service.get_user_db().get_user(&ADDR_2).await.unwrap().is_none());
 
         let minimal_amount = U256::from(25);
         let registry = KarmaScEventListener {
@@ -389,7 +392,6 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(user_db_service.get_user_db().get_user(&ADDR_2).is_some());
+        assert!(user_db_service.get_user_db().get_user(&ADDR_2).await.unwrap().is_some());
     }
-    */
 }

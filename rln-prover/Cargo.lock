@@ -4206,6 +4206,7 @@ dependencies = [
  "clap_config",
  "criterion",
  "derive_more",
+ "function_name",
  "futures",
  "http",
  "lazy_static",
