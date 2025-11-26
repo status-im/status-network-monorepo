@@ -1,3 +1,5 @@
+
+#[cfg(feature = "postgres")]
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;

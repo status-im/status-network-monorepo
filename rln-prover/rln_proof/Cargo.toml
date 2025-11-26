@@ -16,6 +16,6 @@ prover_pmtree = { path = "../prover_pmtree" }
 [dev-dependencies]
 criterion.workspace = true
 
-[[bench]]
-name = "generate_proof"
-harness = false
+# [[bench]]
+# name = "generate_proof"
+# harness = false

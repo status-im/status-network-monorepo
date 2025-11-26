@@ -290,7 +290,7 @@ impl UserDb2 {
             .await?;
 
         match res {
-            None => Err(TxCounterError2::NotRegistered(address.clone())),
+            None => Err(TxCounterError2::NotRegistered(*address)),
             Some(res) => Ok(self.counters_from_key(res))
         }
     }
@@ -497,8 +497,7 @@ impl UserDb2 {
         // FIXME: no 'as'
         let proof = guard[tree_index as usize]
             .proof(index_in_mt as usize)
-            .map_err(|e| GetMerkleTreeProofError2::from(e))
-            ?;
+            .map_err(GetMerkleTreeProofError2::from)?;
 
         Ok(proof)
     }
@@ -863,19 +862,19 @@ mod tests {
         let addr = Address::new([0; 20]);
         {
             let guard = user_db.merkle_trees.read().await;
-            let mt = guard.get(0).unwrap();
+            let mt = guard.first().unwrap();
             assert_eq!(mt.leaves_set(), 0);
         }
         user_db.register_user(addr).await.unwrap();
         {
             let guard = user_db.merkle_trees.read().await;
-            let mt = guard.get(0).unwrap();
+            let mt = guard.first().unwrap();
             assert_eq!(mt.leaves_set(), 1);
         }
         user_db.register_user(ADDR_1).await.unwrap();
         {
             let guard = user_db.merkle_trees.read().await;
-            let mt = guard.get(0).unwrap();
+            let mt = guard.first().unwrap();
             assert_eq!(mt.leaves_set(), 2);
         }
 
@@ -885,7 +884,7 @@ mod tests {
         assert_eq!(user_db.has_user(&ADDR_2).await, Ok(false));
         {
             let guard = user_db.merkle_trees.read().await;
-            let mt = guard.get(0).unwrap();
+            let mt = guard.first().unwrap();
             assert_eq!(mt.leaves_set(), 2);
         }
     }

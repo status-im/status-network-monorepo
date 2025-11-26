@@ -260,6 +260,7 @@ impl ProofService {
     }
 }
 
+#[cfg(feature = "postgres")]
 #[cfg(test)]
 mod tests {
     use super::*;

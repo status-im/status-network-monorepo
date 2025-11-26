@@ -79,7 +79,7 @@ pub struct AppArgs {
     // )]
     // pub merkle_tree_folder: PathBuf,
     #[arg(long = "db", help = "Db url")]
-    pub db_url: String,
+    pub db_url: Option<String>,
     #[arg(long = "tree-count", help = "Merkle tree count", default_value = "1")]
     pub merkle_tree_count: u64,
     #[arg(
@@ -276,6 +276,7 @@ mod tests {
         let config = AppArgsConfig {
             ip: None,
             port: Some(config_port),
+            db_url: None,
             mock_sc: Some(true),
             ..Default::default()
         };
