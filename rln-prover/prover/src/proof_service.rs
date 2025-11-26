@@ -57,19 +57,35 @@ impl ProofService {
     }
 
     pub(crate) async fn serve(&self) -> Result<(), AppError> {
-        info!("[ProofService {}] Starting serve() - waiting for messages on channel", self.id);
+        info!(
+            "[ProofService {}] Starting serve() - waiting for messages on channel",
+            self.id
+        );
         loop {
-            debug!("[ProofService {}] Waiting for message on channel...", self.id);
+            debug!(
+                "[ProofService {}] Waiting for message on channel...",
+                self.id
+            );
             let received = self.receiver.recv().await;
-            debug!("[ProofService {}] Received message from channel: is_ok={}", self.id, received.is_ok());
+            debug!(
+                "[ProofService {}] Received message from channel: is_ok={}",
+                self.id,
+                received.is_ok()
+            );
 
             if let Err(e) = received {
-                info!("[ProofService {}] Stopping proof generation service: {}", self.id, e);
+                info!(
+                    "[ProofService {}] Stopping proof generation service: {}",
+                    self.id, e
+                );
                 break;
             }
 
             let proof_generation_data = received.unwrap();
-            info!("[ProofService {}] Processing transaction from sender: {:?}", self.id, proof_generation_data.tx_sender);
+            info!(
+                "[ProofService {}] Processing transaction from sender: {:?}",
+                self.id, proof_generation_data.tx_sender
+            );
 
             let (current_epoch, current_epoch_slice) = *self.current_epoch.read();
             let user_db = self.user_db.clone();
@@ -77,7 +93,11 @@ impl ProofService {
             let rate_limit = self.rate_limit;
 
             let counter_id = self.id;
-            info!("[ProofService {}] Starting proof generation for tx_hash: {:?}", counter_id, &proof_generation_data.tx_hash[..4]);
+            info!(
+                "[ProofService {}] Starting proof generation for tx_hash: {:?}",
+                counter_id,
+                &proof_generation_data.tx_hash[..4]
+            );
 
             // Communicate between rayon & current task
             let (send, recv) = tokio::sync::oneshot::channel();
@@ -86,7 +106,10 @@ impl ProofService {
             // Note: avoid tokio spawn_blocking as it does not perform great for CPU bounds tasks
             //       see https://ryhl.io/blog/async-what-is-blocking/
 
-            debug!("[ProofService {}] Spawning rayon task for proof generation", counter_id);
+            debug!(
+                "[ProofService {}] Spawning rayon task for proof generation",
+                counter_id
+            );
             rayon::spawn(move || {
                 debug!("[ProofService {}] Rayon task started", counter_id);
                 let proof_generation_start = std::time::Instant::now();
@@ -176,13 +199,20 @@ impl ProofService {
             // Wait for the rayon task.
             // Result 1st is from send channel (no errors expected)
             // Result 2nd can be a ProofGenerationError
-            debug!("[ProofService {}] Waiting for rayon task to complete...", counter_id);
+            debug!(
+                "[ProofService {}] Waiting for rayon task to complete...",
+                counter_id
+            );
             let result = recv
                 .instrument(debug_span!("compute proof"))
                 .await
                 .expect("Panic in rayon::spawn"); // Should never happen (but panic if it does)
-            
-            info!("[ProofService {}] Rayon task completed, result is_ok: {}", counter_id, result.is_ok());
+
+            info!(
+                "[ProofService {}] Rayon task completed, result is_ok: {}",
+                counter_id,
+                result.is_ok()
+            );
 
             let proof_sending_data = result
                 .map(|r| ProofSendingData {
@@ -199,12 +229,22 @@ impl ProofService {
                 );
             }
 
-            info!("[ProofService {}] Broadcasting proof to subscribers...", counter_id);
+            info!(
+                "[ProofService {}] Broadcasting proof to subscribers...",
+                counter_id
+            );
             if let Err(e) = self.broadcast_sender.send(proof_sending_data) {
-                warn!("[ProofService {}] Stopping proof generation service: {}", counter_id, e);
+                warn!(
+                    "[ProofService {}] Stopping proof generation service: {}",
+                    counter_id, e
+                );
                 break;
             };
-            info!("[ProofService {}] Proof broadcast successful, subscribers: {}", counter_id, self.broadcast_sender.receiver_count());
+            info!(
+                "[ProofService {}] Proof broadcast successful, subscribers: {}",
+                counter_id,
+                self.broadcast_sender.receiver_count()
+            );
 
             // Note: based on this link https://doc.rust-lang.org/reference/expressions/operator-expr.html#type-cast-expressions
             //       "Casting from an integer to float will produce the closest possible float *"

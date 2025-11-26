@@ -23,8 +23,8 @@ export async function retryWithBackoff<T>(
   for (let i = 0; i < maxRetries; i++) {
     try {
       return await fn();
-    } catch (error: any) {
-      lastError = error;
+    } catch (error: unknown) {
+      lastError = error instanceof Error ? error : new Error(String(error));
       const delay = initialDelayMs * Math.pow(2, i);
 
       logger.debug("Retry attempt failed", {
@@ -54,11 +54,7 @@ export async function waitFor(
     description?: string;
   } = {},
 ): Promise<void> {
-  const {
-    timeout = 30000,
-    interval = 1000,
-    description = "condition",
-  } = options;
+  const { timeout = 30000, interval = 1000, description = "condition" } = options;
 
   logger.debug("Waiting for condition", { description, timeout, interval });
 
@@ -77,9 +73,7 @@ export async function waitFor(
     await sleep(interval);
   }
 
-  throw new Error(
-    `Condition "${description}" not met after ${timeout}ms`,
-  );
+  throw new Error(`Condition "${description}" not met after ${timeout}ms`);
 }
 
 /**
@@ -130,10 +124,7 @@ export function timeUntilNextEpoch(): number {
 /**
  * Assert that a value is defined (not null or undefined)
  */
-export function assertDefined<T>(
-  value: T | null | undefined,
-  message?: string,
-): asserts value is T {
+export function assertDefined<T>(value: T | null | undefined, message?: string): asserts value is T {
   if (value === null || value === undefined) {
     throw new Error(message ?? "Expected value to be defined");
   }
@@ -142,28 +133,21 @@ export function assertDefined<T>(
 /**
  * Assert that an error is thrown with a specific message pattern
  */
-export async function assertThrows(
-  fn: () => Promise<any>,
-  messagePattern?: RegExp | string,
-): Promise<Error> {
+export async function assertThrows(fn: () => Promise<unknown>, messagePattern?: RegExp | string): Promise<Error> {
   try {
     await fn();
     throw new Error("Expected function to throw, but it didn't");
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error instanceof Error ? error : new Error(String(error));
     if (messagePattern) {
-      const pattern =
-        typeof messagePattern === "string"
-          ? new RegExp(messagePattern, "i")
-          : messagePattern;
+      const pattern = typeof messagePattern === "string" ? new RegExp(messagePattern, "i") : messagePattern;
 
-      if (!pattern.test(error.message)) {
-        throw new Error(
-          `Expected error message to match ${pattern}, but got: ${error.message}`,
-        );
+      if (!pattern.test(err.message)) {
+        throw new Error(`Expected error message to match ${pattern}, but got: ${err.message}`);
       }
     }
 
-    return error;
+    return err;
   }
 }
 
@@ -210,10 +194,7 @@ export async function createFundedWallet(
 /**
  * Get balance in ETH as a number (for logging)
  */
-export async function getBalanceInEth(
-  provider: ethers.Provider,
-  address: string,
-): Promise<string> {
+export async function getBalanceInEth(provider: ethers.Provider, address: string): Promise<string> {
   const balance = await provider.getBalance(address);
   return ethers.formatEther(balance);
 }
@@ -234,4 +215,3 @@ export function logTransaction(
     status: "status" in tx ? tx.status : "pending",
   });
 }
-

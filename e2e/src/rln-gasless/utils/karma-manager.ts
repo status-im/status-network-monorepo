@@ -65,10 +65,7 @@ export class KarmaTestManager {
   /**
    * Mint Karma to a user to achieve a specific tier
    */
-  async mintKarmaToTier(
-    userAddress: string,
-    tierName: string,
-  ): Promise<void> {
+  async mintKarmaToTier(userAddress: string, tierName: string): Promise<void> {
     const karmaAmount = this.getTierKarmaAmount(tierName);
 
     logger.debug("Minting Karma to tier", {
@@ -77,12 +74,10 @@ export class KarmaTestManager {
       amount: karmaAmount.toString(),
     });
 
-    const tx = await (this.karmaContract as any)
-      .connect(this.admin)
-      .mint(userAddress, karmaAmount, {
-        gasLimit: 100000,
-        gasPrice: ethers.parseUnits("15", "gwei"), // Premium gas to bypass RLN
-      });
+    const tx = await (this.karmaContract as ethers.Contract).connect(this.admin).mint(userAddress, karmaAmount, {
+      gasLimit: 100000,
+      gasPrice: ethers.parseUnits("15", "gwei"), // Premium gas to bypass RLN
+    });
 
     await tx.wait(1, 30000); // 1 confirmation, 30s timeout
 
@@ -122,10 +117,7 @@ export class KarmaTestManager {
   /**
    * Exhaust a user's quota by submitting transactions
    */
-  async exhaustUserQuota(
-    user: ethers.Signer,
-    recipientAddress: string,
-  ): Promise<number> {
+  async exhaustUserQuota(user: ethers.Signer, recipientAddress: string): Promise<number> {
     const userAddress = await user.getAddress();
 
     logger.debug("Exhausting user quota", { user: userAddress });
@@ -172,20 +164,13 @@ export class KarmaTestManager {
   /**
    * Wait for user to be registered to RLN after Karma mint
    */
-  async waitForRlnRegistration(
-    userAddress: string,
-    timeout: number = 30000,
-  ): Promise<void> {
+  async waitForRlnRegistration(userAddress: string, timeout: number = 30000): Promise<void> {
     logger.debug("Waiting for RLN registration", {
       user: userAddress,
       timeout,
     });
 
-    await this.rlnClient.waitForRegistration(
-      this.rlnContract,
-      userAddress,
-      timeout,
-    );
+    await this.rlnClient.waitForRegistration(this.rlnContract, userAddress, timeout);
 
     logger.debug("User registered to RLN", { user: userAddress });
   }
@@ -212,10 +197,7 @@ export class KarmaTestManager {
   /**
    * Update tiers in KarmaTiers contract
    */
-  async updateTiers(
-    karmaTiersContract: ethers.Contract,
-    tiers: TierConfig[],
-  ): Promise<void> {
+  async updateTiers(karmaTiersContract: ethers.Contract, tiers: TierConfig[]): Promise<void> {
     logger.debug("Updating tiers in contract", {
       tierCount: tiers.length,
     });
@@ -227,10 +209,9 @@ export class KarmaTestManager {
       txPerEpoch: t.quota,
     }));
 
-    const tx = await (karmaTiersContract as any).connect(this.admin).updateTiers(tierStructs);
+    const tx = await (karmaTiersContract as ethers.Contract).connect(this.admin).updateTiers(tierStructs);
     await tx.wait();
 
     logger.debug("Tiers updated", { txHash: tx.hash });
   }
 }
-

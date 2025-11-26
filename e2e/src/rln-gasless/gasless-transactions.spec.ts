@@ -59,18 +59,13 @@ describe("RLN Gasless Transactions", () => {
 
     // Load deployed contracts
     admin = new ethers.Wallet(RLN_CONFIG.accounts.admin, rpcProvider);
-    
+
     const contracts = loadRlnContracts(rpcProvider, admin);
     karmaContract = contracts.karma;
     rlnContract = contracts.rln;
-    
+
     // Initialize KarmaTestManager for minting Karma to test users
-    karmaManager = new KarmaTestManager(
-      karmaContract,
-      rlnContract,
-      admin,
-      rlnClient,
-    );
+    karmaManager = new KarmaTestManager(karmaContract, rlnContract, admin, rlnClient);
 
     logger.info("RLN Gasless Transaction test suite initialized", {
       karma: await karmaContract.getAddress(),
@@ -159,7 +154,7 @@ describe("RLN Gasless Transactions", () => {
       // This user is already in the RLN prover's mock_users.json
       const mockUser = RLN_CONFIG.mockUsers.user0;
       const user = new ethers.Wallet(mockUser.privateKey, rpcProvider);
-      
+
       logger.info("Using pre-registered mock user", { address: user.address });
 
       // Verify user has balance (funded by admin if needed)
@@ -250,13 +245,14 @@ describe("RLN Gasless Transactions", () => {
 
         // Should not reach here - gasless tx should fail for unregistered users
         throw new Error("Expected transaction to fail for unregistered user");
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const err = error instanceof Error ? error : new Error(String(error));
         logger.info("Unregistered user transaction rejected as expected", {
-          error: error.message,
+          error: err.message,
         });
 
         // The error could be timeout (no proof generated) or explicit rejection
-        expect(error.message).toMatch(/timeout|rejected|invalid|Sender not registered/i);
+        expect(err.message).toMatch(/timeout|rejected|invalid|Sender not registered/i);
       }
 
       logger.info("TS-GASLESS-004: PASSED ✓");
@@ -272,9 +268,9 @@ describe("RLN Gasless Transactions", () => {
       // The gRPC streaming can be unreliable with truly concurrent requests
       const mockUser = RLN_CONFIG.mockUsers.user1;
       const user = new ethers.Wallet(mockUser.privateKey, rpcProvider);
-      
-      logger.info("Using pre-registered mock user for concurrent test", { 
-        address: user.address 
+
+      logger.info("Using pre-registered mock user for concurrent test", {
+        address: user.address,
       });
 
       // Ensure user has sufficient balance
@@ -297,11 +293,11 @@ describe("RLN Gasless Transactions", () => {
 
       const receipts: ethers.TransactionReceipt[] = [];
       const timestamp = Date.now();
-      
+
       for (let i = 0; i < txCount; i++) {
         const nonce = await rpcProvider.getTransactionCount(user.address, "latest");
         const uniqueData = ethers.hexlify(ethers.toUtf8Bytes(`concurrent-test-${i}-${timestamp}`));
-        
+
         const tx = await user.sendTransaction({
           to: RECIPIENT_ADDRESS,
           value: 0n,
@@ -310,7 +306,7 @@ describe("RLN Gasless Transactions", () => {
           gasPrice: 0, // Gasless
           nonce,
         });
-        
+
         const receipt = await tx.wait(1, 30000);
         if (receipt) {
           receipts.push(receipt);
@@ -331,15 +327,15 @@ describe("RLN Gasless Transactions", () => {
   describe("TS-GASLESS-006: Nonce Management", () => {
     // Uses pre-registered mock users for sequential gasless transactions
     it("should manage nonces correctly for sequential gasless transactions", async () => {
-      // Use a pre-registered mock user (Hardhat account #2) 
+      // Use a pre-registered mock user (Hardhat account #2)
       // Different from user0 (used in TS-GASLESS-002) and user1 (used in TS-GASLESS-005)
       const mockUser = RLN_CONFIG.mockUsers.user2;
       const user = new ethers.Wallet(mockUser.privateKey, rpcProvider);
-      
+
       logger.info("Using pre-registered mock user", { address: user.address });
 
       // Ensure user has sufficient balance (use explicit nonce for funding)
-      let userBalance = await rpcProvider.getBalance(user.address);
+      const userBalance = await rpcProvider.getBalance(user.address);
       if (userBalance < ethers.parseEther("0.01")) {
         const adminNonce = await rpcProvider.getTransactionCount(await admin.getAddress(), "latest");
         const fundTx = await admin.sendTransaction({
@@ -370,10 +366,7 @@ describe("RLN Gasless Transactions", () => {
         expect(receipt.status).toBe(1);
 
         // Verify nonce incremented - check from latest block
-        const currentNonce = await rpcProvider.getTransactionCount(
-          user.address,
-          "latest",
-        );
+        const currentNonce = await rpcProvider.getTransactionCount(user.address, "latest");
         expect(currentNonce).toBe(initialNonce + i + 1);
 
         logger.info("Transaction with nonce", {
@@ -387,4 +380,3 @@ describe("RLN Gasless Transactions", () => {
     }, 90000); // 90 second timeout for 3 sequential gasless transactions
   });
 });
-

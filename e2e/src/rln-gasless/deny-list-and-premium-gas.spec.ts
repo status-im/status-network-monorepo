@@ -4,11 +4,7 @@ import { RlnTestClient } from "./utils/rln-test-client";
 import { DenyListTestManager } from "./utils/deny-list-manager";
 import { KarmaTestManager } from "./utils/karma-manager";
 import { DockerLogMonitor } from "./utils/log-monitor";
-import {
-  createFundedWallet,
-  parseGwei,
-  formatGwei,
-} from "./utils/test-helpers";
+import { createFundedWallet, parseGwei, formatGwei } from "./utils/test-helpers";
 import { RLN_CONFIG } from "./config/rln-config";
 import { loadRlnContracts } from "./config/contract-loader";
 import { createTestLogger } from "../config/logger";
@@ -61,18 +57,13 @@ describe("RLN Deny List and Premium Gas", () => {
 
     // Load deployed contracts
     admin = new ethers.Wallet(RLN_CONFIG.accounts.admin, rpcProvider);
-    
+
     const contracts = loadRlnContracts(rpcProvider, admin);
     karmaContract = contracts.karma;
     rlnContract = contracts.rln;
-    
+
     // Initialize KarmaTestManager (used in future tests)
-    void new KarmaTestManager(
-      karmaContract,
-      rlnContract,
-      admin,
-      rlnClient,
-    );
+    void new KarmaTestManager(karmaContract, rlnContract, admin, rlnClient);
 
     logger.info("RLN Deny List and Premium Gas test suite initialized", {
       karma: await karmaContract.getAddress(),
@@ -176,11 +167,7 @@ describe("RLN Deny List and Premium Gas", () => {
       // expect(isDenied).toBe(false);
 
       // Step 6: Verify RLN validation was bypassed (no proof generated)
-      const proverLogs = await logMonitor.getMatchingLogs(
-        "rln-prover",
-        receipt.hash.slice(2, 12),
-        { since: "20s" },
-      );
+      const proverLogs = await logMonitor.getMatchingLogs("rln-prover", receipt.hash.slice(2, 12), { since: "20s" });
 
       // Premium gas should bypass RLN, so no prover logs expected
       logger.info("Prover log count for premium tx", {
@@ -208,11 +195,7 @@ describe("RLN Deny List and Premium Gas", () => {
         });
 
         // Create fresh user for each test
-        const user = await createFundedWallet(
-          rpcProvider,
-          admin,
-          ethers.parseEther("1"),
-        );
+        const user = await createFundedWallet(rpcProvider, admin, ethers.parseEther("1"));
 
         const gasPrice = parseGwei(testCase.gasPrice);
 
@@ -232,11 +215,7 @@ describe("RLN Deny List and Premium Gas", () => {
         });
 
         // Verify RLN was bypassed (no prover involvement needed)
-        const proverLogs = await logMonitor.getMatchingLogs(
-          "rln-prover",
-          receipt.hash.slice(2, 12),
-          { since: "15s" },
-        );
+        const proverLogs = await logMonitor.getMatchingLogs("rln-prover", receipt.hash.slice(2, 12), { since: "15s" });
 
         logger.info("Premium tx - prover bypass confirmed", {
           proverLogCount: proverLogs.length,
@@ -271,11 +250,7 @@ describe("RLN Deny List and Premium Gas", () => {
       logger.info("Premium gas transaction mined", { txHash: receipt.hash });
 
       // Step 3: Verify RLN bypass (no proof generated)
-      const proverLogs = await logMonitor.getMatchingLogs(
-        "rln-prover",
-        receipt.hash.slice(2, 12),
-        { since: "15s" },
-      );
+      const proverLogs = await logMonitor.getMatchingLogs("rln-prover", receipt.hash.slice(2, 12), { since: "15s" });
 
       logger.info("Prover logs for premium tx (should be empty)", {
         count: proverLogs.length,
@@ -322,17 +297,17 @@ describe("RLN Deny List and Premium Gas", () => {
 
         // Should not reach here
         throw new Error("Expected transaction to fail due to insufficient funds");
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const err = error instanceof Error ? error : new Error(String(error));
         logger.info("Transaction rejected as expected", {
-          error: error.message,
+          error: err.message,
         });
 
         // Should fail with insufficient funds error
-        expect(error.message).toMatch(/insufficient|funds|gas|balance/i);
+        expect(err.message).toMatch(/insufficient|funds|gas|balance/i);
       }
 
       logger.info("TS-ERROR-001: PASSED ✓");
     }, 30000); // 30s timeout - should fail quickly
   });
 });
-

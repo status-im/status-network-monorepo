@@ -157,18 +157,21 @@ where
         ));
 
         // Send some data to one of the proof services
-        info!("[gRPC] Sending proof_data to channel. Channel len before: {}, capacity: {}", 
-              self.proof_sender.len(), self.proof_sender_channel_size);
-        
-        self.proof_sender
-            .send(proof_data)
-            .await
-            .map_err(|e| {
-                warn!("[gRPC] Failed to send to channel: {:?}", e);
-                Status::from_error(Box::new(e))
-            })?;
+        info!(
+            "[gRPC] Sending proof_data to channel. Channel len before: {}, capacity: {}",
+            self.proof_sender.len(),
+            self.proof_sender_channel_size
+        );
 
-        info!("[gRPC] Successfully sent to channel. Channel len after: {}", self.proof_sender.len());
+        self.proof_sender.send(proof_data).await.map_err(|e| {
+            warn!("[gRPC] Failed to send to channel: {:?}", e);
+            Status::from_error(Box::new(e))
+        })?;
+
+        info!(
+            "[gRPC] Successfully sent to channel. Channel len after: {}",
+            self.proof_sender.len()
+        );
 
         // Note: based on this link https://doc.rust-lang.org/reference/expressions/operator-expr.html#type-cast-expressions
         //       "Casting from an integer to float will produce the closest possible float *"
@@ -245,9 +248,12 @@ where
         let (tx, rx) = mpsc::channel(self.proof_sender_channel_size);
         // Channel to receive a RLN proof (from one proof service)
         let mut rx2 = self.broadcast_channel.0.subscribe();
-        
-        info!("[gRPC] New get_proofs subscription, total subscribers: {}", self.broadcast_channel.0.receiver_count());
-        
+
+        info!(
+            "[gRPC] New get_proofs subscription, total subscribers: {}",
+            self.broadcast_channel.0.receiver_count()
+        );
+
         tokio::spawn(async move {
             let gauge_ = gauge;
 
@@ -270,7 +276,7 @@ where
                                 };
 
                                 info!("[gRPC] Streaming proof for tx_hash: {:?}", &data.tx_hash[..4]);
-                                
+
                                 let resp = RlnProofReply {
                                     resp: Some(GetProofsResp::Proof(rln_proof)),
                                 };

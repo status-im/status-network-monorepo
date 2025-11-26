@@ -19,10 +19,7 @@ export class DockerLogMonitor {
   /**
    * Get logs from a Docker container
    */
-  async getLogs(
-    container: string,
-    options: LogSearchOptions = {},
-  ): Promise<string[]> {
+  async getLogs(container: string, options: LogSearchOptions = {}): Promise<string[]> {
     try {
       const cmdParts = ["docker", "logs", container];
 
@@ -42,16 +39,14 @@ export class DockerLogMonitor {
       const lines = allOutput.split("\n").filter((line) => line.trim());
 
       if (options.filter) {
-        return lines.filter((line) =>
-          line.toLowerCase().includes(options.filter!.toLowerCase()),
-        );
+        return lines.filter((line) => line.toLowerCase().includes(options.filter!.toLowerCase()));
       }
 
       return lines;
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.warn("Failed to get Docker logs", {
         container,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       });
       return [];
     }
@@ -71,9 +66,7 @@ export class DockerLogMonitor {
     });
 
     if (logs.length === 0) {
-      throw new Error(
-        `Expected logs from ${container} to contain "${pattern}", but found no matches`,
-      );
+      throw new Error(`Expected logs from ${container} to contain "${pattern}", but found no matches`);
     }
 
     logger.debug("Log assertion passed", {
@@ -97,9 +90,7 @@ export class DockerLogMonitor {
     });
 
     if (logs.length > 0) {
-      throw new Error(
-        `Expected logs from ${container} to NOT contain "${pattern}", but found ${logs.length} matches`,
-      );
+      throw new Error(`Expected logs from ${container} to NOT contain "${pattern}", but found ${logs.length} matches`);
     }
 
     logger.debug("Log assertion passed (negative)", {
@@ -125,11 +116,7 @@ export class DockerLogMonitor {
   /**
    * Wait for a log pattern to appear
    */
-  async waitForLogPattern(
-    container: string,
-    pattern: string,
-    timeout: number = 30000,
-  ): Promise<void> {
+  async waitForLogPattern(container: string, pattern: string, timeout: number = 30000): Promise<void> {
     logger.debug("Waiting for log pattern", {
       container,
       pattern,
@@ -157,9 +144,7 @@ export class DockerLogMonitor {
       await this.sleep(checkInterval);
     }
 
-    throw new Error(
-      `Log pattern "${pattern}" not found in ${container} after ${timeout}ms`,
-    );
+    throw new Error(`Log pattern "${pattern}" not found in ${container} after ${timeout}ms`);
   }
 
   /**
@@ -183,10 +168,10 @@ export class DockerLogMonitor {
       const cmd = `docker inspect --format='{{.State.Health.Status}}' ${containerName}`;
       const { stdout } = await execAsync(cmd);
       return stdout.trim();
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.warn("Failed to get container health", {
         container: containerName,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       });
       return "unknown";
     }
@@ -195,10 +180,7 @@ export class DockerLogMonitor {
   /**
    * Wait for container to be healthy
    */
-  async waitForHealthy(
-    containerName: string,
-    timeout: number = 60000,
-  ): Promise<void> {
+  async waitForHealthy(containerName: string, timeout: number = 60000): Promise<void> {
     logger.debug("Waiting for container to be healthy", {
       container: containerName,
       timeout,
@@ -217,13 +199,10 @@ export class DockerLogMonitor {
       await this.sleep(2000);
     }
 
-    throw new Error(
-      `Container ${containerName} not healthy after ${timeout}ms`,
-    );
+    throw new Error(`Container ${containerName} not healthy after ${timeout}ms`);
   }
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
-

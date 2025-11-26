@@ -199,7 +199,10 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError> {
     };
 
     let mut set = JoinSet::new();
-    info!("Spawning {} ProofService tasks...", app_args.proof_service_count);
+    info!(
+        "Spawning {} ProofService tasks...",
+        app_args.proof_service_count
+    );
     for i in 0..app_args.proof_service_count {
         let proof_recv = proof_receiver.clone();
         let broadcast_sender = tx.clone();
@@ -208,7 +211,10 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError> {
 
         info!("Spawning ProofService task {}", i);
         set.spawn(async move {
-            info!("[ProofService {}] Task started, creating ProofService...", i);
+            info!(
+                "[ProofService {}] Task started, creating ProofService...",
+                i
+            );
             let proof_service = ProofService::new(
                 proof_recv,
                 broadcast_sender,
@@ -221,7 +227,10 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError> {
             proof_service.serve().await
         });
     }
-    info!("All {} ProofService tasks spawned", app_args.proof_service_count);
+    info!(
+        "All {} ProofService tasks spawned",
+        app_args.proof_service_count
+    );
 
     if let Some(registry_listener) = registry_listener {
         let p = provider.clone().unwrap();

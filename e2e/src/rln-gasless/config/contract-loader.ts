@@ -31,21 +31,9 @@ export function loadRlnContracts(provider: ethers.Provider, signer?: ethers.Sign
   const providerOrSigner = signer || provider;
 
   return {
-    karma: new ethers.Contract(
-      RLN_CONFIG.contracts.karma,
-      KARMA_ABI,
-      providerOrSigner
-    ),
-    rln: new ethers.Contract(
-      RLN_CONFIG.contracts.rln,
-      RLN_ABI,
-      providerOrSigner
-    ),
-    karmaTiers: new ethers.Contract(
-      RLN_CONFIG.contracts.karmaTiers,
-      KARMA_TIERS_ABI,
-      providerOrSigner
-    ),
+    karma: new ethers.Contract(RLN_CONFIG.contracts.karma, KARMA_ABI, providerOrSigner),
+    rln: new ethers.Contract(RLN_CONFIG.contracts.rln, RLN_ABI, providerOrSigner),
+    karmaTiers: new ethers.Contract(RLN_CONFIG.contracts.karmaTiers, KARMA_TIERS_ABI, providerOrSigner),
   };
 }
 
@@ -55,8 +43,3 @@ export function loadRlnContracts(provider: ethers.Provider, signer?: ethers.Sign
 export function getContractAddresses() {
   return RLN_CONFIG.contracts;
 }
-
-
-
-
-

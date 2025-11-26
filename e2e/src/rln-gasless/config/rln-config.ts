@@ -5,19 +5,20 @@
 
 export const RLN_CONFIG = {
   // Contract addresses (deployed via make start-env-with-rln-and-contracts)
+  // Note: These addresses change on each fresh deployment - update after clean restart
   contracts: {
-    karmaTiers: "0xe4392c8ecc46b304c83cdb5edaf742899b1bda93",
-    karma: "0x997fc3af1f193cbdc013060076c67a13e218980e",
-    rln: "0xc407c7bc2b3c109b8bcde7c681d84a6a4b600ea5",
-    stakeManager: "0x7917abb0cdbf3d3c4057d6a2808ee85ec16260c1",
-    karmaNFT: "0x438d5c7da79d918a26ad012c617066293f949d27",
+    karmaTiers: "0x729409fad88cafda895e41f9ed00ef4094f8d130",
+    karma: "0x35a5e43d3d3195b49cbfe78cd944115eaa2e09db",
+    rln: "0x9145615d34afba9f8ecb4e2384325646f2393dde",
+    stakeManager: "0x2f6daaf8a81ab675fbd37ca6ed5b72cf86237453",
+    karmaNFT: "0xcc1b08b17301e090cbb4c1f5598cbaa096d591fb",
   },
 
   // Service URLs
   services: {
     rpcUrl: "http://localhost:9045",
     sequencerUrl: "http://localhost:8545",
-    karmaServiceUrl: "http://localhost:50053",  // Docker maps 50052 -> 50053
+    karmaServiceUrl: "http://localhost:50053", // Docker maps 50052 -> 50053
     rlnProverUrl: "http://localhost:50051",
   },
 
@@ -70,4 +71,3 @@ export const RLN_CONFIG = {
     },
   },
 };
-

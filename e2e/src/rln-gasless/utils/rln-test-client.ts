@@ -53,10 +53,10 @@ export class RlnTestClient {
     options: GaslessTransactionOptions,
   ): Promise<ethers.TransactionReceipt> {
     const from = await signer.getAddress();
-    
+
     // Always get fresh nonce from latest block to avoid stale nonces
     const nonce = await this._rpcProvider.getTransactionCount(from, "latest");
-    
+
     this.logger.debug("Sending gasless transaction", {
       from,
       to: options.to,
@@ -98,10 +98,10 @@ export class RlnTestClient {
     options: PremiumGasTransactionOptions,
   ): Promise<ethers.TransactionReceipt> {
     const from = await signer.getAddress();
-    
+
     // Always get fresh nonce from latest block
     const nonce = await this._rpcProvider.getTransactionCount(from, "latest");
-    
+
     this.logger.debug("Sending premium gas transaction", {
       from,
       to: options.to,
@@ -161,17 +161,19 @@ export class RlnTestClient {
       const data = await response.json();
       return {
         currentEpoch: data.currentEpoch ?? Math.floor(Date.now() / 1000 / 60),
-        currentEpochSlice: data.currentEpochSlice ?? Math.floor((Date.now() / 1000) % 60 / 10),
+        currentEpochSlice: data.currentEpochSlice ?? Math.floor(((Date.now() / 1000) % 60) / 10),
         txCount: data.txCount ?? 0,
-        tier: data.tier ? {
-          name: data.tier.name,
-          quota: data.tier.quota,
-        } : null,
+        tier: data.tier
+          ? {
+              name: data.tier.name,
+              quota: data.tier.quota,
+            }
+          : null,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.error("Failed to get user tier info from Karma service", {
         address,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       });
       throw error;
     }
@@ -180,12 +182,7 @@ export class RlnTestClient {
   /**
    * Call linea_estimateGas RPC method
    */
-  async lineaEstimateGas(params: {
-    from: string;
-    to: string;
-    value?: string;
-    data?: string;
-  }): Promise<{
+  async lineaEstimateGas(params: { from: string; to: string; value?: string; data?: string }): Promise<{
     gasLimit: string;
     baseFeePerGas: string;
     priorityFeePerGas: string;
@@ -202,10 +199,7 @@ export class RlnTestClient {
   /**
    * Wait for a transaction to be mined
    */
-  async waitForTransaction(
-    txHash: string,
-    timeout: number = 60000,
-  ): Promise<ethers.TransactionReceipt> {
+  async waitForTransaction(txHash: string, timeout: number = 60000): Promise<ethers.TransactionReceipt> {
     this.logger.debug("Waiting for transaction", { txHash, timeout });
 
     const startTime = Date.now();
@@ -233,11 +227,7 @@ export class RlnTestClient {
   /**
    * Wait for user to be registered to RLN membership
    */
-  async waitForRegistration(
-    rlnContract: ethers.Contract,
-    userAddress: string,
-    timeout: number = 30000,
-  ): Promise<void> {
+  async waitForRegistration(rlnContract: ethers.Contract, userAddress: string, timeout: number = 30000): Promise<void> {
     this.logger.debug("Waiting for RLN registration", { userAddress, timeout });
 
     const startTime = Date.now();
@@ -282,7 +272,7 @@ export class RlnTestClient {
   /**
    * Make a raw RPC call
    */
-  private async rpcCall(method: string, params: unknown[]): Promise<any> {
+  private async rpcCall(method: string, params: unknown[]): Promise<unknown> {
     const response = await fetch(this.rpcUrl, {
       method: "POST",
       headers: {
@@ -312,4 +302,3 @@ export class RlnTestClient {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
-

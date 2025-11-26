@@ -20,9 +20,7 @@ export class DenyListTestManager {
   async isDenied(address: string): Promise<boolean> {
     try {
       const entries = await this.readDenyList();
-      return entries.some(
-        (e) => e.address.toLowerCase() === address.toLowerCase(),
-      );
+      return entries.some((e) => e.address.toLowerCase() === address.toLowerCase());
     } catch (error) {
       logger.warn("Failed to read deny list", { error });
       return false;
@@ -45,8 +43,8 @@ export class DenyListTestManager {
             timestamp: new Date(timestamp.trim()),
           };
         });
-    } catch (error: any) {
-      if (error.code === "ENOENT") {
+    } catch (error: unknown) {
+      if (error instanceof Error && (error as NodeJS.ErrnoException).code === "ENOENT") {
         // File doesn't exist yet
         return [];
       }
@@ -57,10 +55,7 @@ export class DenyListTestManager {
   /**
    * Wait for an address to be added to the deny list
    */
-  async waitForDenied(
-    address: string,
-    timeout: number = 10000,
-  ): Promise<void> {
+  async waitForDenied(address: string, timeout: number = 10000): Promise<void> {
     logger.debug("Waiting for address to be denied", { address, timeout });
 
     const startTime = Date.now();
@@ -74,18 +69,13 @@ export class DenyListTestManager {
       await this.sleep(500);
     }
 
-    throw new Error(
-      `Address ${address} not added to deny list after ${timeout}ms`,
-    );
+    throw new Error(`Address ${address} not added to deny list after ${timeout}ms`);
   }
 
   /**
    * Wait for an address to be removed from the deny list
    */
-  async waitForNotDenied(
-    address: string,
-    timeout: number = 10000,
-  ): Promise<void> {
+  async waitForNotDenied(address: string, timeout: number = 10000): Promise<void> {
     logger.debug("Waiting for address to be removed from deny list", {
       address,
       timeout,
@@ -102,23 +92,15 @@ export class DenyListTestManager {
       await this.sleep(500);
     }
 
-    throw new Error(
-      `Address ${address} still on deny list after ${timeout}ms`,
-    );
+    throw new Error(`Address ${address} still on deny list after ${timeout}ms`);
   }
 
   /**
    * Get deny list entry for an address
    */
-  async getDenyListEntry(
-    address: string,
-  ): Promise<DenyListEntry | null> {
+  async getDenyListEntry(address: string): Promise<DenyListEntry | null> {
     const entries = await this.readDenyList();
-    return (
-      entries.find(
-        (e) => e.address.toLowerCase() === address.toLowerCase(),
-      ) ?? null
-    );
+    return entries.find((e) => e.address.toLowerCase() === address.toLowerCase()) ?? null;
   }
 
   /**
@@ -135,12 +117,13 @@ export class DenyListTestManager {
 
   /**
    * Clear the deny list (for test cleanup)
+   * Uses secure file permissions (0o600 = owner read/write only) to address CodeQL security concerns
    */
   async clearDenyList(): Promise<void> {
     logger.debug("Clearing deny list", { path: this.denyListFilePath });
 
     try {
-      await fs.writeFile(this.denyListFilePath, "", "utf-8");
+      await fs.writeFile(this.denyListFilePath, "", { encoding: "utf-8", mode: 0o600 });
       logger.debug("Deny list cleared");
     } catch (error) {
       logger.warn("Failed to clear deny list", { error });
@@ -159,4 +142,3 @@ export class DenyListTestManager {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
-
