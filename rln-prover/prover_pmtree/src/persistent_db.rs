@@ -2,7 +2,6 @@ use crate::Value;
 use crate::tree::Key;
 
 pub trait PersistentDatabase {
-
     type Config;
     // type Entity;
     // type EntityConfig;
@@ -18,7 +17,7 @@ pub trait PersistentDatabase {
     fn put(&mut self, key: (usize, usize), value: Value);
 
     /// Puts the leaves batch to the db
-    fn put_batch<'a>(&mut self, subtree: impl IntoIterator<Item=(&'a Key, Value)>);
+    fn put_batch<'a>(&mut self, subtree: impl IntoIterator<Item = (&'a Key, Value)>);
 
     // async fn sync(&mut self) -> Result<(), Self::Error>;
     fn fsync(&mut self) -> impl Future<Output = Result<(), Self::Error>>;

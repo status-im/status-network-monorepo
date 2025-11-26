@@ -2,23 +2,16 @@ use std::collections::HashMap;
 // third-party
 use num_packer::U32Packer;
 // use sea-orm
-use sea_orm::{
-    DatabaseConnection, DbErr, Set,
-    sea_query::OnConflict
-};
+use sea_orm::{DatabaseConnection, DbErr, Set, sea_query::OnConflict};
 // sea-orm traits
 use sea_orm::{
-    TransactionTrait, EntityTrait, QueryFilter, IntoActiveModel, ActiveModelTrait, ColumnTrait,
-    ExprTrait
+    ActiveModelTrait, ColumnTrait, EntityTrait, ExprTrait, IntoActiveModel, QueryFilter,
+    TransactionTrait,
 };
 // internal - db
 use prover_db_entity::{m_tree, m_tree_config};
 // internal
-use prover_pmtree::{
-    persistent_db::PersistentDatabase,
-    tree::Key,
-    Value,
-};
+use prover_pmtree::{Value, persistent_db::PersistentDatabase, tree::Key};
 
 #[derive(thiserror::Error, Debug)]
 pub enum PersistentDbError {
@@ -42,7 +35,6 @@ pub struct PersistentDb {
 }
 
 impl PersistentDatabase for PersistentDb {
-
     // Note - Limits :
     // tree_index (i16) -> max 32k tree supported (if required to support more, use u16 serialized as i16)
     // depth (u32) -> depth in prover == 20, so this can be reduced down to u8
@@ -75,7 +67,7 @@ impl PersistentDatabase for PersistentDb {
         });
     }
 
-    fn put_batch<'a>(&mut self, subtree: impl IntoIterator<Item=(&'a Key, Value)>) {
+    fn put_batch<'a>(&mut self, subtree: impl IntoIterator<Item = (&'a Key, Value)>) {
         self.put_store.extend(subtree.into_iter().map(|(k, v)| {
             // FIXME: factorize
             let index_in_tree = i64::pack_u32(k.0 as u32, k.1 as u32);
@@ -89,17 +81,15 @@ impl PersistentDatabase for PersistentDb {
     }
 
     async fn fsync(&mut self) -> Result<(), Self::Error> {
-
         let cfg_map = std::mem::take(&mut self.put_cfg_store);
         let put_list = std::mem::take(&mut self.put_store);
 
         let txn = self.config.db_conn.begin().await?;
         if !cfg_map.is_empty() {
-
             let cfg_ = m_tree_config::Entity::find()
                 .filter(
                     <m_tree_config::Entity as EntityTrait>::Column::TreeIndex
-                        .eq(self.config.tree_index)
+                        .eq(self.config.tree_index),
                 )
                 .one(&txn)
                 .await?;
@@ -116,9 +106,7 @@ impl PersistentDatabase for PersistentDb {
                 }
 
                 cfg.update(&txn).await?;
-
             } else {
-
                 // TODO: unwrap safe notes?
                 let cfg_depth = cfg_map.get("depth").unwrap();
                 let cfg_next_index = cfg_map.get("next_index").unwrap();
@@ -137,10 +125,10 @@ impl PersistentDatabase for PersistentDb {
         // prepare on_conflict statement for insert_many
         let on_conflict = OnConflict::columns([
             <m_tree::Entity as EntityTrait>::Column::TreeIndex,
-            <m_tree::Entity as EntityTrait>::Column::IndexInTree
+            <m_tree::Entity as EntityTrait>::Column::IndexInTree,
         ])
-            .update_column(<m_tree::Entity as EntityTrait>::Column::Value)
-            .to_owned();
+        .update_column(<m_tree::Entity as EntityTrait>::Column::Value)
+        .to_owned();
 
         /*
         // Chunk put_list into batches (postgres limit is around ~ 15_000 params)
@@ -161,8 +149,7 @@ impl PersistentDatabase for PersistentDb {
         m_tree::Entity::insert_many::<m_tree::ActiveModel, _>(put_list)
             .on_conflict(on_conflict.clone())
             .exec(&txn)
-            .await
-            ?;
+            .await?;
 
         txn.commit().await?;
 
@@ -170,12 +157,12 @@ impl PersistentDatabase for PersistentDb {
     }
 
     async fn get(&self, key: (usize, usize)) -> Result<Option<Value>, Self::Error> {
-
         let index_in_tree = i64::pack_u32(key.0 as u32, key.1 as u32);
         let res = m_tree::Entity::find()
             .filter(
-                <m_tree::Entity as EntityTrait>::Column::TreeIndex.eq(self.config.tree_index)
-                    .and(<m_tree::Entity as EntityTrait>::Column::IndexInTree.eq(index_in_tree))
+                <m_tree::Entity as EntityTrait>::Column::TreeIndex
+                    .eq(self.config.tree_index)
+                    .and(<m_tree::Entity as EntityTrait>::Column::IndexInTree.eq(index_in_tree)),
             )
             .one(&self.config.db_conn)
             .await?;
@@ -185,10 +172,7 @@ impl PersistentDatabase for PersistentDb {
 
     async fn get_all(&self) -> Result<Vec<(usize, usize, Value)>, Self::Error> {
         Ok(m_tree::Entity::find()
-            .filter(
-                <m_tree::Entity as EntityTrait>::Column::TreeIndex
-                    .eq(self.config.tree_index)
-            )
+            .filter(<m_tree::Entity as EntityTrait>::Column::TreeIndex.eq(self.config.tree_index))
             .all(&self.config.db_conn)
             .await?
             .into_iter()
@@ -196,15 +180,14 @@ impl PersistentDatabase for PersistentDb {
                 let (depth, index) = i64::unpack_u32(&m.index_in_tree);
                 (depth as usize, index as usize, m.value)
             })
-            .collect()
-        )
+            .collect())
     }
 
     async fn get_cfg(&self) -> Result<Option<(usize, usize)>, Self::Error> {
-
         let res = m_tree_config::Entity::find()
             .filter(
-                <m_tree_config::Entity as EntityTrait>::Column::TreeIndex.eq(self.config.tree_index)
+                <m_tree_config::Entity as EntityTrait>::Column::TreeIndex
+                    .eq(self.config.tree_index),
             )
             .one(&self.config.db_conn)
             .await?;

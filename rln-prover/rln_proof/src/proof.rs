@@ -5,6 +5,7 @@ use ark_bn254::{Bn254, Fr};
 use ark_groth16::{Proof, ProvingKey};
 use ark_relations::r1cs::ConstraintMatrices;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use prover_pmtree::{Hasher, Value};
 use rln::utils::IdSecret;
 use rln::{
     circuit::zkey_from_folder,
@@ -16,7 +17,6 @@ use rln::{
     },
 };
 use serde::{Deserialize, Serialize};
-use prover_pmtree::{Hasher, Value};
 // internal
 use prover_pmtree::tree::MerkleProof;
 
@@ -128,7 +128,6 @@ pub fn compute_rln_proof_and_values(
     )?;
     Ok((proof, proof_values))
 }
-
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct ProverPoseidonHash;

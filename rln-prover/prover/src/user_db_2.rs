@@ -6,28 +6,30 @@ use ark_bn254::Fr;
 use parking_lot::RwLock;
 use tokio::sync::RwLock as TokioRwLock;
 // RLN
-use rln::{
-    hashers::poseidon_hash,
-    protocol::keygen,
-};
+use rln::{hashers::poseidon_hash, protocol::keygen};
 // db
-use sea_orm::{DatabaseConnection, DbErr, EntityTrait, QueryFilter, ColumnTrait, TransactionTrait, IntoActiveModel, Set, PaginatorTrait};
 use sea_orm::sea_query::OnConflict;
-// internal
-use prover_db_entity::{tx_counter, user, tier_limits, m_tree_config};
-use prover_pmtree::{MerkleTree, PmtreeErrorKind};
-use prover_merkle_tree::{MemoryDb, MemoryDbConfig, PersistentDb, PersistentDbConfig, PersistentDbError};
-use prover_pmtree::tree::MerkleProof;
-use rln_proof::{
-    RlnUserIdentity,
-    ProverPoseidonHash,
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel, PaginatorTrait,
+    QueryFilter, Set, TransactionTrait,
 };
-use smart_contract::KarmaAmountExt;
+// internal
 use crate::epoch_service::{Epoch, EpochSlice};
 use crate::tier::{TierLimit, TierLimits, TierMatch};
-use crate::user_db::{UserTierInfo};
-use crate::user_db_error::{GetMerkleTreeProofError2, RegisterError2, SetTierLimitsError2, TxCounterError2, UserTierInfoError2};
+use crate::user_db::UserTierInfo;
+use crate::user_db_error::{
+    GetMerkleTreeProofError2, RegisterError2, SetTierLimitsError2, TxCounterError2,
+    UserTierInfoError2,
+};
 use crate::user_db_types::{EpochCounter, EpochSliceCounter, RateLimit};
+use prover_db_entity::{m_tree_config, tier_limits, tx_counter, user};
+use prover_merkle_tree::{
+    MemoryDb, MemoryDbConfig, PersistentDb, PersistentDbConfig, PersistentDbError,
+};
+use prover_pmtree::tree::MerkleProof;
+use prover_pmtree::{MerkleTree, PmtreeErrorKind};
+use rln_proof::{ProverPoseidonHash, RlnUserIdentity};
+use smart_contract::KarmaAmountExt;
 
 const TIER_LIMITS_KEY: &str = "CURRENT";
 const TIER_LIMITS_NEXT_KEY: &str = "NEXT";
@@ -61,7 +63,6 @@ impl std::fmt::Debug for UserDb2 {
 }
 
 impl UserDb2 {
-
     /// Returns a new `UserDB` instance
     pub async fn new(
         db: DatabaseConnection,
@@ -70,7 +71,6 @@ impl UserDb2 {
         tier_limits: TierLimits,
         rate_limit: RateLimit,
     ) -> Result<Self, DbErr> {
-
         debug_assert!(config.tree_count <= config.max_tree_count);
 
         // tier limits
@@ -86,14 +86,15 @@ impl UserDb2 {
             tier_limits: Set(Some(tier_limits_value)),
             ..Default::default()
         };
-        tier_limits::Entity::insert(tier_limits_active_model).exec(&db).await?;
+        tier_limits::Entity::insert(tier_limits_active_model)
+            .exec(&db)
+            .await?;
 
         // merkle trees
         let merkle_tree_count = Self::get_merkle_tree_count_from_db(&db).await?;
         let mut merkle_trees = Vec::with_capacity(merkle_tree_count as usize);
 
         if merkle_tree_count == 0 {
-
             // FIXME: 'as'
             for i in 0..(config.tree_count as i16) {
                 let persistent_db_config = PersistentDbConfig {
@@ -105,14 +106,14 @@ impl UserDb2 {
                 let mt = ProverMerkleTree::new(
                     config.tree_depth as usize, // FIXME: no 'as'
                     MemoryDbConfig,
-                    persistent_db_config.clone()
-                ).await.unwrap();
+                    persistent_db_config.clone(),
+                )
+                .await
+                .unwrap();
 
                 merkle_trees.push(mt);
             }
-
         } else {
-
             for i in 0..(merkle_tree_count as i16) {
                 let persistent_db_config = PersistentDbConfig {
                     db_conn: db.clone(),
@@ -120,14 +121,12 @@ impl UserDb2 {
                     insert_batch_size: 10_000, // TODO: no hardcoded value
                 };
 
-                let mt = ProverMerkleTree::load(
-                    MemoryDbConfig,
-                    persistent_db_config.clone()
-                ).await.unwrap();
+                let mt = ProverMerkleTree::load(MemoryDbConfig, persistent_db_config.clone())
+                    .await
+                    .unwrap();
 
                 merkle_trees.push(mt);
             }
-
         }
 
         Ok(Self {
@@ -150,7 +149,6 @@ impl UserDb2 {
     }
 
     pub(crate) async fn get_user(&self, address: &Address) -> Result<Option<user::Model>, DbErr> {
-
         user::Entity::find()
             .filter(user::Column::Address.eq(address.to_string()))
             .one(&self.db)
@@ -158,15 +156,12 @@ impl UserDb2 {
     }
 
     pub(crate) async fn get_user_identity(&self, address: &Address) -> Option<RlnUserIdentity> {
-
-        let res = self.get_user(address).await
-            .ok()??;
+        let res = self.get_user(address).await.ok()??;
         // FIXME: deser directly when query with orm?
         serde_json::from_value(res.rln_id).ok()
     }
 
     async fn get_tier_limits(&self) -> Result<TierLimits, DbErr> {
-
         let res = tier_limits::Entity::find()
             .filter(tier_limits::Column::Name.eq(TIER_LIMITS_KEY))
             .one(&self.db)
@@ -179,7 +174,6 @@ impl UserDb2 {
     }
 
     async fn set_tier_limits(&self, tier_limits: TierLimits) -> Result<(), DbErr> {
-
         let tier_limits_active_model = tier_limits::ActiveModel {
             name: Set(TIER_LIMITS_NEXT_KEY.to_string()),
             tier_limits: Set(Some(serde_json::to_value(tier_limits).unwrap())),
@@ -191,7 +185,7 @@ impl UserDb2 {
             .on_conflict(
                 OnConflict::column(tier_limits::Column::Name)
                     .update_column(tier_limits::Column::TierLimits)
-                    .to_owned()
+                    .to_owned(),
             )
             .exec(&self.db)
             .await?;
@@ -209,7 +203,6 @@ impl UserDb2 {
         address: &Address,
         incr_value: Option<i64>,
     ) -> Result<EpochSliceCounter, DbErr> {
-
         let incr_value = incr_value.unwrap_or(1);
         let (epoch, epoch_slice) = *self.epoch_store.read();
 
@@ -221,7 +214,6 @@ impl UserDb2 {
             .await?;
 
         let new_tx_counter = if let Some(res) = res {
-
             let mut res_active = res.into_active_model();
 
             // unwrap safe: res_active.epoch/epoch_slice cannot be null
@@ -250,14 +242,13 @@ impl UserDb2 {
             } else {
                 // Same epoch & epoch slice
                 res_active.epoch_counter = Set(model_epoch_counter.saturating_add(incr_value));
-                res_active.epoch_slice_counter = Set(model_epoch_slice_counter.saturating_add(incr_value));
+                res_active.epoch_slice_counter =
+                    Set(model_epoch_slice_counter.saturating_add(incr_value));
             }
 
             // res_active.update(&txn).await?;
             tx_counter::Entity::update(res_active).exec(&txn).await?
-
         } else {
-
             // first time - need to create a new entry
             let new_tx_counter = tx_counter::ActiveModel {
                 address: Set(address.to_string()),
@@ -283,7 +274,6 @@ impl UserDb2 {
         &self,
         address: &Address,
     ) -> Result<(EpochCounter, EpochSliceCounter), TxCounterError2> {
-
         let res = tx_counter::Entity::find()
             .filter(tx_counter::Column::Address.eq(address.to_string()))
             .one(&self.db)
@@ -291,17 +281,16 @@ impl UserDb2 {
 
         match res {
             None => Err(TxCounterError2::NotRegistered(*address)),
-            Some(res) => Ok(self.counters_from_key(res))
+            Some(res) => Ok(self.counters_from_key(res)),
         }
     }
 
-    fn counters_from_key(
-        &self,
-        model: tx_counter::Model
-    ) -> (EpochCounter, EpochSliceCounter) {
-
+    fn counters_from_key(&self, model: tx_counter::Model) -> (EpochCounter, EpochSliceCounter) {
         let (epoch, epoch_slice) = *self.epoch_store.read();
-        let cmp = (model.epoch == i64::from(epoch), model.epoch_slice == i64::from(epoch_slice));
+        let cmp = (
+            model.epoch == i64::from(epoch),
+            model.epoch_slice == i64::from(epoch_slice),
+        );
 
         match cmp {
             (true, true) => {
@@ -320,7 +309,10 @@ impl UserDb2 {
                 // We query for an epoch slice after what is stored in Db
                 // This can happen if no Tx has updated the epoch slice counter (yet)
                 // FIXME: as
-                ((model.epoch_counter as u64).into(), EpochSliceCounter::from(0))
+                (
+                    (model.epoch_counter as u64).into(),
+                    EpochSliceCounter::from(0),
+                )
             }
             (false, true) => {
                 // EpochCounter.epoch (stored in DB) != epoch_store.epoch
@@ -339,7 +331,6 @@ impl UserDb2 {
     // user register & delete (with app logic)
 
     pub(crate) async fn register_user(&self, address: Address) -> Result<Fr, RegisterError2> {
-
         // Generate RLN identity
         let (identity_secret_hash, id_commitment) = keygen();
 
@@ -350,11 +341,10 @@ impl UserDb2 {
         ));
 
         if self.has_user(&address).await? {
-            return Err(RegisterError2::AlreadyRegistered(address))
+            return Err(RegisterError2::AlreadyRegistered(address));
         }
 
-        let rate_commit =
-            poseidon_hash(&[id_commitment, Fr::from(u64::from(self.rate_limit))]);
+        let rate_commit = poseidon_hash(&[id_commitment, Fr::from(u64::from(self.rate_limit))]);
 
         let mut guard = self.merkle_trees.write().await;
 
@@ -363,46 +353,47 @@ impl UserDb2 {
             .enumerate()
             .find(|(_, tree)| tree.leaves_set() < tree.capacity());
 
-        let (last_tree_index, last_index_in_mt) =
-            if let Some((tree_index, tree_to_set)) = found {
-                // Found a tree that can accept our new user
-                let index_in_mt = tree_to_set.leaves_set();
-                tree_to_set
-                    .set(index_in_mt, rate_commit)
-                    .await
-                    .map_err(RegisterError2::TreeError)?;
+        let (last_tree_index, last_index_in_mt) = if let Some((tree_index, tree_to_set)) = found {
+            // Found a tree that can accept our new user
+            let index_in_mt = tree_to_set.leaves_set();
+            tree_to_set
+                .set(index_in_mt, rate_commit)
+                .await
+                .map_err(RegisterError2::TreeError)?;
 
-                (tree_index, index_in_mt)
+            (tree_index, index_in_mt)
+        } else {
+            // All trees are full, let's create a new one that can accept our new user
 
-            } else {
+            // as safe : assume sizeof usize == sizeof 64 (see user_db_types.rs)
+            let tree_count = guard.len() as u64;
 
-                // All trees are full, let's create a new one that can accept our new user
+            if tree_count == self.config.max_tree_count {
+                return Err(RegisterError2::TooManyUsers);
+            }
 
-                // as safe : assume sizeof usize == sizeof 64 (see user_db_types.rs)
-                let tree_count = guard.len() as u64;
-
-                if tree_count == self.config.max_tree_count {
-                    return Err(RegisterError2::TooManyUsers);
-                }
-
-                let persistent_db_config = PersistentDbConfig {
-                    db_conn: self.db.clone(),
-                    tree_index: tree_count as i16, // FIXME: as
-                    insert_batch_size: 10_000, // TODO: no hardcoded value
-                };
-
-                let mut mt = ProverMerkleTree::new(
-                    self.config.tree_depth as usize,
-                    MemoryDbConfig,
-                    persistent_db_config.clone()
-                ).await.unwrap();
-
-                mt.set(0, rate_commit).await.map_err(RegisterError2::TreeError)?;
-
-                guard.push(mt);
-
-                (tree_count as usize, 0)
+            let persistent_db_config = PersistentDbConfig {
+                db_conn: self.db.clone(),
+                tree_index: tree_count as i16, // FIXME: as
+                insert_batch_size: 10_000,     // TODO: no hardcoded value
             };
+
+            let mut mt = ProverMerkleTree::new(
+                self.config.tree_depth as usize,
+                MemoryDbConfig,
+                persistent_db_config.clone(),
+            )
+            .await
+            .unwrap();
+
+            mt.set(0, rate_commit)
+                .await
+                .map_err(RegisterError2::TreeError)?;
+
+            guard.push(mt);
+
+            (tree_count as usize, 0)
+        };
 
         drop(guard);
 
@@ -424,7 +415,9 @@ impl UserDb2 {
             ..Default::default()
         };
 
-        tx_counter::Entity::insert(tx_counter_active_model).exec(&txn).await?;
+        tx_counter::Entity::insert(tx_counter_active_model)
+            .exec(&txn)
+            .await?;
 
         txn.commit().await?;
 
@@ -432,8 +425,9 @@ impl UserDb2 {
     }
 
     pub(crate) async fn remove_user(&self, address: &Address) -> Result<bool, MerkleTreeError> {
-
-        let user = self.get_user(address).await
+        let user = self
+            .get_user(address)
+            .await
             .map_err(|e| MerkleTreeError::PDb(e.into()))?;
 
         if user.is_none() {
@@ -460,7 +454,10 @@ impl UserDb2 {
 
         // TODO: delete in merkle tree in txn
         // FIXME: map_err repetitions?
-        let txn = self.db.begin().await
+        let txn = self
+            .db
+            .begin()
+            .await
             .map_err(|e| MerkleTreeError::PDb(e.into()))?;
         user::Entity::delete_many()
             .filter(user::Column::Address.eq(address.to_string()))
@@ -472,7 +469,8 @@ impl UserDb2 {
             .exec(&txn)
             .await
             .map_err(|e| MerkleTreeError::PDb(e.into()))?;
-        txn.commit().await
+        txn.commit()
+            .await
             .map_err(|e| MerkleTreeError::PDb(e.into()))?;
 
         Ok(true)
@@ -483,7 +481,6 @@ impl UserDb2 {
         &self,
         address: &Address,
     ) -> Result<MerkleProof<ProverPoseidonHash>, GetMerkleTreeProofError2> {
-
         let (tree_index, index_in_mt) = {
             let user = self.get_user(address).await?;
             if user.is_none() {
@@ -511,12 +508,9 @@ impl UserDb2 {
     pub async fn on_new_tx(
         &self,
         address: &Address,
-        incr_value: Option<i64>
+        incr_value: Option<i64>,
     ) -> Result<EpochSliceCounter, TxCounterError2> {
-
-        let has_user = self
-            .has_user(address)
-            .await?;
+        let has_user = self.has_user(address).await?;
 
         if has_user {
             let epoch_slice_counter = self.incr_tx_counter(address, incr_value).await?;
@@ -531,7 +525,9 @@ impl UserDb2 {
         tier_limits: TierLimits,
     ) -> Result<(), SetTierLimitsError2> {
         tier_limits.validate()?;
-        self.set_tier_limits(tier_limits).await.map_err(SetTierLimitsError2::Db)
+        self.set_tier_limits(tier_limits)
+            .await
+            .map_err(SetTierLimitsError2::Db)
     }
 
     /// Get user tier info
@@ -540,8 +536,10 @@ impl UserDb2 {
         address: &Address,
         karma_sc: &KSC,
     ) -> Result<UserTierInfo, UserTierInfoError2<E>> {
-
-        let has_user = self.has_user(address).await.map_err(UserTierInfoError2::Db)?;
+        let has_user = self
+            .has_user(address)
+            .await
+            .map_err(UserTierInfoError2::Db)?;
 
         if !has_user {
             return Err(UserTierInfoError2::NotRegistered(*address));
@@ -585,7 +583,6 @@ impl UserDb2 {
 // Test only functions
 #[cfg(test)]
 impl UserDb2 {
-
     pub(crate) async fn get_db_tree_count(&self) -> Result<u64, DbErr> {
         Self::get_merkle_tree_count_from_db(&self.db).await
     }
@@ -595,14 +592,11 @@ impl UserDb2 {
     }
 
     pub(crate) async fn get_user_indexes(&self, address: &Address) -> (i64, i64) {
-
-        let user_model = self.get_user(address).await
-            .unwrap().unwrap();
+        let user_model = self.get_user(address).await.unwrap().unwrap();
 
         (user_model.tree_index, user_model.index_in_merkle_tree)
     }
 }
-
 
 #[derive(thiserror::Error, Debug)]
 pub enum MerkleTreeError {
@@ -618,7 +612,7 @@ mod tests {
     use super::*;
     // std
     // third-party
-    use alloy::primitives::{address, U256};
+    use alloy::primitives::{U256, address};
     use async_trait::async_trait;
     use claims::assert_matches;
     use derive_more::Display;
@@ -646,7 +640,6 @@ mod tests {
     pub(crate) const MERKLE_TREE_HEIGHT: u8 = 20;
 
     async fn create_database_connection(db_name: &str) -> Result<DatabaseConnection, DbErr> {
-
         // Drop / Create db_name then return a connection to it
 
         let db_url_base = "postgres://myuser:mysecretpassword@localhost";
@@ -680,7 +673,6 @@ mod tests {
     #[tokio::test]
     // #[traced_test]
     async fn test_user_register() {
-
         // tracing_subscriber::fmt()
         //     .with_max_level(tracing::Level::DEBUG)
         //     .with_test_writer()
@@ -696,9 +688,15 @@ mod tests {
             .await
             .unwrap();
 
-        let user_db = UserDb2::new(db_conn, config, epoch_store, Default::default(), Default::default())
-            .await
-            .expect("Cannot create UserDb");
+        let user_db = UserDb2::new(
+            db_conn,
+            config,
+            epoch_store,
+            Default::default(),
+            Default::default(),
+        )
+        .await
+        .expect("Cannot create UserDb");
 
         let addr = Address::new([0; 20]);
         user_db.register_user(addr).await.unwrap();
@@ -708,12 +706,18 @@ mod tests {
         );
 
         assert!(user_db.get_user_identity(&addr).await.is_some());
-        assert_eq!(user_db.get_tx_counter(&addr).await.unwrap(), (0.into(), 0.into()));
+        assert_eq!(
+            user_db.get_tx_counter(&addr).await.unwrap(),
+            (0.into(), 0.into())
+        );
 
         assert!(user_db.get_user_identity(&ADDR_1).await.is_none());
         user_db.register_user(ADDR_1).await.unwrap();
         assert!(user_db.get_user_identity(&ADDR_1).await.is_some());
-        assert_eq!(user_db.get_tx_counter(&addr).await.unwrap(), (0.into(), 0.into()));
+        assert_eq!(
+            user_db.get_tx_counter(&addr).await.unwrap(),
+            (0.into(), 0.into())
+        );
 
         user_db.incr_tx_counter(&addr, Some(42)).await.unwrap();
         assert_eq!(
@@ -734,9 +738,15 @@ mod tests {
             .await
             .unwrap();
 
-        let user_db = UserDb2::new(db_conn, config, epoch_store, Default::default(), Default::default())
-            .await
-            .expect("Cannot create UserDb");
+        let user_db = UserDb2::new(
+            db_conn,
+            config,
+            epoch_store,
+            Default::default(),
+            Default::default(),
+        )
+        .await
+        .expect("Cannot create UserDb");
 
         let addr = Address::new([0; 20]);
 
@@ -753,7 +763,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_incr_tx_counter() {
-
         let epoch_store = Arc::new(RwLock::new(Default::default()));
         let config = UserDb2Config {
             tree_count: 1,
@@ -764,9 +773,15 @@ mod tests {
             .await
             .unwrap();
 
-        let user_db = UserDb2::new(db_conn, config, epoch_store, Default::default(), Default::default())
-            .await
-            .expect("Cannot create UserDb");
+        let user_db = UserDb2::new(
+            db_conn,
+            config,
+            epoch_store,
+            Default::default(),
+            Default::default(),
+        )
+        .await
+        .expect("Cannot create UserDb");
 
         let addr = Address::new([0; 20]);
 
@@ -786,8 +801,8 @@ mod tests {
         user_db.register_user(addr).await.unwrap();
         // Now update user tx counter
         assert_eq!(
-             user_db.on_new_tx(&addr, None).await,
-             Ok(EpochSliceCounter::from(1))
+            user_db.on_new_tx(&addr, None).await,
+            Ok(EpochSliceCounter::from(1))
         );
         let tier_info = user_db
             .user_tier_info(&addr, &MockKarmaSc {})
@@ -799,7 +814,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_remove() {
-
         let epoch_store = Arc::new(RwLock::new(Default::default()));
         let config = UserDb2Config {
             tree_count: 1,
@@ -810,9 +824,15 @@ mod tests {
             .await
             .unwrap();
 
-        let user_db = UserDb2::new(db_conn, config, epoch_store, Default::default(), Default::default())
-            .await
-            .expect("Cannot create UserDb");
+        let user_db = UserDb2::new(
+            db_conn,
+            config,
+            epoch_store,
+            Default::default(),
+            Default::default(),
+        )
+        .await
+        .expect("Cannot create UserDb");
 
         user_db.register_user(ADDR_1).await.unwrap();
         let guard = user_db.merkle_trees.read().await;
@@ -855,9 +875,15 @@ mod tests {
             .await
             .unwrap();
 
-        let user_db = UserDb2::new(db_conn, config, epoch_store, Default::default(), Default::default())
-            .await
-            .expect("Cannot create UserDb");
+        let user_db = UserDb2::new(
+            db_conn,
+            config,
+            epoch_store,
+            Default::default(),
+            Default::default(),
+        )
+        .await
+        .expect("Cannot create UserDb");
 
         let addr = Address::new([0; 20]);
         {

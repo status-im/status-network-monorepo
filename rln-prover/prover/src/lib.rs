@@ -18,13 +18,13 @@ mod user_db_types;
 
 // tests
 mod epoch_service_tests;
+mod grpc_e2e;
 mod proof_service_tests;
-mod user_db_tests;
-mod user_db_2;
-mod user_db_2_tests;
 #[cfg(test)]
 mod tests_common;
-mod grpc_e2e;
+mod user_db_2;
+mod user_db_2_tests;
+mod user_db_tests;
 
 // std
 use alloy::network::EthereumWallet;
@@ -49,14 +49,14 @@ use crate::mock::read_mock_user;
 use crate::proof_service::ProofService;
 use crate::tier::TierLimits;
 use crate::tiers_listener::TiersListener;
-use crate::user_db::{MERKLE_TREE_HEIGHT};
+use crate::user_db::MERKLE_TREE_HEIGHT;
+use crate::user_db_2::UserDb2Config;
 use crate::user_db_error::{RegisterError2, UserDb2OpenError};
 use crate::user_db_service::UserDbService;
 use crate::user_db_types::RateLimit;
 use rln_proof::RlnIdentifier;
 use smart_contract::KarmaTiers::KarmaTiersInstance;
 use smart_contract::{KarmaTiersError, TIER_LIMITS};
-use crate::user_db_2::UserDb2Config;
 
 pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
     // Epoch
@@ -116,7 +116,8 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
         tree_depth: MERKLE_TREE_HEIGHT,
     };
     let db_url = app_args.db_url.unwrap();
-    let db_conn = Database::connect(db_url).await
+    let db_conn = Database::connect(db_url)
+        .await
         .map_err(UserDb2OpenError::from)?;
     let user_db_service = UserDbService::new(
         db_conn,
@@ -125,7 +126,8 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
         epoch_service.current_epoch.clone(),
         RateLimit::new(app_args.spam_limit),
         tier_limits,
-    ).await?;
+    )
+    .await?;
 
     if app_args.mock_sc.is_some()
         && let Some(user_filepath) = app_args.mock_user.as_ref()
@@ -150,7 +152,9 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
                     }
                 }
             }
-            user_db.on_new_tx(&mock_user.address, Some(mock_user.tx_count)).await?;
+            user_db
+                .on_new_tx(&mock_user.address, Some(mock_user.tx_count))
+                .await?;
         }
     }
 

@@ -17,9 +17,9 @@ use crate::metrics::{
 };
 use crate::proof_generation::{ProofGenerationData, ProofSendingData};
 // use crate::user_db::UserDb;
+use crate::user_db_2::UserDb2;
 use crate::user_db_types::RateLimit;
 use rln_proof::{RlnData, compute_rln_proof_and_values};
-use crate::user_db_2::UserDb2;
 
 const PROOF_SIZE: usize = 512;
 
@@ -228,11 +228,11 @@ mod tests {
         protocol::{deserialize_proof_values, verify_proof},
     };
     // internal
-    use rln_proof::RlnIdentifier;
     use crate::tests_common::create_database_connection_1;
     use crate::user_db::MERKLE_TREE_HEIGHT;
     use crate::user_db_2::UserDb2Config;
     use crate::user_db_service::UserDbService;
+    use rln_proof::RlnIdentifier;
 
     const ADDR_1: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
     const ADDR_2: Address = address!("0xb20a608c624Ca5003905aA834De7156C68b2E1d0");
@@ -341,7 +341,8 @@ mod tests {
         };
 
         let (_, db_conn) = create_database_connection_1(file!(), function_name!())
-            .await.unwrap();
+            .await
+            .unwrap();
         let user_db_service = UserDbService::new(
             db_conn,
             config,
@@ -350,7 +351,8 @@ mod tests {
             10.into(),
             Default::default(),
         )
-        .await.unwrap();
+        .await
+        .unwrap();
         let user_db = user_db_service.get_user_db();
         user_db.on_new_user(&ADDR_1).await.unwrap();
         user_db.on_new_user(&ADDR_2).await.unwrap();
@@ -381,5 +383,4 @@ mod tests {
         // Everything ok if proof_verifier return AppErrorExt::Exit else there is a real error
         assert_matches!(res, Err(AppErrorExt::Exit));
     }
-
 }

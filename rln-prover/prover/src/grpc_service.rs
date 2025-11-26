@@ -30,8 +30,8 @@ use crate::metrics::{
     PROOF_SERVICES_CHANNEL_QUEUE_LEN, SEND_TRANSACTION_REQUESTS,
 };
 use crate::proof_generation::{ProofGenerationData, ProofSendingData};
-use crate::user_db::{UserTierInfo};
-use rln_proof::{RlnIdentifier};
+use crate::user_db::UserTierInfo;
+use rln_proof::RlnIdentifier;
 use smart_contract::{KarmaAmountExt, KarmaSC::KarmaSCInstance, MockKarmaSc};
 
 pub mod prover_proto {
@@ -42,6 +42,7 @@ pub mod prover_proto {
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
         tonic::include_file_descriptor_set!("prover_descriptor");
 }
+use crate::user_db_2::UserDb2;
 use crate::user_db_types::RateLimit;
 use prover_proto::{
     GetUserTierInfoReply,
@@ -62,7 +63,6 @@ use prover_proto::{
     rln_proof_reply::Resp as GetProofsResp,
     rln_prover_server::{RlnProver, RlnProverServer},
 };
-use crate::user_db_2::UserDb2;
 
 const PROVER_SERVICE_LIMIT_PER_CONNECTION: usize = 16;
 // Timeout for all handlers of a request

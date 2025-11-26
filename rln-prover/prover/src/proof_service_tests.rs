@@ -1,4 +1,3 @@
-
 #[cfg(feature = "postgres")]
 #[cfg(test)]
 mod tests {
@@ -25,12 +24,12 @@ mod tests {
     use crate::proof_generation::{ProofGenerationData, ProofSendingData};
     use crate::proof_service::ProofService;
     // use crate::user_db::{MERKLE_TREE_HEIGHT, UserDb, UserDbConfig};
-    use crate::user_db_service::UserDbService;
-    use crate::user_db_types::RateLimit;
-    use rln_proof::RlnIdentifier;
     use crate::user_db::MERKLE_TREE_HEIGHT;
     use crate::user_db_2::{UserDb2, UserDb2Config};
+    use crate::user_db_service::UserDbService;
+    use crate::user_db_types::RateLimit;
     use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
+    use rln_proof::RlnIdentifier;
 
     const ADDR_1: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
     const ADDR_2: Address = address!("0xb20a608c624Ca5003905aA834De7156C68b2E1d0");
@@ -60,7 +59,6 @@ mod tests {
     }
 
     async fn create_database_connection(db_name: &str) -> Result<DatabaseConnection, DbErr> {
-
         // Drop / Create db_name then return a connection to it
 
         let db_url_base = "postgres://myuser:mysecretpassword@localhost";
@@ -73,12 +71,12 @@ mod tests {
             db.get_database_backend(),
             format!("DROP DATABASE IF EXISTS \"{}\";", db_name),
         ))
-            .await?;
+        .await?;
         db.execute_raw(Statement::from_string(
             db.get_database_backend(),
             format!("CREATE DATABASE \"{}\";", db_name),
         ))
-            .await?;
+        .await?;
 
         db.close().await?;
 
@@ -181,7 +179,8 @@ mod tests {
         };
 
         let db_conn = create_database_connection("proof_service_tests_test_user_not_registered")
-            .await.unwrap();
+            .await
+            .unwrap();
 
         let user_db_service = UserDbService::new(
             db_conn,
@@ -191,7 +190,8 @@ mod tests {
             10.into(),
             Default::default(),
         )
-        .await.unwrap();
+        .await
+        .unwrap();
         let user_db = user_db_service.get_user_db();
         user_db.on_new_user(&ADDR_1).await.unwrap();
         // user_db.on_new_user(ADDR_2).unwrap();
@@ -352,7 +352,9 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let db_conn = create_database_connection("proof_service_tests_test_user_spamming").await.unwrap();
+        let db_conn = create_database_connection("proof_service_tests_test_user_spamming")
+            .await
+            .unwrap();
         let user_db_service = UserDbService::new(
             db_conn,
             config,
@@ -361,7 +363,8 @@ mod tests {
             rate_limit,
             Default::default(),
         )
-        .await.unwrap();
+        .await
+        .unwrap();
         let user_db = user_db_service.get_user_db();
         user_db.on_new_user(&ADDR_1).await.unwrap();
         // let user_addr_1 = user_db.get_user(&ADDR_1).await.unwrap().unwrap();
@@ -429,7 +432,10 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let db_conn = create_database_connection("proof_service_tests_test_user_spamming_same_signal").await.unwrap();
+        let db_conn =
+            create_database_connection("proof_service_tests_test_user_spamming_same_signal")
+                .await
+                .unwrap();
         let user_db_service = UserDbService::new(
             db_conn,
             config,
@@ -438,7 +444,8 @@ mod tests {
             rate_limit,
             Default::default(),
         )
-        .await.unwrap();
+        .await
+        .unwrap();
         let user_db = user_db_service.get_user_db();
         user_db.on_new_user(&ADDR_1).await.unwrap();
         let user_addr_1 = user_db.get_user(&ADDR_1).await.unwrap();
