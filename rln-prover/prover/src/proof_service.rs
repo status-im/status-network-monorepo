@@ -371,7 +371,6 @@ mod tests {
         Err::<(), AppErrorExt>(AppErrorExt::Exit)
     }
 
-    /*
     #[tokio::test]
     #[function_name::named]
     // #[tracing_test::traced_test]
@@ -436,5 +435,5 @@ mod tests {
         // Everything ok if proof_verifier return AppErrorExt::Exit else there is a real error
         assert_matches!(res, Err(AppErrorExt::Exit));
     }
-    */
+
 }

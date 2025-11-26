@@ -115,7 +115,7 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
         max_tree_count: app_args.merkle_tree_max_count,
         tree_depth: MERKLE_TREE_HEIGHT,
     };
-let db_url = app_args.db_url.unwrap();
+    let db_url = app_args.db_url.unwrap();
     let db_conn = Database::connect(db_url)
         .await
         .map_err(UserDb2OpenError::from)?;
