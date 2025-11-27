@@ -35,6 +35,12 @@
     <Logger name="net.consensys.linea.sequencer.txselection.selectors" level="DEBUG">
       <AppenderRef ref="Console"/>
     </Logger>
+    <Logger name="net.consensys.linea.sequencer.txpoolvalidation.validators" level="INFO">
+      <AppenderRef ref="Console"/>
+    </Logger>
+    <Logger name="net.consensys.linea.sequencer.txpoolvalidation.shared" level="INFO">
+      <AppenderRef ref="Console"/>
+    </Logger>
     <Logger name="org.hyperledger.besu.ethereum.eth.transactions.TransactionPool" level="TRACE" additivity="false">
       <AppenderRef ref="Console"/>
     </Logger>

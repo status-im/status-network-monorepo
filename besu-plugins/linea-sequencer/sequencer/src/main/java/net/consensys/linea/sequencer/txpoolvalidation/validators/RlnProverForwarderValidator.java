@@ -274,7 +274,11 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
             .getGasPrice()
             .map(q -> q.getAsBigInteger())
             .orElseGet(
-                () -> transaction.getMaxFeePerGas().map(q -> q.getAsBigInteger()).orElse(BigInteger.ZERO));
+                () ->
+                    transaction
+                        .getMaxFeePerGas()
+                        .map(q -> q.getAsBigInteger())
+                        .orElse(BigInteger.ZERO));
     long premiumThresholdWei = rlnConfig.premiumGasPriceThresholdWei();
     if (effectiveGasPrice.compareTo(BigInteger.valueOf(premiumThresholdWei)) >= 0) {
       LOG.debug(

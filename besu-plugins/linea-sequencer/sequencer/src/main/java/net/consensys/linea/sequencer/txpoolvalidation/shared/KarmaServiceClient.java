@@ -425,7 +425,8 @@ public class KarmaServiceClient implements Closeable {
     // Validate tier information if present
     if (result.hasTier()) {
       var tier = result.getTier();
-      if (tier.getQuota() < 0 || tier.getQuota() > 10_000) {
+      // Max quota increased to support high-tier users (e.g., legendary: 480,000)
+      if (tier.getQuota() < 0 || tier.getQuota() > 1_000_000) {
         return false;
       }
       if (tier.getName() == null || tier.getName().trim().isEmpty()) {
