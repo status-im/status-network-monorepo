@@ -673,6 +673,7 @@ mod tests {
     #[tokio::test]
     // #[traced_test]
     async fn test_user_register() {
+        // Use this to see sea_orm traces
         // tracing_subscriber::fmt()
         //     .with_max_level(tracing::Level::DEBUG)
         //     .with_test_writer()
