@@ -4004,6 +4004,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pluralizer"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b3eba432a00a1f6c16f39147847a870e94e2e9b992759b503e330efec778cbe"
+dependencies = [
+ "once_cell",
+ "regex",
+]
+
+[[package]]
 name = "portable-atomic"
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4290,7 +4300,6 @@ dependencies = [
 name = "prover_merkle_tree"
 version = "0.1.0"
 dependencies = [
- "itertools 0.14.0",
  "num-packer",
  "prover_db_entity",
  "prover_pmtree",
@@ -5043,9 +5052,9 @@ dependencies = [
 
 [[package]]
 name = "sea-orm"
-version = "2.0.0-rc.18"
+version = "2.0.0-rc.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd92b1f5f1a6bee6f51523dbd030c5f617e65da6caf312f166dabb404806db86"
+checksum = "ee6dda57d64724c4c3e2b39ce17ca5f4084561656a3518b65b26edc5b36e4607"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5075,9 +5084,9 @@ dependencies = [
 
 [[package]]
 name = "sea-orm-cli"
-version = "2.0.0-rc.18"
+version = "2.0.0-rc.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "669479531f1422edde78327b24b32f652a9417f5942935737a7d7c7d31e5a1a9"
+checksum = "d63b7fcf2623bfc47e4fcca48fd35f77fd376611935862a6e316991d035ac85c"
 dependencies = [
  "chrono",
  "clap",
@@ -5095,11 +5104,12 @@ dependencies = [
 
 [[package]]
 name = "sea-orm-macros"
-version = "2.0.0-rc.18"
+version = "2.0.0-rc.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07e65b4d10f02744f19c203f2e02fac65bc718efdd98636ea445f0a8f1ee0c1d"
+checksum = "4e7674a565e093a4bfffbfd6d7fd79a5dc8d75463d442ffb44d0fc3a3dcce5a6"
 dependencies = [
  "heck 0.5.0",
+ "pluralizer",
  "proc-macro2",
  "quote",
  "sea-bae",
@@ -5109,9 +5119,9 @@ dependencies = [
 
 [[package]]
 name = "sea-orm-migration"
-version = "2.0.0-rc.18"
+version = "2.0.0-rc.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c70fc91069ee40ebecc35bb671adedbd5fd9352d9b09eeed228490df7934e78"
+checksum = "02c77522b82141205bd99137be96b81b4540531f9ff7773b77d70f5749c39dcc"
 dependencies = [
  "async-trait",
  "clap",
