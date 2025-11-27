@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 import { createTestLogger } from "../../config/logger";
+import { RLN_CONFIG } from "../config/rln-config";
 
 const logger = createTestLogger();
 
@@ -31,7 +32,7 @@ export async function retryWithBackoff<T>(
         attempt: i + 1,
         maxRetries,
         nextDelayMs: delay,
-        error: error.message,
+        error: lastError.message,
       });
 
       if (i < maxRetries - 1) {
@@ -66,7 +67,7 @@ export async function waitFor(
         logger.debug("Condition met", { description });
         return;
       }
-    } catch (error) {
+    } catch {
       // Condition check failed, continue waiting
     }
 
@@ -84,6 +85,15 @@ export function randomHexData(length: number): string {
 }
 
 /**
+ * Generate unique transaction data to avoid "Known transaction" errors
+ */
+export function uniqueTxData(prefix: string = "test"): string {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(7);
+  return ethers.hexlify(ethers.toUtf8Bytes(`${prefix}-${timestamp}-${random}`));
+}
+
+/**
  * Parse gas price from Gwei string
  */
 export function parseGwei(gwei: string): bigint {
@@ -98,27 +108,37 @@ export function formatGwei(wei: bigint): string {
 }
 
 /**
- * Get current epoch (TEST mode: 60s epochs)
+ * Get current epoch (based on config epoch duration)
  */
 export function getCurrentEpoch(): number {
-  return Math.floor(Date.now() / 1000 / 60);
+  return Math.floor(Date.now() / 1000 / RLN_CONFIG.test.epochDurationSeconds);
 }
 
 /**
- * Get current epoch slice (TEST mode: 10s slices)
- */
-export function getCurrentEpochSlice(): number {
-  return Math.floor(((Date.now() / 1000) % 60) / 10);
-}
-
-/**
- * Calculate time until next epoch
+ * Get time until next epoch in milliseconds
  */
 export function timeUntilNextEpoch(): number {
-  const now = Date.now() / 1000;
-  const currentEpoch = Math.floor(now / 60);
-  const nextEpochStart = (currentEpoch + 1) * 60;
-  return Math.ceil((nextEpochStart - now) * 1000); // ms
+  const epochDuration = RLN_CONFIG.test.epochDurationSeconds * 1000;
+  const now = Date.now();
+  const currentEpoch = Math.floor(now / epochDuration);
+  const nextEpochStart = (currentEpoch + 1) * epochDuration;
+  return nextEpochStart - now;
+}
+
+/**
+ * Wait until next epoch starts
+ */
+export async function waitForNextEpoch(maxWaitMs: number = 120000): Promise<number> {
+  const waitTime = timeUntilNextEpoch() + 1000; // +1s buffer
+
+  if (waitTime > maxWaitMs) {
+    throw new Error(`Next epoch starts in ${waitTime}ms, exceeds max wait of ${maxWaitMs}ms`);
+  }
+
+  logger.debug("Waiting for next epoch", { waitTime });
+  await sleep(waitTime);
+
+  return getCurrentEpoch();
 }
 
 /**
@@ -139,6 +159,9 @@ export async function assertThrows(fn: () => Promise<unknown>, messagePattern?: 
     throw new Error("Expected function to throw, but it didn't");
   } catch (error: unknown) {
     const err = error instanceof Error ? error : new Error(String(error));
+    if (err.message === "Expected function to throw, but it didn't") {
+      throw err;
+    }
     if (messagePattern) {
       const pattern = typeof messagePattern === "string" ? new RegExp(messagePattern, "i") : messagePattern;
 
@@ -167,21 +190,17 @@ export async function createFundedWallet(
     fundAmount: fundAmount.toString(),
   });
 
-  // Get fresh nonce from latest block to avoid stale nonce issues
   const nonce = await provider.getTransactionCount(funderAddress, "latest");
 
-  // Fund the wallet with premium gas price to bypass RLN verification
-  // Premium gas threshold is 10 gwei, so we use 15 gwei
   const tx = await funder.sendTransaction({
     to: wallet.address,
     value: fundAmount,
     gasLimit: 21000,
-    gasPrice: ethers.parseUnits("15", "gwei"), // Use 15 gwei (premium) to bypass RLN
-    nonce, // Explicit nonce from latest block
+    gasPrice: ethers.parseUnits("15", "gwei"),
+    nonce,
   });
 
-  // Wait with timeout
-  await tx.wait(1, 30000); // 1 confirmation, 30s timeout
+  await tx.wait(1, RLN_CONFIG.test.transactionTimeoutMs);
 
   logger.debug("Wallet funded", {
     address: wallet.address,
@@ -192,7 +211,26 @@ export async function createFundedWallet(
 }
 
 /**
- * Get balance in ETH as a number (for logging)
+ * Create multiple funded wallets
+ */
+export async function createMultipleFundedWallets(
+  provider: ethers.Provider,
+  funder: ethers.Signer,
+  count: number,
+  fundAmount: bigint = ethers.parseEther("1"),
+): Promise<ethers.HDNodeWallet[]> {
+  const wallets: ethers.HDNodeWallet[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const wallet = await createFundedWallet(provider, funder, fundAmount);
+    wallets.push(wallet);
+  }
+
+  return wallets;
+}
+
+/**
+ * Get balance in ETH as a formatted string
  */
 export async function getBalanceInEth(provider: ethers.Provider, address: string): Promise<string> {
   const balance = await provider.getBalance(address);
@@ -215,3 +253,30 @@ export function logTransaction(
     status: "status" in tx ? tx.status : "pending",
   });
 }
+
+/**
+ * Generate test case ID with description
+ */
+export function testId(category: string, number: number, description: string): string {
+  return `${category}-${String(number).padStart(3, "0")}: ${description}`;
+}
+
+/**
+ * Premium gas price (above threshold) for bypassing RLN
+ */
+export const PREMIUM_GAS_PRICE = parseGwei("15");
+
+/**
+ * Sub-threshold gas price (requires RLN)
+ */
+export const SUB_THRESHOLD_GAS_PRICE = parseGwei("9");
+
+/**
+ * Exactly at threshold gas price
+ */
+export const THRESHOLD_GAS_PRICE = parseGwei("10");
+
+/**
+ * Recipient address for test transactions
+ */
+export const TEST_RECIPIENT = RLN_CONFIG.accounts.recipient;

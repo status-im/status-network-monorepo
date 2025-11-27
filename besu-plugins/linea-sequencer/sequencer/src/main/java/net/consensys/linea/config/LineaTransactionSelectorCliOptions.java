@@ -38,6 +38,10 @@ public class LineaTransactionSelectorCliOptions implements LineaCliOptions {
   public static final String UNPROFITABLE_RETRY_LIMIT = "--plugin-linea-unprofitable-retry-limit";
   public static final int DEFAULT_UNPROFITABLE_RETRY_LIMIT = 10;
 
+  public static final String PROFITABILITY_CHECK_ENABLED =
+      "--plugin-linea-profitability-check-enabled";
+  public static final boolean DEFAULT_PROFITABILITY_CHECK_ENABLED = true;
+
   @Positive
   @CommandLine.Option(
       names = {MAX_BLOCK_CALLDATA_SIZE},
@@ -99,6 +103,15 @@ public class LineaTransactionSelectorCliOptions implements LineaCliOptions {
           "Max number of unprofitable transactions we retry on each block creation (default: ${DEFAULT-VALUE})")
   private int unprofitableRetryLimit = DEFAULT_UNPROFITABLE_RETRY_LIMIT;
 
+  @CommandLine.Option(
+      names = {PROFITABILITY_CHECK_ENABLED},
+      arity = "0..1",
+      hidden = true,
+      paramLabel = "<BOOLEAN>",
+      description =
+          "Enable profitability check during block selection. Disable for gasless networks. (default: ${DEFAULT-VALUE})")
+  private boolean profitabilityCheckEnabled = DEFAULT_PROFITABILITY_CHECK_ENABLED;
+
   private LineaTransactionSelectorCliOptions() {}
 
   /**
@@ -124,6 +137,7 @@ public class LineaTransactionSelectorCliOptions implements LineaCliOptions {
     options.maxGasPerBlock = config.maxGasPerBlock();
     options.unprofitableCacheSize = config.unprofitableCacheSize();
     options.unprofitableRetryLimit = config.unprofitableRetryLimit();
+    options.profitabilityCheckEnabled = config.profitabilityCheckEnabled();
     return options;
   }
 
@@ -142,6 +156,7 @@ public class LineaTransactionSelectorCliOptions implements LineaCliOptions {
         .unprofitableRetryLimit(unprofitableRetryLimit)
         .maxBundleGasPerBlock(maxBundleGasPerBlock)
         .maxBundlePoolSizeBytes(maxBundlePoolSizeBytes)
+        .profitabilityCheckEnabled(profitabilityCheckEnabled)
         .build();
   }
 
@@ -155,6 +170,7 @@ public class LineaTransactionSelectorCliOptions implements LineaCliOptions {
         .add(UNPROFITABLE_RETRY_LIMIT, unprofitableRetryLimit)
         .add(MAX_BUNDLE_GAS_PER_BLOCK, maxBundleGasPerBlock)
         .add(MAX_BUNDLE_POOL_SIZE_BYTES, maxBundlePoolSizeBytes)
+        .add(PROFITABILITY_CHECK_ENABLED, profitabilityCheckEnabled)
         .toString();
   }
 }

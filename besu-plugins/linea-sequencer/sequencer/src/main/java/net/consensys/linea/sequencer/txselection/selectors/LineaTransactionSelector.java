@@ -12,6 +12,7 @@ import static net.consensys.linea.sequencer.txselection.LineaTransactionSelectio
 import static net.consensys.linea.sequencer.txselection.LineaTransactionSelectionResult.TX_MODULE_LINE_COUNT_OVERFLOW_CACHED;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -104,23 +105,35 @@ public class LineaTransactionSelector implements PluginTransactionSelector {
             l1L2BridgeConfiguration,
             tracerConfiguration);
 
-    List<PluginTransactionSelector> selectors =
-        List.of(
-            new MaxBlockCallDataTransactionSelector(
-                selectorsStateManager, txSelectorConfiguration.maxBlockCallDataSize()),
-            new MaxBlockGasTransactionSelector(
-                selectorsStateManager, txSelectorConfiguration.maxGasPerBlock()),
-            new ProfitableTransactionSelector(
-                blockchainService,
-                txSelectorConfiguration,
-                profitabilityConfiguration,
-                maybeProfitabilityMetrics),
-            new BundleConstraintTransactionSelector(),
-            new MaxBundleGasPerBlockTransactionSelector(
-                selectorsStateManager, txSelectorConfiguration.maxBundleGasPerBlock()),
-            traceLineLimitTransactionSelector);
+    // Build selector list - conditionally include profitability check
+    List<PluginTransactionSelector> selectorList = new ArrayList<>();
+    selectorList.add(
+        new MaxBlockCallDataTransactionSelector(
+            selectorsStateManager, txSelectorConfiguration.maxBlockCallDataSize()));
+    selectorList.add(
+        new MaxBlockGasTransactionSelector(
+            selectorsStateManager, txSelectorConfiguration.maxGasPerBlock()));
 
-    return selectors;
+    // Only include profitability check if enabled (disable for gasless networks)
+    if (txSelectorConfiguration.profitabilityCheckEnabled()) {
+      log.info("Profitability check ENABLED for block selection");
+      selectorList.add(
+          new ProfitableTransactionSelector(
+              blockchainService,
+              txSelectorConfiguration,
+              profitabilityConfiguration,
+              maybeProfitabilityMetrics));
+    } else {
+      log.info("Profitability check DISABLED for block selection (gasless network mode)");
+    }
+
+    selectorList.add(new BundleConstraintTransactionSelector());
+    selectorList.add(
+        new MaxBundleGasPerBlockTransactionSelector(
+            selectorsStateManager, txSelectorConfiguration.maxBundleGasPerBlock()));
+    selectorList.add(traceLineLimitTransactionSelector);
+
+    return selectorList;
   }
 
   /**

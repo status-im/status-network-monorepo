@@ -21,5 +21,6 @@ public record LineaTransactionSelectorConfiguration(
     int unprofitableCacheSize,
     int unprofitableRetryLimit,
     long maxBundleGasPerBlock,
-    long maxBundlePoolSizeBytes)
+    long maxBundlePoolSizeBytes,
+    boolean profitabilityCheckEnabled)
     implements LineaOptionsConfiguration {}

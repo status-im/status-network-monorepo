@@ -1,25 +1,33 @@
 # Enhanced Docker Compose for Linea L2 Services with RLN Support
 # To debug inside the network and volumes:
 # docker run --rm -it --network=docker_linea -v=linea-local-dev:/data -v=linea-logs:/logs weibeld/ubuntu-networking bash
+#
+# RLN PROVER MODES:
+# -----------------
+# Mock Mode (default): Uses mock smart contracts and pre-registered users
+#   - Set RLN_MOCK_MODE=true (default)
+#   - No blockchain connection required
+#
+# Production Mode: Connects to real smart contracts on L2
+#   - Set RLN_MOCK_MODE=false
+#   - Set contract addresses: KARMA_SC_ADDRESS, RLN_SC_ADDRESS, KARMA_TIERS_SC_ADDRESS
+#   - RLN prover will connect to L2 node via WebSocket
 
 services:
   # RLN Prover Service - Core component for gasless transaction validation
   rln-prover:
     hostname: rln-prover
     container_name: rln-prover
-    image: status-rln-prover:20251126193838
+    image: status-rln-prover:20251127111510
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo", "rln" ]
     ports:
       - "50051:50051"  # RLN proof service
       - "50052:50052"  # Karma service (optional, can be same port)
     restart: unless-stopped
+    # Default: Mock mode. For production, override command via docker-compose or use rln-prover-production service
     command: ["--no-config", "--ip", "0.0.0.0", "--port", "50051", "--mock-sc", "true", "--mock-user", "/app/mock_users.json"]
     environment:
-      RUST_LOG: "debug"
-      # Real blockchain connection (uncomment for production)
-      # WS_RPC_URL: "wss://eth-mainnet.g.alchemy.com/v2/YOUR_TOKEN"
-      # KARMA_SC_ADDRESS: "0x..."
-      # RLN_SC_ADDRESS: "0x..."
+      RUST_LOG: "${RUST_LOG:-debug}"
     volumes:
       - local-dev:/app/data
       - ./config/rln-prover/mock_users.json:/app/mock_users.json:ro
@@ -38,14 +46,15 @@ services:
   karma-service:
     hostname: karma-service
     container_name: karma-service
-    image: status-rln-prover:20251126193838
+    image: status-rln-prover:20251127111510
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo", "rln" ]
     ports:
       - "50053:50052"
     restart: unless-stopped
+    # Default: Mock mode. For production, override command via docker-compose
     command: ["--no-config", "--ip", "0.0.0.0", "--port", "50052", "--mock-sc", "true", "--mock-user", "/app/mock_users.json"]
     environment:
-      RUST_LOG: "debug"
+      RUST_LOG: "${RUST_LOG:-debug}"
     volumes:
       - local-dev:/app/data
       - ./config/rln-prover/mock_users.json:/app/mock_users.json:ro
@@ -63,7 +72,7 @@ services:
   sequencer:
     hostname: sequencer
     container_name: sequencer
-    image: linea-besu-minimal-rln:20251126210242
+    image: linea-besu-minimal-rln:20251127145151
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     ports:
       - "8545:8545"
@@ -80,8 +89,6 @@ services:
     restart: "no"
     depends_on:
       rln-prover:
-        condition: service_healthy
-      karma-service:
         condition: service_healthy
     environment:
       LOG4J_CONFIGURATION_FILE: /var/lib/besu/log4j.xml
@@ -105,9 +112,9 @@ services:
           --plugin-linea-node-type=SEQUENCER \
           --plugin-linea-rln-enabled=true \
           --plugin-linea-rln-proof-service=rln-prover:50051 \
-          --plugin-linea-rln-karma-service=karma-service:50052 \
+          --plugin-linea-rln-karma-service=rln-prover:50051 \
           --plugin-linea-rln-verifying-key=/var/lib/besu/rln/verifying_key.dat \
-          --plugin-linea-rln-deny-list-path=/var/lib/besu/gasless-deny-list.txt \
+          --plugin-linea-rln-deny-list-path=/data/gasless-deny-list.txt \
           --plugin-linea-rln-use-tls=false \
           --plugin-linea-rln-premium-gas-threshold-gwei=10 \
           --plugin-linea-rln-timeouts-ms=30000 \
@@ -130,7 +137,7 @@ services:
       - ./config/linea-besu-sequencer/key:/var/lib/besu/key:ro
       - ./config/linea-besu-sequencer/log4j.xml:/var/lib/besu/log4j.xml:ro
       - ../config/common/traces-limits-v2.toml:/var/lib/besu/traces-limits.toml:ro
-      - ./config/linea-besu-sequencer/gasless-deny-list.txt:/var/lib/besu/gasless-deny-list.txt:ro
+      - ../tmp/local/sequencer-data/:/data/:rw
       - ./config/linea-besu-sequencer/rln/:/var/lib/besu/rln/:ro
     networks:
       l1network:
@@ -174,12 +181,10 @@ services:
   l2-node-besu:
     hostname: l2-node-besu
     container_name: l2-node-besu
-    image: linea-besu-minimal-rln:20251126210242
+    image: linea-besu-minimal-rln:20251127145151
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     depends_on:
       sequencer:
-        condition: service_healthy
-      karma-service:
         condition: service_healthy
     ports:
       - "9045:8545"
@@ -216,7 +221,7 @@ services:
           --bootnodes=enode://14408801a444dafc44afbccce2eb755f902aed3b5743fed787b3c790e021fef28b8c827ed896aa4e8fb46e22bd67c39f994a73768b4b382f8597b0d44370e15d@11.11.11.101:30303 \
           --plugin-linea-rln-enabled=false \
           --plugin-linea-rln-proof-service=rln-prover:50051 \
-          --plugin-linea-rln-karma-service=karma-service:50052 \
+          --plugin-linea-rln-karma-service=rln-prover:50051 \
           --plugin-linea-rln-timeouts-ms=30000 \
           --plugin-linea-rln-epoch-mode=TEST \
           --plugin-linea-rpc-gasless-enabled=true \
@@ -233,11 +238,11 @@ services:
           --plugin-linea-estimate-gas-compatibility-mode-multiplier=1.2
     volumes:
       - ./config/l2-node-besu/l2-node-besu-config.toml:/var/lib/besu/l2-node-besu.config.toml:ro
-      - ./config/linea-besu-sequencer/deny-list.txt:/var/lib/besu/deny-list.txt:ro
+      - ./config/linea-besu-sequencer/deny-list.txt:/var/lib/besu/deny-list.txt:rw
       - ./config/l2-node-besu/log4j.xml:/var/lib/besu/log4j.xml:ro
       - ./config/linea-local-dev-genesis-PoA-besu.json/:/var/lib/besu/genesis.json:ro
       - ../config/common/traces-limits-v2.toml:/var/lib/besu/traces-limits.toml:ro
-      - ./config/linea-besu-sequencer/gasless-deny-list.txt:/var/lib/besu/gasless-deny-list.txt:ro
+      - ./config/linea-besu-sequencer/gasless-deny-list.txt:/var/lib/besu/gasless-deny-list.txt:rw
       # RLN verifying key not needed for RPC mode (no validation)
       # - ./config/linea-besu-sequencer/rln/:/var/lib/besu/rln/:ro
       - ../tmp/local/:/data/:rw

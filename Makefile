@@ -93,6 +93,45 @@ start-env-with-rln-and-contracts:
 	make start-env COMPOSE_FILE=docker/compose-tracing-v2-rln.yml LINEA_PROTOCOL_CONTRACTS_ONLY=true STATUS_NETWORK_CONTRACTS_ENABLED=true
 	@echo "Complete RLN environment with contracts is ready!"
 
+# Production mode: RLN prover connects to real smart contracts
+# This starts the network in mock mode first, deploys contracts, initializes tiers, then restarts RLN services in production mode
+start-env-with-rln-production:
+	@echo "🚀 Starting RLN environment in PRODUCTION mode..."
+	@echo "Step 1: Starting network with mock RLN (to allow contract deployment)..."
+	make start-env COMPOSE_FILE=docker/compose-tracing-v2-rln.yml LINEA_PROTOCOL_CONTRACTS_ONLY=true STATUS_NETWORK_CONTRACTS_ENABLED=true
+	@echo "Step 2: Extracting deployed contract addresses..."
+	@KARMA_ADDR=$$(cat status-network-contracts/deployments/karma_address.txt 2>/dev/null) && \
+	RLN_ADDR=$$(cat status-network-contracts/deployments/rln_address.txt 2>/dev/null) && \
+	TIERS_ADDR=$$(cat status-network-contracts/deployments/karma_tiers_address.txt 2>/dev/null) && \
+	echo "  Karma: $$KARMA_ADDR" && \
+	echo "  RLN: $$RLN_ADDR" && \
+	echo "  KarmaTiers: $$TIERS_ADDR" && \
+	echo "Step 3: Initializing karma tiers..." && \
+	(cd e2e && KARMA_TIERS_ADDRESS=$$TIERS_ADDR npx ts-node ../scripts/initialize-karma-tiers.ts || true) && \
+	echo "Step 4: Setting up prover account permissions..." && \
+	(cd e2e && KARMA_CONTRACT_ADDRESS=$$KARMA_ADDR RLN_CONTRACT_ADDRESS=$$RLN_ADDR node ../scripts/setup-prover-account.js || true) && \
+	(cd e2e && KARMA_CONTRACT_ADDRESS=$$KARMA_ADDR node ../scripts/grant-operator-role.js || true) && \
+	echo "Step 5: Restarting RLN prover in production mode..." && \
+	docker stop rln-prover karma-service 2>/dev/null || true && \
+	docker rm rln-prover karma-service 2>/dev/null || true && \
+	RLN_PROVER_IMAGE=$$(docker images --format '{{.Repository}}:{{.Tag}}' | grep status-rln-prover | head -1) && \
+	echo "  Using prover image: $$RLN_PROVER_IMAGE" && \
+	docker run -d --name rln-prover --hostname rln-prover \
+		--network docker_linea --ip 11.11.11.120 \
+		-p 50051:50051 -p 50052:50052 \
+		-v linea-local-dev:/app/data \
+		-e RUST_LOG=debug \
+		-e PRIVATE_KEY=0x8f5a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a \
+		$$RLN_PROVER_IMAGE \
+		--no-config --ip 0.0.0.0 --port 50051 \
+		--ws-rpc-url ws://sequencer:8546 \
+		--ksc $$KARMA_ADDR --rlnsc $$RLN_ADDR --tsc $$TIERS_ADDR \
+		--registration-min 1 && \
+	echo "✅ RLN environment running in PRODUCTION mode!" && \
+	echo "   - RLN Prover connected to real smart contracts" && \
+	echo "   - Karma tiers initialized" && \
+	echo "   - Users must have Karma to use gasless transactions"
+
 staterecovery-replay-from-block: L1_ROLLUP_CONTRACT_ADDRESS:=0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9
 staterecovery-replay-from-block: STATERECOVERY_OVERRIDE_START_BLOCK_NUMBER:=1
 staterecovery-replay-from-block:

@@ -208,6 +208,7 @@ deploy-status-network-contracts:
 		@echo "KarmaNFT deployed successfully!"
 		@echo "All Status Network contracts deployed successfully!"
 		@echo "Deployment Summary:"
+		@mkdir -p status-network-contracts/deployments
 		@cd status-network-contracts && \
 		KARMA_TIERS=$$(./scripts/get-deployed-address.sh DeployKarmaTiers.s.sol KarmaTiers 2>/dev/null) && \
 		STAKE_MANAGER=$$(./scripts/get-deployed-address.sh DeployStakeManager.s.sol StakeManager 2>/dev/null) && \
@@ -218,7 +219,13 @@ deploy-status-network-contracts:
 		echo "   StakeManager: $$STAKE_MANAGER" && \
 		echo "   Karma: $$KARMA" && \
 		echo "   RLN: $$RLN" && \
-		echo "   KarmaNFT: $$KARMA_NFT"
+		echo "   KarmaNFT: $$KARMA_NFT" && \
+		echo "$$KARMA_TIERS" > deployments/karma_tiers_address.txt && \
+		echo "$$KARMA" > deployments/karma_address.txt && \
+		echo "$$RLN" > deployments/rln_address.txt && \
+		echo "$$STAKE_MANAGER" > deployments/stake_manager_address.txt && \
+		echo "$$KARMA_NFT" > deployments/karma_nft_address.txt && \
+		echo "Contract addresses saved to status-network-contracts/deployments/"
 
 deploy-status-network-contracts-hardhat:
 		# Deploy using Hardhat deployment tags

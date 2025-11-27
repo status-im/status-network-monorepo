@@ -46,10 +46,14 @@ impl KarmaScEventListener {
         let karma_sc = KarmaSC::new(self.karma_sc_address, provider.clone());
         let rln_sc = KarmaRLNSC::new(self.rln_sc_address, provider_with_signer);
 
+        // Subscribe to both Transfer and AccountSlashed events
+        // Using event_signature() with OR for multiple events
         let filter = alloy::rpc::types::Filter::new()
             .address(self.karma_sc_address)
-            .event(KarmaSC::Transfer::SIGNATURE)
-            .event(KarmaSC::AccountSlashed::SIGNATURE);
+            .events([
+                KarmaSC::Transfer::SIGNATURE,
+                KarmaSC::AccountSlashed::SIGNATURE,
+            ]);
 
         // Subscribe to logs matching the filter.
         let subscription = provider.subscribe_logs(&filter).await?;
