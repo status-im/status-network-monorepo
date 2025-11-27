@@ -82,7 +82,7 @@ impl PersistentDatabase for PersistentDb {
 
     async fn fsync(&mut self) -> Result<(), Self::Error> {
         let cfg_map = std::mem::take(&mut self.put_cfg_store);
-        let put_list = std::mem::take(&mut self.put_store);
+        let mut put_list = std::mem::take(&mut self.put_store);
 
         let txn = self.config.db_conn.begin().await?;
         if !cfg_map.is_empty() {
@@ -130,29 +130,29 @@ impl PersistentDatabase for PersistentDb {
         .update_column(<m_tree::Entity as EntityTrait>::Column::Value)
         .to_owned();
 
-        /*
-        // Chunk put_list into batches (postgres limit is around ~ 15_000 params)
-        let put_list_ = &put_list
-            .into_iter()
-            .chunks(self.config.insert_batch_size);
-
-        for chunk in put_list_ {
-            m_tree::Entity::insert_many::<m_tree::ActiveModel, _>(chunk)
+        // Note: Postgres has a limit ~ 15k parameters so we need to batch insert
+        loop {
+            if put_list.is_empty() {
+                // No need to call insert_many with 0 items
+                break;
+            } else if put_list.len() < self.config.insert_batch_size {
+                // Final insert_many for remaining items
+                m_tree::Entity::insert_many::<m_tree::ActiveModel, _>(put_list)
+                    .on_conflict(on_conflict.clone())
+                    .exec(&txn)
+                    .await?;
+                break;
+            } else {
+                m_tree::Entity::insert_many::<m_tree::ActiveModel, _>(
+                    put_list.drain(..self.config.insert_batch_size),
+                )
                 .on_conflict(on_conflict.clone())
                 .exec(&txn)
-                .await
-                ?;
+                .await?;
+            }
         }
-        */
-
-        // FIXME: chunk
-        m_tree::Entity::insert_many::<m_tree::ActiveModel, _>(put_list)
-            .on_conflict(on_conflict.clone())
-            .exec(&txn)
-            .await?;
 
         txn.commit().await?;
-
         Ok(())
     }
 
