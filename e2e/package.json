@@ -12,6 +12,8 @@
     "test:e2e:dev": "TEST_ENV=dev npx jest --config ./jest.testnet.config.ts --bail --runInBand --testPathIgnorePatterns=restart.spec.ts",
     "test:e2e:sepolia": "TEST_ENV=sepolia npx jest --config ./jest.testnet.config.ts --bail --runInBand --testPathIgnorePatterns=restart.spec.ts",
     "test:rln:local": "TEST_ENV=local npx jest --testPathPattern=rln-gasless --runInBand --verbose",
+    "test:rln:production": "TEST_ENV=local RLN_PRODUCTION_MODE=true npx jest --testPathPattern=rln-gasless --runInBand --verbose",
+    "init:karma-tiers": "npx ts-node ../scripts/initialize-karma-tiers.ts",
     "postinstall": "typechain --target ethers-v6 --out-dir ./src/typechain '../contracts/local-deployments-artifacts/**/*.json'",
     "lint:fix": "pnpm run lint:ts:fix && pnpm run prettier:fix",
     "clean": "rimraf node_modules src/typechain"

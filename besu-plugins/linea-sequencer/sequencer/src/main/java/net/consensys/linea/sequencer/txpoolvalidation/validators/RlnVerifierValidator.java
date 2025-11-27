@@ -1094,7 +1094,9 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
         karmaInfo.karmaBalance());
 
     // Check if user has exceeded their quota (karma service handles all counting internally)
-    if (karmaInfo.epochTxCount() >= karmaInfo.dailyQuota()) {
+    // Note: Use > not >= because the prover increments the count BEFORE we validate,
+    // so count already includes the current transaction being validated
+    if (karmaInfo.epochTxCount() > karmaInfo.dailyQuota()) {
       LOG.warn(
           "User {} (Tier: {}) has exceeded their transaction quota for epoch {}. Count: {}, Quota: {}. Transaction {} rejected.",
           sender.toHexString(),

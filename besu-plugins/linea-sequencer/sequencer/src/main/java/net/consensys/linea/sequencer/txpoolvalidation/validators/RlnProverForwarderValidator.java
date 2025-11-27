@@ -266,6 +266,31 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
       return Optional.empty(); // Accept peer transactions without gRPC forwarding
     }
 
+    // Skip RLN forwarding for PREMIUM transactions (gas price >= premium threshold)
+    // Premium transactions bypass RLN entirely - they pay high gas fees
+    // Transactions with 0 < gas < premium still need RLN proof
+    if (rlnConfig != null) {
+      BigInteger effectiveGasPrice =
+          transaction
+              .getGasPrice()
+              .map(q -> q.getAsBigInteger())
+              .orElseGet(
+                  () ->
+                      transaction
+                          .getMaxFeePerGas()
+                          .map(q -> q.getAsBigInteger())
+                          .orElse(BigInteger.ZERO));
+      long premiumThresholdWei = rlnConfig.premiumGasPriceThresholdWei();
+      if (effectiveGasPrice.compareTo(BigInteger.valueOf(premiumThresholdWei)) >= 0) {
+        LOG.debug(
+            "Skipping gRPC forwarding for premium transaction {} with effectiveGasPrice={} Wei >= threshold {} Wei",
+            transaction.getHash().toHexString(),
+            effectiveGasPrice,
+            premiumThresholdWei);
+        return Optional.empty(); // Accept premium transactions without RLN forwarding
+      }
+    }
+
     localTransactionCount.incrementAndGet();
     LOG.debug(
         "Forwarding local transaction to RLN prover: {} from {} (legacyGasPrice={}, maxFee={}, maxPrio={}, chainId={})",

@@ -3,6 +3,8 @@ volumes:
     name: "linea-local-dev"
   logs:
     name: "linea-logs"
+  rln-data:
+    name: "rln-data"
 
 networks:
   linea:

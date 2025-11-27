@@ -229,7 +229,7 @@ class RlnProverForwarderValidatorMeaningfulTest {
         .sender(USER_SENDER)
         .to(CONTRACT_TARGET)
         .gasLimit(21000)
-        .gasPrice(Wei.of(20_000_000_000L))
+        .gasPrice(Wei.of(1_000_000_000L)) // 1 gwei - below premium threshold (10 gwei)
         .payload(Bytes.EMPTY)
         .value(Wei.ZERO)
         .signature(FAKE_SIGNATURE)
@@ -242,7 +242,7 @@ class RlnProverForwarderValidatorMeaningfulTest {
         .sender(CONTRACT_TARGET) // Different sender
         .to(USER_SENDER)
         .gasLimit(21000)
-        .gasPrice(Wei.of(25_000_000_000L))
+        .gasPrice(Wei.of(2_000_000_000L)) // 2 gwei - below premium threshold (10 gwei)
         .payload(Bytes.fromHexString("0x1234"))
         .value(Wei.ONE)
         .signature(FAKE_SIGNATURE)
