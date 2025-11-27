@@ -15,11 +15,7 @@ use sea_orm::{
 };
 // internal
 use crate::epoch_service::{Epoch, EpochSlice};
-<<<<<<< HEAD
 use crate::tier::{TierLimit, TierLimits, TierMatch, TierName};
-=======
-use crate::tier::{TierLimit, TierLimits, TierMatch};
->>>>>>> 1cbd5c6a (Cargo fmt)
 use crate::user_db::UserTierInfo;
 use crate::user_db_error::{
     GetMerkleTreeProofError2, RegisterError2, SetTierLimitsError2, TxCounterError2,
@@ -216,11 +212,7 @@ impl UserDb2 {
         &self,
         address: &Address,
         incr_value: Option<i64>,
-<<<<<<< HEAD
     ) -> Result<EpochCounter, DbErr> {
-=======
-    ) -> Result<EpochSliceCounter, DbErr> {
->>>>>>> 1cbd5c6a (Cargo fmt)
         let incr_value = incr_value.unwrap_or(1);
         let (epoch, _epoch_slice) = *self.epoch_store.read();
 
@@ -254,11 +246,6 @@ impl UserDb2 {
             } else {
                 // Same epoch
                 res_active.epoch_counter = Set(model_epoch_counter.saturating_add(incr_value));
-<<<<<<< HEAD
-=======
-                res_active.epoch_slice_counter =
-                    Set(model_epoch_slice_counter.saturating_add(incr_value));
->>>>>>> 1cbd5c6a (Cargo fmt)
             }
 
             // res_active.update(&txn).await?;
@@ -288,11 +275,7 @@ impl UserDb2 {
     pub(crate) async fn get_tx_counter(
         &self,
         address: &Address,
-<<<<<<< HEAD
     ) -> Result<EpochCounter, TxCounterError2> {
-=======
-    ) -> Result<(EpochCounter, EpochSliceCounter), TxCounterError2> {
->>>>>>> 1cbd5c6a (Cargo fmt)
         let res = tx_counter::Entity::find()
             .filter(tx_counter::Column::Address.eq(address.to_string()))
             .one(&self.db)
@@ -300,12 +283,7 @@ impl UserDb2 {
 
         match res {
             None => Err(TxCounterError2::NotRegistered(*address)),
-<<<<<<< HEAD
-<<<<<<< HEAD
             Some(res) => Ok(self.counters_from_key(res)),
-=======
-            Some(res) => Ok(self.counters_from_key(res))
->>>>>>> 533283bc (Cargo clippy fixes)
         }
     }
 
@@ -560,11 +538,7 @@ impl UserDb2 {
         &self,
         address: &Address,
         incr_value: Option<i64>,
-<<<<<<< HEAD
     ) -> Result<EpochCounter, TxCounterError2> {
-=======
-    ) -> Result<EpochSliceCounter, TxCounterError2> {
->>>>>>> 1cbd5c6a (Cargo fmt)
         let has_user = self.has_user(address).await?;
 
         if has_user {
@@ -590,11 +564,7 @@ impl UserDb2 {
         &self,
         address: &Address,
         karma_sc: &KSC,
-<<<<<<< HEAD
     ) -> Result<UserTierInfo2, UserTierInfoError2<E>> {
-=======
-    ) -> Result<UserTierInfo, UserTierInfoError2<E>> {
->>>>>>> 1cbd5c6a (Cargo fmt)
         let has_user = self
             .has_user(address)
             .await
@@ -732,15 +702,7 @@ mod tests {
     #[tokio::test]
     // #[traced_test]
     async fn test_user_register() {
-<<<<<<< HEAD
         // Use this to see sea_orm traces
-        // tracing_subscriber::fmt()
-        //     .with_max_level(tracing::Level::DEBUG)
-        //     .with_test_writer()
-        //     .init();
-
-=======
->>>>>>> 1cbd5c6a (Cargo fmt)
         // tracing_subscriber::fmt()
         //     .with_max_level(tracing::Level::DEBUG)
         //     .with_test_writer()
@@ -776,11 +738,7 @@ mod tests {
         assert!(user_db.get_user_identity(&addr).await.is_some());
         assert_eq!(
             user_db.get_tx_counter(&addr).await.unwrap(),
-<<<<<<< HEAD
             EpochCounter::from(0)
-=======
-            (0.into(), 0.into())
->>>>>>> 1cbd5c6a (Cargo fmt)
         );
 
         assert!(user_db.get_user_identity(&ADDR_1).await.is_none());
@@ -788,11 +746,7 @@ mod tests {
         assert!(user_db.get_user_identity(&ADDR_1).await.is_some());
         assert_eq!(
             user_db.get_tx_counter(&addr).await.unwrap(),
-<<<<<<< HEAD
             EpochCounter::from(0)
-=======
-            (0.into(), 0.into())
->>>>>>> 1cbd5c6a (Cargo fmt)
         );
 
         user_db.incr_tx_counter(&addr, Some(42)).await.unwrap();
@@ -878,11 +832,7 @@ mod tests {
         // Now update user tx counter
         assert_eq!(
             user_db.on_new_tx(&addr, None).await,
-<<<<<<< HEAD
             Ok(EpochCounter::from(1))
-=======
-            Ok(EpochSliceCounter::from(1))
->>>>>>> 1cbd5c6a (Cargo fmt)
         );
         let tier_info = user_db
             .user_tier_info(&addr, &MockKarmaSc {})
