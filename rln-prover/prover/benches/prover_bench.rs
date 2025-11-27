@@ -30,8 +30,8 @@ use prover_proto::{
 };
 
 use lazy_static::lazy_static;
-use std::sync::Once;
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
+use std::sync::Once;
 
 lazy_static! {
     static ref TRACING_INIT: Once = Once::new();
@@ -81,12 +81,12 @@ async fn create_database_connection(
         db.get_database_backend(),
         format!("DROP DATABASE IF EXISTS \"{}\";", db_name),
     ))
-        .await?;
+    .await?;
     db.execute_raw(Statement::from_string(
         db.get_database_backend(),
         format!("CREATE DATABASE \"{}\";", db_name),
     ))
-        .await?;
+    .await?;
 
     db.close().await?;
 
@@ -258,10 +258,10 @@ fn proof_generation_bench(c: &mut Criterion) {
     // Spawn prover
     let notify_start_1 = notify_start.clone();
     rt.spawn(async move {
-
         // Setup db
         let (db_url, _db_conn) = create_database_connection("prover_benches", "prover_bench")
-            .await.unwrap();
+            .await
+            .unwrap();
         app_args.db_url = Some(db_url);
 
         tokio::spawn(run_prover(app_args));
