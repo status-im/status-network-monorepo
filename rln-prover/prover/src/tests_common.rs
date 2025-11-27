@@ -1,7 +1,7 @@
 use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
 
-pub(crate) async fn create_database_connection_1(
+pub async fn create_database_connection_1(
     f_name: &str,
     test_name: &str,
 ) -> Result<(String, DatabaseConnection), DbErr> {

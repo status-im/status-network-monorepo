@@ -21,7 +21,7 @@ mod epoch_service_tests;
 mod grpc_e2e;
 mod proof_service_tests;
 #[cfg(test)]
-mod tests_common;
+pub mod tests_common;
 mod user_db_2;
 mod user_db_2_tests;
 mod user_db_tests;
