@@ -1,4 +1,3 @@
-/*
 use criterion::Criterion;
 use criterion::{BenchmarkId, Throughput};
 use criterion::{criterion_group, criterion_main};
@@ -33,6 +32,7 @@ use prover_proto::{
 use lazy_static::lazy_static;
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
 use std::sync::Once;
+use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
 
 lazy_static! {
     static ref TRACING_INIT: Once = Once::new();
@@ -333,4 +333,3 @@ criterion_group!(
     targets = proof_generation_bench
 );
 criterion_main!(benches);
-*/
