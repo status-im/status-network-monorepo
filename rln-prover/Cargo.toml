@@ -8,7 +8,7 @@ members = [
     "prover_db_migration",
     "prover_db_entity",
     "prover_pmtree",
-    "prover_merkle_tree",
+    "prover_pmtree_db_impl",
 ]
 resolver = "2"
 
@@ -46,11 +46,20 @@ tonic-prost = "0.14.2"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 tracing = "0.1.41"
 serde = { version = "1.0.228", features = ["derive"] }
+sea-orm = { version = "2.0.0-rc.19", default-features = false, features = [
+    "runtime-tokio-native-tls",
+    "sqlx-postgres",
+    # "sqlx-sqlite",
+]}
+sea-orm-migration = { version = "2.0.0-rc.19", features = [
+    "runtime-tokio-native-tls",
+    "sqlx-postgres",
+    # "sqlx-sqlite"
+]}
 
-#[build-dependencies]
+# for build
 tonic-prost-build = "0.14.2"
-
-#[dev.dependencies]
+# for becnhmark
 criterion = { version = "0.7.0", features = ["async_tokio"] }
 
 [profile.release]

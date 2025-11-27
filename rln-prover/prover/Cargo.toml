@@ -47,7 +47,7 @@ rayon = "1.11"
 
 # user db 2
 prover_db_entity = { path = "../prover_db_entity" }
-prover_merkle_tree = { path = "../prover_merkle_tree" }
+prover_merkle_tree = { path = "../prover_pmtree_db_impl" }
 prover_pmtree = { path = "../prover_pmtree" }
 sea-orm = { version = "2.0.0-rc.18", features = [
     "runtime-tokio-native-tls",
@@ -68,7 +68,7 @@ prover_db_migration = { path = "../prover_db_migration" }
 function_name = "0.3.0"
 
 [dev-dependencies.sea-orm]
-version = "2.0.0-rc.18"
+workspace = true
 features = [
     "runtime-tokio-native-tls",
     "sqlx-postgres",
