@@ -32,7 +32,6 @@ use prover_proto::{
 use lazy_static::lazy_static;
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
 use std::sync::Once;
-use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
 
 lazy_static! {
     static ref TRACING_INIT: Once = Once::new();
