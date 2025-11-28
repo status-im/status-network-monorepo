@@ -1,7 +1,7 @@
 use std::fmt::Formatter;
 use std::sync::Arc;
 // third-party
-use alloy::primitives::Address;
+use alloy::primitives::{Address, U256};
 use ark_bn254::Fr;
 use parking_lot::RwLock;
 use tokio::sync::RwLock as TokioRwLock;
@@ -15,7 +15,7 @@ use sea_orm::{
 };
 // internal
 use crate::epoch_service::{Epoch, EpochSlice};
-use crate::tier::{TierLimit, TierLimits, TierMatch};
+use crate::tier::{TierLimit, TierLimits, TierMatch, TierName};
 use crate::user_db::UserTierInfo;
 use crate::user_db_error::{
     GetMerkleTreeProofError2, RegisterError2, SetTierLimitsError2, TxCounterError2,
@@ -35,6 +35,16 @@ const TIER_LIMITS_KEY: &str = "CURRENT";
 const TIER_LIMITS_NEXT_KEY: &str = "NEXT";
 
 type ProverMerkleTree = MerkleTree<MemoryDb, ProverPoseidonHash, PersistentDb, MerkleTreeError>;
+
+#[derive(Debug, PartialEq)]
+pub struct UserTierInfo2 {
+    pub(crate) current_epoch: Epoch,
+    pub(crate) current_epoch_slice: EpochSlice,
+    pub(crate) epoch_tx_count: u64,
+    pub(crate) karma_amount: U256,
+    pub(crate) tier_name: Option<TierName>,
+    pub(crate) tier_limit: Option<TierLimit>,
+}
 
 #[derive(Clone, Debug)]
 pub struct UserDb2Config {
@@ -202,9 +212,9 @@ impl UserDb2 {
         &self,
         address: &Address,
         incr_value: Option<i64>,
-    ) -> Result<EpochSliceCounter, DbErr> {
+    ) -> Result<EpochCounter, DbErr> {
         let incr_value = incr_value.unwrap_or(1);
-        let (epoch, epoch_slice) = *self.epoch_store.read();
+        let (epoch, _epoch_slice) = *self.epoch_store.read();
 
         let txn = self.db.begin().await?;
 
@@ -218,32 +228,24 @@ impl UserDb2 {
 
             // unwrap safe: res_active.epoch/epoch_slice cannot be null
             let model_epoch = res_active.epoch.clone().unwrap();
-            let model_epoch_slice = res_active.epoch_slice.clone().unwrap();
             let model_epoch_counter = res_active.epoch_counter.clone().unwrap();
-            let model_epoch_slice_counter = res_active.epoch_slice_counter.clone().unwrap();
+            // let model_epoch_slice = res_active.epoch_slice.clone().unwrap();
+            // let model_epoch_slice_counter = res_active.epoch_slice_counter.clone().unwrap();
 
-            if model_epoch == 0 && model_epoch_slice == 0 {
+            if model_epoch == 0 {
                 res_active.epoch = Set(epoch.into());
-                res_active.epoch_slice = Set(epoch_slice.into());
                 res_active.epoch_counter = Set(incr_value);
-                res_active.epoch_slice_counter = Set(incr_value);
+                // res_active.epoch_slice = Set(epoch_slice.into());
+                // res_active.epoch_slice_counter = Set(incr_value);
             } else if epoch != Epoch::from(model_epoch) {
                 // New epoch
                 res_active.epoch = Set(epoch.into());
-                res_active.epoch_slice = Set(0);
                 res_active.epoch_counter = Set(incr_value);
-                res_active.epoch_slice_counter = Set(incr_value);
-            } else if epoch_slice != EpochSlice::from(model_epoch_slice) {
-                // New epoch slice
-                res_active.epoch = Set(epoch.into());
-                res_active.epoch_slice = Set(epoch_slice.into());
-                res_active.epoch_counter = Set(model_epoch_counter.saturating_add(incr_value));
-                res_active.epoch_slice_counter = Set(incr_value);
+                // res_active.epoch_slice = Set(0);
+                // res_active.epoch_slice_counter = Set(incr_value);
             } else {
-                // Same epoch & epoch slice
+                // Same epoch
                 res_active.epoch_counter = Set(model_epoch_counter.saturating_add(incr_value));
-                res_active.epoch_slice_counter =
-                    Set(model_epoch_slice_counter.saturating_add(incr_value));
             }
 
             // res_active.update(&txn).await?;
@@ -253,9 +255,9 @@ impl UserDb2 {
             let new_tx_counter = tx_counter::ActiveModel {
                 address: Set(address.to_string()),
                 epoch: Set(epoch.into()),
-                epoch_slice: Set(epoch_slice.into()),
                 epoch_counter: Set(incr_value),
-                epoch_slice_counter: Set(incr_value),
+                // epoch_slice: Set(epoch_slice.into()),
+                // epoch_slice_counter: Set(incr_value),
                 ..Default::default()
             };
 
@@ -267,13 +269,13 @@ impl UserDb2 {
 
         txn.commit().await?;
         // FIXME: no 'as'
-        Ok((new_tx_counter.epoch_slice_counter as u64).into())
+        Ok((new_tx_counter.epoch_counter as u64).into())
     }
 
     pub(crate) async fn get_tx_counter(
         &self,
         address: &Address,
-    ) -> Result<(EpochCounter, EpochSliceCounter), TxCounterError2> {
+    ) -> Result<EpochCounter, TxCounterError2> {
         let res = tx_counter::Entity::find()
             .filter(tx_counter::Column::Address.eq(address.to_string()))
             .one(&self.db)
@@ -285,6 +287,27 @@ impl UserDb2 {
         }
     }
 
+    fn counters_from_key(&self, model: tx_counter::Model) -> EpochCounter {
+
+        let (epoch, _epoch_slice) = *self.epoch_store.read();
+        let cmp = (model.epoch == i64::from(epoch));
+
+        match cmp {
+            true => {
+                // EpochCounter stored in DB == epoch store
+                // We query for an epoch and this is what is stored in the Db
+                (model.epoch_counter as u64).into()
+            },
+            false => {
+                // EpochCounter.epoch (stored in DB) != epoch_store.epoch
+                // We query for an epoch after what is stored in Db
+                // This can happen if no Tx has updated the epoch counter (yet)
+                EpochCounter::from(0)
+            },
+        }
+    }
+
+    /*
     fn counters_from_key(&self, model: tx_counter::Model) -> (EpochCounter, EpochSliceCounter) {
         let (epoch, epoch_slice) = *self.epoch_store.read();
         let cmp = (
@@ -327,6 +350,7 @@ impl UserDb2 {
             }
         }
     }
+    */
 
     // user register & delete (with app logic)
 
@@ -509,12 +533,12 @@ impl UserDb2 {
         &self,
         address: &Address,
         incr_value: Option<i64>,
-    ) -> Result<EpochSliceCounter, TxCounterError2> {
+    ) -> Result<EpochCounter, TxCounterError2> {
         let has_user = self.has_user(address).await?;
 
         if has_user {
-            let epoch_slice_counter = self.incr_tx_counter(address, incr_value).await?;
-            Ok(epoch_slice_counter)
+            let epoch_counter = self.incr_tx_counter(address, incr_value).await?;
+            Ok(epoch_counter)
         } else {
             Err(TxCounterError2::NotRegistered(*address))
         }
@@ -535,7 +559,7 @@ impl UserDb2 {
         &self,
         address: &Address,
         karma_sc: &KSC,
-    ) -> Result<UserTierInfo, UserTierInfoError2<E>> {
+    ) -> Result<UserTierInfo2, UserTierInfoError2<E>> {
         let has_user = self
             .has_user(address)
             .await
@@ -551,18 +575,18 @@ impl UserDb2 {
             .map_err(|e| UserTierInfoError2::Contract(e))?;
 
         // TODO
-        let (epoch_tx_count, epoch_slice_tx_count) = self.get_tx_counter(address).await?;
+        let epoch_tx_count = self.get_tx_counter(address).await?;
         // TODO: avoid db query the tier limits (keep it in memory)
         let tier_limits = self.get_tier_limits().await?;
         let tier_match = tier_limits.get_tier_by_karma(&karma_amount);
 
         let user_tier_info = {
             let (current_epoch, current_epoch_slice) = *self.epoch_store.read();
-            let mut t = UserTierInfo {
+            let mut t = UserTierInfo2 {
                 current_epoch,
                 current_epoch_slice,
                 epoch_tx_count: epoch_tx_count.into(),
-                epoch_slice_tx_count: epoch_slice_tx_count.into(),
+                // epoch_slice_tx_count: epoch_slice_tx_count.into(),
                 karma_amount,
                 tier_name: None,
                 tier_limit: None,
@@ -709,7 +733,7 @@ mod tests {
         assert!(user_db.get_user_identity(&addr).await.is_some());
         assert_eq!(
             user_db.get_tx_counter(&addr).await.unwrap(),
-            (0.into(), 0.into())
+            EpochCounter::from(0)
         );
 
         assert!(user_db.get_user_identity(&ADDR_1).await.is_none());
@@ -717,13 +741,13 @@ mod tests {
         assert!(user_db.get_user_identity(&ADDR_1).await.is_some());
         assert_eq!(
             user_db.get_tx_counter(&addr).await.unwrap(),
-            (0.into(), 0.into())
+            EpochCounter::from(0)
         );
 
         user_db.incr_tx_counter(&addr, Some(42)).await.unwrap();
         assert_eq!(
             user_db.get_tx_counter(&addr).await.unwrap(),
-            (42.into(), 42.into())
+            EpochCounter::from(42)
         );
     }
 
@@ -753,13 +777,13 @@ mod tests {
 
         user_db.register_user(addr).await.unwrap();
 
-        let (ec, ecs) = user_db.get_tx_counter(&addr).await.unwrap();
-        assert_eq!(ec, 0u64.into());
-        assert_eq!(ecs, EpochSliceCounter::from(0u64));
+        let ec = user_db.get_tx_counter(&addr).await.unwrap();
+        assert_eq!(ec, EpochCounter::from(0));
+        // assert_eq!(ecs, EpochSliceCounter::from(0u64));
 
         let ecs_2 = user_db.incr_tx_counter(&addr, Some(42)).await.unwrap();
         // TODO
-        assert_eq!(ecs_2, EpochSliceCounter::from(42));
+        assert_eq!(ecs_2, EpochCounter::from(42));
     }
 
     #[tokio::test]
@@ -803,14 +827,14 @@ mod tests {
         // Now update user tx counter
         assert_eq!(
             user_db.on_new_tx(&addr, None).await,
-            Ok(EpochSliceCounter::from(1))
+            Ok(EpochCounter::from(1))
         );
         let tier_info = user_db
             .user_tier_info(&addr, &MockKarmaSc {})
             .await
             .unwrap();
         assert_eq!(tier_info.epoch_tx_count, 1);
-        assert_eq!(tier_info.epoch_slice_tx_count, 1);
+        // assert_eq!(tier_info.epoch_slice_tx_count, 1);
     }
 
     #[tokio::test]

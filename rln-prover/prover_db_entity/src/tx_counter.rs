@@ -10,9 +10,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text", unique)]
     pub address: String,
     pub epoch: i64,
-    pub epoch_slice: i64,
     pub epoch_counter: i64,
-    pub epoch_slice_counter: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

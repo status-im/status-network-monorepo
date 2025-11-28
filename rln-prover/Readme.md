@@ -45,3 +45,4 @@ RUST_LOG=debug cargo run -p prover_cli -- --ip 127.0.0.1 --metrics-ip 127.0.0.1 
 
 * cargo test 
 * cargo test --features anvil 
+

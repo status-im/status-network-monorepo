@@ -42,7 +42,7 @@ pub mod prover_proto {
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
         tonic::include_file_descriptor_set!("prover_descriptor");
 }
-use crate::user_db_2::UserDb2;
+use crate::user_db_2::{UserDb2, UserTierInfo2};
 use crate::user_db_types::RateLimit;
 use prover_proto::{
     GetUserTierInfoReply,
@@ -477,6 +477,28 @@ impl From<UserTierInfo> for UserTierInfoResult {
         let mut res = UserTierInfoResult {
             current_epoch: tier_info.current_epoch.into(),
             current_epoch_slice: tier_info.current_epoch_slice.into(),
+            tx_count: tier_info.epoch_tx_count,
+            tier: None,
+        };
+
+        if tier_info.tier_name.is_some() && tier_info.tier_limit.is_some() {
+            res.tier = Some(Tier {
+                name: tier_info.tier_name.unwrap().into(),
+                quota: tier_info.tier_limit.unwrap().into(),
+            })
+        }
+
+        res
+    }
+}
+
+/// UserTierInfo2 to UserTierInfoResult (Grpc message) conversion
+impl From<UserTierInfo2> for UserTierInfoResult {
+    fn from(tier_info: UserTierInfo2) -> Self {
+        let mut res = UserTierInfoResult {
+            current_epoch: tier_info.current_epoch.into(),
+            // current_epoch_slice: tier_info.current_epoch_slice.into(),
+            current_epoch_slice: 0,
             tx_count: tier_info.epoch_tx_count,
             tier: None,
         };
