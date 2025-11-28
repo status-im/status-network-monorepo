@@ -288,7 +288,6 @@ impl UserDb2 {
     }
 
     fn counters_from_key(&self, model: tx_counter::Model) -> EpochCounter {
-
         let (epoch, _epoch_slice) = *self.epoch_store.read();
         let cmp = (model.epoch == i64::from(epoch));
 
@@ -297,13 +296,13 @@ impl UserDb2 {
                 // EpochCounter stored in DB == epoch store
                 // We query for an epoch and this is what is stored in the Db
                 (model.epoch_counter as u64).into()
-            },
+            }
             false => {
                 // EpochCounter.epoch (stored in DB) != epoch_store.epoch
                 // We query for an epoch after what is stored in Db
                 // This can happen if no Tx has updated the epoch counter (yet)
                 EpochCounter::from(0)
-            },
+            }
         }
     }
 
