@@ -2,8 +2,10 @@
 
 pub mod prelude;
 
+pub mod deny_list;
 pub mod m_tree;
 pub mod m_tree_config;
+pub mod nullifiers;
 pub mod tier_limits;
 pub mod tx_counter;
 pub mod user;

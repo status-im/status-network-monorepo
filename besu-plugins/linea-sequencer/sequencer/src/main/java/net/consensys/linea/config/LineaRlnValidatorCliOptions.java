@@ -44,10 +44,11 @@ public class LineaRlnValidatorCliOptions implements LineaCliOptions {
   private String karmaService = "localhost:50052";
 
   @CommandLine.Option(
-      names = "--plugin-linea-rln-deny-list-path",
-      description = "Path to the gasless deny list file (default: ${DEFAULT-VALUE})",
+      names = "--plugin-linea-rln-nullifier-storage-path",
+      description = "Path to the nullifier storage file (default: ${DEFAULT-VALUE})",
       arity = "1")
-  private String denyListPath = "/var/lib/besu/gasless-deny-list.txt";
+  private String nullifierStoragePath =
+      LineaSharedGaslessConfiguration.DEFAULT_NULLIFIER_STORAGE_PATH;
 
   // === ADVANCED OPTIONS (most users won't need to change these) ===
 
@@ -107,13 +108,13 @@ public class LineaRlnValidatorCliOptions implements LineaCliOptions {
             proofPort == 443 || proofPort == 8443 || karmaPort == 443 || karmaPort == 8443);
 
     // Create shared gasless config with simplified settings
+    // Note: Deny list is now stored in the RLN prover's PostgreSQL database and accessed via gRPC
     LineaSharedGaslessConfiguration sharedConfig =
         new LineaSharedGaslessConfiguration(
-            denyListPath,
-            60L, // 1 minute refresh interval (good default)
+            60L, // denyListCacheRefreshSeconds - 1 minute (local cache cleanup interval)
             premiumGasThresholdGWei,
-            60L // 1 hour expiry (good default)
-            );
+            60L, // denyListEntryMaxAgeMinutes - 1 hour TTL for deny list entries
+            nullifierStoragePath);
 
     return new LineaRlnValidatorConfiguration(
         rlnValidationEnabled,

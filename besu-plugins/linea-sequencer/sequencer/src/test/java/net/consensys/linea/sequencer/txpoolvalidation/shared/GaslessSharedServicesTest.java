@@ -42,8 +42,8 @@ class GaslessSharedServicesTest {
 
   @BeforeEach
   void setUp() throws IOException {
-    Path denyListFile = tempDir.resolve("test_deny_list.txt");
-    denyListManager = new DenyListManager("Test", denyListFile.toString(), 60, 0);
+    // Use gRPC-based DenyListManager (localhost for testing)
+    denyListManager = new DenyListManager("Test", "localhost", 50051, false, 600L, 60L);
     nullifierTracker = new NullifierTracker("Test", 1000L, 1L);
     karmaServiceClient = new KarmaServiceClient("Test", "localhost", 8545, false, 5000);
   }
@@ -68,7 +68,7 @@ class GaslessSharedServicesTest {
     assertThat(karmaServiceClient).isNotNull();
 
     assertThat(denyListManager.size()).isEqualTo(0);
-    assertThat(nullifierTracker.getStats().currentNullifiers()).isEqualTo(0);
+    assertThat(nullifierTracker.getStats().cacheSize()).isEqualTo(0);
     assertThat(karmaServiceClient.isAvailable()).isTrue();
   }
 
@@ -104,8 +104,8 @@ class GaslessSharedServicesTest {
     assertThat(nullifierTracker.isNullifierUsed(TEST_NULLIFIER, TEST_EPOCH)).isTrue();
 
     NullifierTracker.NullifierStats stats = nullifierTracker.getStats();
-    assertThat(stats.totalTracked()).isEqualTo(1);
-    assertThat(stats.duplicateAttempts()).isEqualTo(1);
+    assertThat(stats.totalChecks()).isEqualTo(2); // 1 new + 1 duplicate
+    assertThat(stats.duplicatesDetected()).isEqualTo(1);
   }
 
   @Test

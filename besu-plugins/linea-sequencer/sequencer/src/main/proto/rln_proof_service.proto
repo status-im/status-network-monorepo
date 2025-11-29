@@ -16,6 +16,17 @@ service RlnProver {
 
   rpc GetUserTierInfo(GetUserTierInfoRequest) returns (GetUserTierInfoReply);
   // rpc SetTierLimits(SetTierLimitsRequest) returns (SetTierLimitsReply);
+
+  // Deny List operations - shared between sequencer and prover
+  rpc IsDenied(IsDeniedRequest) returns (IsDeniedReply);
+  rpc AddToDenyList(AddToDenyListRequest) returns (AddToDenyListReply);
+  rpc RemoveFromDenyList(RemoveFromDenyListRequest) returns (RemoveFromDenyListReply);
+  rpc GetDenyListEntry(GetDenyListEntryRequest) returns (GetDenyListEntryReply);
+
+  // Nullifier operations - duplicate detection
+  rpc CheckNullifier(CheckNullifierRequest) returns (CheckNullifierReply);
+  rpc RecordNullifier(RecordNullifierRequest) returns (RecordNullifierReply);
+  rpc CheckAndRecordNullifier(CheckAndRecordNullifierRequest) returns (CheckAndRecordNullifierReply);
 }
 
 /*
@@ -221,4 +232,102 @@ message SetTierLimitsReply {
   bool status = 1;
   string error = 2;
 }
-*/ 
+*/
+
+// ============ Deny List Messages ============
+
+message IsDeniedRequest {
+  string address = 1;
+}
+
+message IsDeniedReply {
+  bool is_denied = 1;
+}
+
+message AddToDenyListRequest {
+  string address = 1;
+  // Optional TTL in seconds (0 or unset means no expiry)
+  int64 ttl_seconds = 2;
+  // Optional reason (not stored, for logging only)
+  optional string reason = 3;
+}
+
+message AddToDenyListReply {
+  bool success = 1;
+  // True if newly added, false if already existed (updated)
+  bool was_new = 2;
+}
+
+message RemoveFromDenyListRequest {
+  string address = 1;
+}
+
+message RemoveFromDenyListReply {
+  bool success = 1;
+  // True if was removed, false if wasn't on the list
+  bool was_present = 2;
+}
+
+message GetDenyListEntryRequest {
+  string address = 1;
+}
+
+message GetDenyListEntryReply {
+  oneof resp {
+    DenyListEntry entry = 1;
+    DenyListError error = 2;
+  }
+}
+
+message DenyListEntry {
+  string address = 1;
+  // Unix timestamp (seconds) when the address was denied
+  int64 denied_at = 2;
+  // Optional Unix timestamp (seconds) when this entry expires
+  optional int64 expires_at = 3;
+  // Optional reason for denial (not stored in DB)
+  optional string reason = 4;
+}
+
+message DenyListError {
+  string message = 1;
+}
+
+// ============ Nullifier Messages ============
+
+message CheckNullifierRequest {
+  // RLN internal nullifier (32 bytes)
+  bytes nullifier = 1 [(max_size) = 32];
+  // Epoch identifier
+  int64 epoch = 2;
+}
+
+message CheckNullifierReply {
+  // True if nullifier already exists (duplicate/replay)
+  bool exists = 1;
+}
+
+message RecordNullifierRequest {
+  // RLN internal nullifier (32 bytes)
+  bytes nullifier = 1 [(max_size) = 32];
+  // Epoch identifier
+  int64 epoch = 2;
+}
+
+message RecordNullifierReply {
+  // True if recorded successfully, false if already existed
+  bool recorded = 1;
+}
+
+message CheckAndRecordNullifierRequest {
+  // RLN internal nullifier (32 bytes)
+  bytes nullifier = 1 [(max_size) = 32];
+  // Epoch identifier
+  int64 epoch = 2;
+}
+
+message CheckAndRecordNullifierReply {
+  // True if nullifier was new and recorded
+  // False if nullifier already existed (duplicate/replay attack)
+  bool is_valid = 1;
+} 

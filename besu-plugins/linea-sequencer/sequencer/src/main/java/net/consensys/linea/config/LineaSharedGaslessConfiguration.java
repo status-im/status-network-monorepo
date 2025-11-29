@@ -19,41 +19,39 @@ import net.consensys.linea.plugins.LineaOptionsConfiguration;
 /**
  * Shared configuration parameters for gasless transaction features (RLN, RPC modifications).
  *
- * @param denyListPath Path to the text file storing addresses of users on the deny list. This file
- *     is read by the RPC estimateGas method and read/written by the RLN Validator.
- * @param denyListRefreshSeconds Interval in seconds at which the deny list file should be reloaded
- *     by components.
+ * <p>The deny list is stored in the RLN Prover's PostgreSQL database and accessed via gRPC. The
+ * sequencer connects to the prover service using the RLN proof service host/port configuration.
+ *
+ * @param denyListCacheRefreshSeconds Interval in seconds for local cache cleanup of expired
+ *     entries.
  * @param premiumGasPriceThresholdGWei Minimum gas price (in GWei) for a transaction to be
- *     considered premium.
+ *     considered premium. Users on the deny list can bypass restrictions by paying this amount.
  * @param denyListEntryMaxAgeMinutes Maximum age in minutes for an entry on the deny list before it
- *     expires.
+ *     expires. This TTL is enforced by the prover's database.
+ * @param nullifierStoragePath Path to the file for storing nullifier tracking data.
  */
 public record LineaSharedGaslessConfiguration(
-    String denyListPath,
-    long denyListRefreshSeconds,
+    long denyListCacheRefreshSeconds,
     long premiumGasPriceThresholdGWei,
-    long denyListEntryMaxAgeMinutes)
+    long denyListEntryMaxAgeMinutes,
+    String nullifierStoragePath)
     implements LineaOptionsConfiguration {
 
-  public static final String DEFAULT_DENY_LIST_PATH = "/var/lib/besu/gasless-deny-list.txt";
-  public static final long DEFAULT_DENY_LIST_REFRESH_SECONDS = 300L; // 5 minutes
+  public static final long DEFAULT_DENY_LIST_CACHE_REFRESH_SECONDS = 60L; // 1 minute
   public static final long DEFAULT_PREMIUM_GAS_PRICE_THRESHOLD_GWEI = 100L; // 100 Gwei
   public static final long DEFAULT_DENY_LIST_ENTRY_MAX_AGE_MINUTES = 10L; // 10 minutes
+  public static final String DEFAULT_NULLIFIER_STORAGE_PATH = "/var/lib/besu/nullifiers.txt";
 
   public static LineaSharedGaslessConfiguration V1_DEFAULT =
       new LineaSharedGaslessConfiguration(
-          DEFAULT_DENY_LIST_PATH,
-          DEFAULT_DENY_LIST_REFRESH_SECONDS,
+          DEFAULT_DENY_LIST_CACHE_REFRESH_SECONDS,
           DEFAULT_PREMIUM_GAS_PRICE_THRESHOLD_GWEI,
-          DEFAULT_DENY_LIST_ENTRY_MAX_AGE_MINUTES);
+          DEFAULT_DENY_LIST_ENTRY_MAX_AGE_MINUTES,
+          DEFAULT_NULLIFIER_STORAGE_PATH);
 
-  // Constructor allowing easy overriding of the path if needed from other config sources
   public LineaSharedGaslessConfiguration {
-    if (denyListPath == null || denyListPath.isBlank()) {
-      throw new IllegalArgumentException("Deny list path cannot be null or blank.");
-    }
-    if (denyListRefreshSeconds <= 0) {
-      throw new IllegalArgumentException("Deny list refresh seconds must be positive.");
+    if (denyListCacheRefreshSeconds <= 0) {
+      throw new IllegalArgumentException("Deny list cache refresh seconds must be positive.");
     }
     if (premiumGasPriceThresholdGWei <= 0) {
       throw new IllegalArgumentException("Premium gas price threshold GWei must be positive.");
@@ -61,5 +59,13 @@ public record LineaSharedGaslessConfiguration(
     if (denyListEntryMaxAgeMinutes <= 0) {
       throw new IllegalArgumentException("Deny list entry max age minutes must be positive.");
     }
+    if (nullifierStoragePath == null || nullifierStoragePath.isBlank()) {
+      throw new IllegalArgumentException("Nullifier storage path cannot be null or blank.");
+    }
+  }
+
+  // Backward compatibility getter for code still using the old name
+  public long denyListRefreshSeconds() {
+    return denyListCacheRefreshSeconds;
   }
 }

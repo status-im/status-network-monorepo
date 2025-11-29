@@ -70,8 +70,8 @@ class RlnValidationPerformanceTest {
 
   @BeforeEach
   void setUp() throws IOException {
-    Path denyListFile = tempDir.resolve("performance_deny_list.txt");
-    denyListManager = new DenyListManager("PerformanceTest", denyListFile.toString(), 60, 0);
+    // Use gRPC-based DenyListManager (localhost for testing, falls back to local cache)
+    denyListManager = new DenyListManager("PerformanceTest", "localhost", 50051, false, 600L, 60L);
     nullifierTracker = new NullifierTracker("PerformanceTest", 100_000L, 1L);
   }
 
@@ -138,8 +138,8 @@ class RlnValidationPerformanceTest {
     assertThat(successCount.get()).isEqualTo(totalOperations);
 
     NullifierStats stats = nullifierTracker.getStats();
-    assertThat(stats.totalTracked()).isEqualTo(totalOperations);
-    assertThat(stats.duplicateAttempts()).isEqualTo(0);
+    assertThat(stats.totalChecks()).isEqualTo(totalOperations);
+    assertThat(stats.duplicatesDetected()).isEqualTo(0);
 
     // Log performance results
     double throughput = (double) totalOperations / (totalWallClockTime / 1000.0);
@@ -235,8 +235,8 @@ class RlnValidationPerformanceTest {
 
     // Verify counts
     NullifierStats stats = nullifierTracker.getStats();
-    assertThat(stats.totalTracked()).isEqualTo(nullifierCount);
-    assertThat(stats.currentNullifiers()).isEqualTo(nullifierCount);
+    assertThat(stats.totalChecks()).isEqualTo(nullifierCount);
+    assertThat(stats.cacheSize()).isEqualTo(nullifierCount);
     assertThat(denyListManager.size()).isEqualTo(addressCount);
 
     // Test continued operations under load
@@ -263,8 +263,8 @@ class RlnValidationPerformanceTest {
 
     NullifierStats stats = nullifierTracker.getStats();
     // Verify tracker is working and recording entries
-    assertThat(stats.currentNullifiers()).isGreaterThan(0);
-    assertThat(stats.totalTracked()).isEqualTo(50);
+    assertThat(stats.cacheSize()).isGreaterThan(0);
+    assertThat(stats.totalChecks()).isEqualTo(50);
 
     // Wait for TTL expiration
     Thread.sleep(5000); // Wait for entries to expire
@@ -359,7 +359,7 @@ class RlnValidationPerformanceTest {
     assertThat(conflictCount.get()).isEqualTo(threadCount - 1);
 
     NullifierStats stats = nullifierTracker.getStats();
-    assertThat(stats.duplicateAttempts()).isEqualTo(threadCount - 1);
+    assertThat(stats.duplicatesDetected()).isEqualTo(threadCount - 1);
   }
 
   @Test
@@ -426,7 +426,7 @@ class RlnValidationPerformanceTest {
     assertThat(operationCount.get()).isGreaterThan(1000); // Should have done substantial work
 
     NullifierStats stats = nullifierTracker.getStats();
-    assertThat(stats.currentNullifiers()).isGreaterThan(0);
+    assertThat(stats.cacheSize()).isGreaterThan(0);
     assertThat(denyListManager.size()).isGreaterThan(0);
 
     System.out.printf(

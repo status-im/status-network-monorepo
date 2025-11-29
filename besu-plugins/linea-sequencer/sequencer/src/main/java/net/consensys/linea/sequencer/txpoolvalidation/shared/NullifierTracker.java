@@ -16,38 +16,42 @@ package net.consensys.linea.sequencer.txpoolvalidation.shared;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.RemovalCause;
-import com.github.benmanes.caffeine.cache.RemovalListener;
-import com.github.benmanes.caffeine.cache.Scheduler;
+import com.google.protobuf.ByteString;
+import io.grpc.ManagedChannel;
+import io.grpc.ManagedChannelBuilder;
+import io.grpc.StatusRuntimeException;
 import java.io.Closeable;
 import java.io.IOException;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import net.vac.prover.CheckAndRecordNullifierReply;
+import net.vac.prover.CheckAndRecordNullifierRequest;
+import net.vac.prover.RlnProverGrpc;
+import org.apache.tuweni.bytes.Bytes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * High-performance nullifier tracking service using Caffeine cache.
+ * High-performance nullifier tracking with database persistence via gRPC.
+ *
+ * <p><strong>Architecture:</strong> Uses a two-tier approach for maximum performance:
+ *
+ * <ul>
+ *   <li>Hot path: Local in-memory cache (Caffeine) for O(1) duplicate rejection
+ *   <li>Cold path: PostgreSQL database via gRPC for persistence and cross-instance sharing
+ * </ul>
  *
  * <p><strong>Security Critical:</strong> This component is essential for RLN security. Nullifier
  * tracking prevents replay attacks and enforces transaction rate limiting by detecting when users
  * reuse nullifiers within the same epoch.
  *
- * <p><strong>Performance Optimized:</strong> Uses Caffeine cache for high-throughput, low-latency
- * operations. Eliminates file I/O bottlenecks present in naive implementations.
+ * <p><strong>Performance Target:</strong> 500+ TPS with sub-millisecond response times for
+ * duplicate detection.
  *
- * <p><strong>Epoch Scoping:</strong> Nullifiers are tracked per epoch. The same nullifier can be
- * reused across different epochs but not within the same epoch, enabling proper rate limiting.
- *
- * <p><strong>Automatic Cleanup:</strong> Expired nullifiers are automatically evicted based on
- * configured TTL to prevent unbounded memory growth.
- *
- * <p><strong>Thread Safety:</strong> All operations are thread-safe and lock-free, suitable for
- * high-concurrency transaction validation.
+ * <p><strong>Thread Safety:</strong> All operations are thread-safe and suitable for high-
+ * concurrency transaction validation.
  *
  * @author Status Network Development Team
  * @since 1.0
@@ -56,217 +60,299 @@ public class NullifierTracker implements Closeable {
   private static final Logger LOG = LoggerFactory.getLogger(NullifierTracker.class);
 
   private final String serviceName;
-  private final Cache<String, NullifierData> nullifierCache;
 
-  // Metrics for monitoring and debugging
-  private final AtomicLong totalNullifiersTracked = new AtomicLong(0);
-  private final AtomicLong nullifierHits = new AtomicLong(0);
-  private final AtomicLong expiredNullifiers = new AtomicLong(0);
+  // Local cache for hot path (immediate duplicate rejection)
+  private final Cache<String, Boolean> localCache;
 
-  /** Represents a tracked nullifier with its metadata. */
-  private record NullifierData(String nullifier, String epochId, Instant timestamp) {}
+  // gRPC client for database persistence
+  private ManagedChannel channel;
+  private RlnProverGrpc.RlnProverBlockingStub blockingStub;
+  private final AtomicBoolean grpcAvailable = new AtomicBoolean(false);
+
+  // gRPC configuration
+  private final String grpcHost;
+  private final int grpcPort;
+  private final boolean useTls;
+
+  // Metrics
+  private final AtomicLong totalChecks = new AtomicLong(0);
+  private final AtomicLong cacheHits = new AtomicLong(0);
+  private final AtomicLong duplicatesDetected = new AtomicLong(0);
+  private final AtomicLong grpcFailures = new AtomicLong(0);
 
   /**
-   * Creates a new high-performance nullifier tracker using Caffeine cache.
+   * Creates a new NullifierTracker with gRPC backend and local cache.
    *
-   * @param serviceName Service name for logging identification
-   * @param maxSize Maximum number of nullifiers to track simultaneously (cache size)
-   * @param nullifierExpiryHours Hours after which nullifiers expire and are evicted
+   * @param serviceName Service name for logging
+   * @param grpcHost RLN prover gRPC host
+   * @param grpcPort RLN prover gRPC port
+   * @param useTls Whether to use TLS for gRPC
+   * @param cacheSize Maximum size of local cache
+   * @param cacheTtlMinutes TTL for cache entries (should match epoch duration)
    */
-  public NullifierTracker(String serviceName, long maxSize, long nullifierExpiryHours) {
+  public NullifierTracker(
+      String serviceName,
+      String grpcHost,
+      int grpcPort,
+      boolean useTls,
+      long cacheSize,
+      long cacheTtlMinutes) {
     this.serviceName = serviceName;
+    this.grpcHost = grpcHost;
+    this.grpcPort = grpcPort;
+    this.useTls = useTls;
 
-    // Configure Caffeine cache for optimal performance
-    this.nullifierCache =
+    // Initialize local cache for hot path
+    this.localCache =
         Caffeine.newBuilder()
-            .maximumSize(maxSize)
-            .expireAfterWrite(Duration.ofHours(nullifierExpiryHours))
-            .scheduler(Scheduler.systemScheduler()) // Use system scheduler for automatic cleanup
-            .removalListener(new NullifierRemovalListener())
+            .maximumSize(cacheSize)
+            .expireAfterWrite(Duration.ofMinutes(cacheTtlMinutes))
             .build();
 
+    // Initialize gRPC connection
+    initializeGrpcClient();
+
     LOG.info(
-        "{}: High-performance nullifier tracker initialized. MaxSize: {}, TTL: {} hours",
+        "{}: NullifierTracker initialized with gRPC backend at {}:{}, cache size: {}, TTL: {} min",
         serviceName,
-        maxSize,
-        nullifierExpiryHours);
+        grpcHost,
+        grpcPort,
+        cacheSize,
+        cacheTtlMinutes);
   }
 
   /**
-   * Legacy constructor for backward compatibility with file-based configuration.
+   * Legacy constructor for backward compatibility.
    *
-   * <p><strong>Note:</strong> The storageFilePath is ignored in this implementation. Nullifiers are
-   * stored in memory only for maximum performance.
-   *
-   * @param serviceName Service name for logging identification
-   * @param storageFilePath Ignored - kept for backward compatibility
-   * @param nullifierExpiryHours Hours after which nullifiers expire and are evicted
+   * @param serviceName Service name for logging
+   * @param maxSize Maximum cache size (ignored, uses default)
+   * @param nullifierExpiryHours Expiry time in hours
    */
-  public NullifierTracker(String serviceName, String storageFilePath, long nullifierExpiryHours) {
-    this(serviceName, 1_000_000L, nullifierExpiryHours); // Default to 1M capacity
-    LOG.info(
-        "{}: Using in-memory nullifier tracking (file path ignored for performance)", serviceName);
+  public NullifierTracker(String serviceName, long maxSize, long nullifierExpiryHours) {
+    this(
+        serviceName,
+        "localhost",
+        50051,
+        false,
+        maxSize,
+        nullifierExpiryHours * 60); // Convert hours to minutes
+    LOG.warn(
+        "{}: Using legacy constructor - gRPC connection will use defaults (localhost:50051)",
+        serviceName);
   }
 
   /**
-   * Checks if a nullifier has been used before within the given epoch and marks it as used if new.
+   * Legacy constructor for backward compatibility with file path parameter.
    *
-   * <p><strong>Thread-safe and atomic:</strong> This operation is atomic to prevent race conditions
-   * where multiple transactions with the same nullifier could pass validation simultaneously.
+   * @param serviceName Service name for logging
+   * @param storagePath Ignored - DB storage is handled via gRPC
+   * @param nullifierExpiryHours Expiry time in hours
+   */
+  public NullifierTracker(String serviceName, String storagePath, long nullifierExpiryHours) {
+    this(serviceName, 1_000_000L, nullifierExpiryHours);
+    LOG.info("{}: Storage path ignored - using PostgreSQL via gRPC", serviceName);
+  }
+
+  private void initializeGrpcClient() {
+    try {
+      ManagedChannelBuilder<?> channelBuilder =
+          ManagedChannelBuilder.forAddress(grpcHost, grpcPort);
+
+      if (useTls) {
+        channelBuilder.useTransportSecurity();
+      } else {
+        channelBuilder.usePlaintext();
+      }
+
+      this.channel = channelBuilder.build();
+      this.blockingStub = RlnProverGrpc.newBlockingStub(channel);
+      this.grpcAvailable.set(true);
+
+      LOG.info("{}: gRPC client connected to {}:{}", serviceName, grpcHost, grpcPort);
+    } catch (Exception e) {
+      LOG.error("{}: Failed to initialize gRPC client: {}", serviceName, e.getMessage(), e);
+      this.grpcAvailable.set(false);
+    }
+  }
+
+  /**
+   * Checks if a nullifier has been used within the given epoch and marks it as used if new.
    *
-   * <p><strong>Epoch Scoping:</strong> Nullifiers are scoped by epoch. The same nullifier can be
-   * reused across different epochs but not within the same epoch.
+   * <p><strong>Performance:</strong> Uses local cache first for immediate duplicate rejection. New
+   * nullifiers are persisted to the database via gRPC for cross-instance sharing.
    *
-   * @param nullifierHex Hex-encoded nullifier to check/register
-   * @param epochId Current epoch identifier for scoping
-   * @return true if nullifier is new within this epoch (transaction should be allowed), false if
-   *     already used in this epoch
+   * <p><strong>Atomicity:</strong> The database operation is atomic (INSERT ON CONFLICT DO
+   * NOTHING), ensuring no race conditions even with multiple sequencer instances.
+   *
+   * @param nullifierHex Hex-encoded nullifier (32 bytes as hex string)
+   * @param epochId Epoch identifier (as string, will be parsed to long)
+   * @return true if nullifier is new (transaction allowed), false if duplicate (reject)
    */
   public boolean checkAndMarkNullifier(String nullifierHex, String epochId) {
+    totalChecks.incrementAndGet();
+
     if (nullifierHex == null || nullifierHex.trim().isEmpty()) {
-      LOG.warn("{}: Invalid nullifier provided: {}", serviceName, nullifierHex);
+      LOG.warn("{}: Invalid nullifier: null or empty", serviceName);
       return false;
     }
 
     if (epochId == null || epochId.trim().isEmpty()) {
-      LOG.warn("{}: Invalid epoch ID provided: {}", serviceName, epochId);
+      LOG.warn("{}: Invalid epoch ID: null or empty", serviceName);
       return false;
     }
 
-    String normalizedNullifier = nullifierHex.toLowerCase().trim();
-    String normalizedEpochId = epochId.trim();
-    String epochScopedKey = normalizedNullifier + ":" + normalizedEpochId;
+    String cacheKey = nullifierHex.toLowerCase().trim() + ":" + epochId.trim();
 
-    Instant now = Instant.now();
-    NullifierData nullifierData = new NullifierData(normalizedNullifier, normalizedEpochId, now);
-
-    // Atomic check-and-set using Caffeine's get() with loader pattern
-    NullifierData existingData = nullifierCache.get(epochScopedKey, key -> nullifierData);
-
-    if (existingData != nullifierData) {
-      // Nullifier was already present (existingData is the previous value)
-      nullifierHits.incrementAndGet();
-      LOG.warn(
-          "{}: Nullifier reuse detected within epoch! Nullifier: {}, Epoch: {}, Previous use: {}",
-          serviceName,
-          normalizedNullifier,
-          normalizedEpochId,
-          existingData.timestamp());
+    // Hot path: Check local cache first
+    Boolean cached = localCache.getIfPresent(cacheKey);
+    if (cached != null) {
+      cacheHits.incrementAndGet();
+      duplicatesDetected.incrementAndGet();
+      LOG.debug("{}: Duplicate nullifier detected in cache: {}", serviceName, cacheKey);
       return false;
     }
 
-    // New nullifier for this epoch
-    totalNullifiersTracked.incrementAndGet();
-    LOG.debug(
-        "{}: New nullifier registered: {}, Epoch: {}, Cache size: {}",
-        serviceName,
-        normalizedNullifier,
-        normalizedEpochId,
-        nullifierCache.estimatedSize());
+    // Cold path: Check and record in database via gRPC
+    if (grpcAvailable.get() && blockingStub != null) {
+      try {
+        byte[] nullifierBytes = Bytes.fromHexString(nullifierHex).toArrayUnsafe();
+        long epoch = parseEpoch(epochId);
 
+        CheckAndRecordNullifierRequest request =
+            CheckAndRecordNullifierRequest.newBuilder()
+                .setNullifier(ByteString.copyFrom(nullifierBytes))
+                .setEpoch(epoch)
+                .build();
+
+        CheckAndRecordNullifierReply reply = blockingStub.checkAndRecordNullifier(request);
+
+        if (reply.getIsValid()) {
+          // New nullifier - add to local cache
+          localCache.put(cacheKey, Boolean.TRUE);
+          LOG.debug("{}: New nullifier recorded: {}", serviceName, cacheKey);
+          return true;
+        } else {
+          // Duplicate detected in database
+          localCache.put(cacheKey, Boolean.TRUE); // Cache it to speed up future checks
+          duplicatesDetected.incrementAndGet();
+          LOG.warn("{}: Duplicate nullifier detected in DB: {}", serviceName, cacheKey);
+          return false;
+        }
+      } catch (StatusRuntimeException e) {
+        grpcFailures.incrementAndGet();
+        LOG.error("{}: gRPC call failed: {}. Using cache-only mode.", serviceName, e.getStatus());
+        grpcAvailable.set(false);
+        scheduleGrpcReconnect();
+        // Fall through to cache-only behavior
+      } catch (IllegalArgumentException e) {
+        LOG.error("{}: Invalid nullifier format: {}", serviceName, e.getMessage());
+        return false;
+      }
+    }
+
+    // Fallback: Cache-only mode when gRPC is unavailable
+    // This is still secure for a single instance but doesn't share state
+    localCache.put(cacheKey, Boolean.TRUE);
+    LOG.debug("{}: Nullifier recorded in cache only (gRPC unavailable): {}", serviceName, cacheKey);
     return true;
   }
 
   /**
-   * Checks if a nullifier has been used within the given epoch without marking it as used.
+   * Checks if a nullifier exists without marking it.
    *
-   * @param nullifierHex Hex-encoded nullifier to check
-   * @param epochId Epoch identifier for scoping
-   * @return true if nullifier has been used within this epoch, false if new
+   * @param nullifierHex Hex-encoded nullifier
+   * @param epochId Epoch identifier
+   * @return true if nullifier exists (duplicate), false if new
    */
   public boolean isNullifierUsed(String nullifierHex, String epochId) {
-    if (nullifierHex == null
-        || nullifierHex.trim().isEmpty()
-        || epochId == null
-        || epochId.trim().isEmpty()) {
+    if (nullifierHex == null || epochId == null) {
       return false;
     }
-    String epochScopedKey = nullifierHex.toLowerCase().trim() + ":" + epochId.trim();
-    return nullifierCache.getIfPresent(epochScopedKey) != null;
-  }
 
-  /**
-   * Batch validation of multiple nullifiers for improved performance. Optimized for scenarios where
-   * multiple transactions need validation simultaneously.
-   *
-   * @param nullifierEpochPairs List of nullifier-epoch pairs to validate
-   * @return Map of results where key is "nullifier:epoch" and value is validation result
-   */
-  public Map<String, Boolean> checkAndMarkNullifiersBatch(
-      List<Map.Entry<String, String>> nullifierEpochPairs) {
+    String cacheKey = nullifierHex.toLowerCase().trim() + ":" + epochId.trim();
 
-    Map<String, Boolean> results = new ConcurrentHashMap<>();
-    Instant now = Instant.now();
-
-    // Process all pairs in a single pass for better cache efficiency
-    for (Map.Entry<String, String> pair : nullifierEpochPairs) {
-      String nullifierHex = pair.getKey();
-      String epochId = pair.getValue();
-
-      if (nullifierHex == null
-          || nullifierHex.trim().isEmpty()
-          || epochId == null
-          || epochId.trim().isEmpty()) {
-        results.put(nullifierHex + ":" + epochId, false);
-        continue;
-      }
-
-      String normalizedNullifier = nullifierHex.toLowerCase().trim();
-      String normalizedEpochId = epochId.trim();
-      String epochScopedKey = normalizedNullifier + ":" + normalizedEpochId;
-
-      NullifierData nullifierData = new NullifierData(normalizedNullifier, normalizedEpochId, now);
-      NullifierData existingData = nullifierCache.get(epochScopedKey, key -> nullifierData);
-
-      boolean isNew = (existingData == nullifierData);
-      results.put(epochScopedKey, isNew);
-
-      if (isNew) {
-        totalNullifiersTracked.incrementAndGet();
-      } else {
-        nullifierHits.incrementAndGet();
-      }
+    // Check local cache
+    if (localCache.getIfPresent(cacheKey) != null) {
+      return true;
     }
 
-    return results;
+    // Could add gRPC check here if needed, but for read-only we can rely on cache
+    return false;
+  }
+
+  private long parseEpoch(String epochId) {
+    try {
+      // Try parsing as a number first
+      return Long.parseLong(epochId.trim());
+    } catch (NumberFormatException e) {
+      // If it's a hex string (like block hash), hash it to a number
+      return epochId.hashCode() & 0xFFFFFFFFL;
+    }
+  }
+
+  private void scheduleGrpcReconnect() {
+    // Simple reconnect after delay
+    Thread reconnectThread =
+        new Thread(
+            () -> {
+              try {
+                Thread.sleep(30000); // 30 second delay
+                LOG.info("{}: Attempting gRPC reconnection...", serviceName);
+                initializeGrpcClient();
+              } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+              }
+            });
+    reconnectThread.setDaemon(true);
+    reconnectThread.setName(serviceName + "-NullifierGrpcReconnect");
+    reconnectThread.start();
   }
 
   /**
-   * Gets current statistics for monitoring and debugging.
+   * Gets current statistics for monitoring.
    *
-   * @return Statistics including cache size, total tracked, hits, and expiration count
+   * @return Statistics including cache size, checks, hits, and failures
    */
   public NullifierStats getStats() {
     return new NullifierStats(
-        (int) nullifierCache.estimatedSize(),
-        totalNullifiersTracked.get(),
-        nullifierHits.get(),
-        expiredNullifiers.get());
+        (int) localCache.estimatedSize(),
+        totalChecks.get(),
+        cacheHits.get(),
+        duplicatesDetected.get(),
+        grpcFailures.get(),
+        grpcAvailable.get());
   }
 
-  /** Statistics record for nullifier tracking metrics. */
+  /** Statistics record for monitoring. */
   public record NullifierStats(
-      int currentNullifiers, long totalTracked, long duplicateAttempts, long expiredCount) {}
-
-  /** Removal listener for tracking cache evictions and expiration events. */
-  private class NullifierRemovalListener implements RemovalListener<String, NullifierData> {
-    @Override
-    public void onRemoval(String key, NullifierData value, RemovalCause cause) {
-      if (cause == RemovalCause.EXPIRED) {
-        expiredNullifiers.incrementAndGet();
-        if (LOG.isTraceEnabled()) {
-          LOG.trace("{}: Nullifier expired and evicted: {}", serviceName, key);
-        }
-      }
-    }
-  }
+      int cacheSize,
+      long totalChecks,
+      long cacheHits,
+      long duplicatesDetected,
+      long grpcFailures,
+      boolean grpcAvailable) {}
 
   @Override
   public void close() throws IOException {
-    if (nullifierCache != null) {
-      nullifierCache.invalidateAll();
-      nullifierCache.cleanUp();
+    LOG.info("{}: Shutting down NullifierTracker...", serviceName);
+
+    if (localCache != null) {
+      localCache.invalidateAll();
+      localCache.cleanUp();
     }
-    LOG.info("{}: Nullifier tracker closed. Final stats: {}", serviceName, getStats());
+
+    if (channel != null && !channel.isShutdown()) {
+      channel.shutdown();
+      try {
+        if (!channel.awaitTermination(5, TimeUnit.SECONDS)) {
+          channel.shutdownNow();
+        }
+      } catch (InterruptedException e) {
+        channel.shutdownNow();
+        Thread.currentThread().interrupt();
+      }
+    }
+
+    LOG.info("{}: NullifierTracker closed. Final stats: {}", serviceName, getStats());
   }
 }

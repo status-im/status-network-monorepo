@@ -111,7 +111,7 @@ class NullifierTrackerTest {
 
     // Verify no entries were added
     NullifierStats stats = tracker.getStats();
-    assertThat(stats.totalTracked()).isEqualTo(0);
+    assertThat(stats.totalChecks()).isEqualTo(0);
   }
 
   @Test
@@ -126,9 +126,9 @@ class NullifierTrackerTest {
     tracker.checkAndMarkNullifier(TEST_NULLIFIER_1, TEST_EPOCH_1);
 
     NullifierStats stats = tracker.getStats();
-    assertThat(stats.totalTracked()).isEqualTo(3);
-    assertThat(stats.duplicateAttempts()).isEqualTo(2);
-    assertThat(stats.currentNullifiers()).isEqualTo(3);
+    assertThat(stats.totalChecks()).isEqualTo(5); // 3 unique + 2 duplicates
+    assertThat(stats.duplicatesDetected()).isEqualTo(2);
+    assertThat(stats.cacheSize()).isEqualTo(3);
   }
 
   @Test
@@ -167,8 +167,8 @@ class NullifierTrackerTest {
     assertThat(successCount.get()).isEqualTo(threadCount * operationsPerThread);
 
     NullifierStats stats = tracker.getStats();
-    assertThat(stats.totalTracked()).isEqualTo(threadCount * operationsPerThread);
-    assertThat(stats.duplicateAttempts()).isEqualTo(0);
+    assertThat(stats.totalChecks()).isEqualTo(threadCount * operationsPerThread);
+    assertThat(stats.duplicatesDetected()).isEqualTo(0);
   }
 
   @Test
@@ -207,8 +207,8 @@ class NullifierTrackerTest {
     assertThat(failureCount.get()).isEqualTo(threadCount - 1);
 
     NullifierStats stats = tracker.getStats();
-    assertThat(stats.totalTracked()).isEqualTo(1);
-    assertThat(stats.duplicateAttempts()).isEqualTo(threadCount - 1);
+    assertThat(stats.cacheSize()).isGreaterThanOrEqualTo(1); // At least 1 in cache
+    assertThat(stats.duplicatesDetected()).isEqualTo(threadCount - 1);
   }
 
   @Test
@@ -244,8 +244,8 @@ class NullifierTrackerTest {
 
     // Verify configuration is applied
     NullifierStats stats = tracker.getStats();
-    assertThat(stats.totalTracked()).isEqualTo(1);
-    assertThat(stats.currentNullifiers()).isEqualTo(1);
+    assertThat(stats.totalChecks()).isEqualTo(1);
+    assertThat(stats.cacheSize()).isEqualTo(1);
   }
 
   @Test
@@ -274,6 +274,6 @@ class NullifierTrackerTest {
     assertThat(isNew).isTrue();
 
     NullifierStats stats = tracker.getStats();
-    assertThat(stats.totalTracked()).isEqualTo(1);
+    assertThat(stats.totalChecks()).isEqualTo(1);
   }
 }

@@ -82,11 +82,6 @@ public record LineaRlnValidatorConfiguration(
           Optional.empty() // rlnJniLibPath
           );
 
-  // Accessor for deny list path for convenience
-  public String denyListPath() {
-    return sharedGaslessConfig.denyListPath();
-  }
-
   // Accessor for premium gas price threshold in Wei for convenience (converting from GWei)
   public long premiumGasPriceThresholdWei() {
     return sharedGaslessConfig.premiumGasPriceThresholdGWei()

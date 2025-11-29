@@ -75,9 +75,10 @@ class RlnProverForwarderValidatorMeaningfulTest {
     karmaServiceClient = new KarmaServiceClient("ForwarderTest", "localhost", 8545, false, 5000);
 
     // Create configuration
+    // Note: Deny list is now stored in the RLN prover's PostgreSQL database and accessed via gRPC
     LineaSharedGaslessConfiguration sharedConfig =
         new LineaSharedGaslessConfiguration(
-            tempDir.resolve("deny_list.txt").toString(), 300L, 5L, 10L);
+            300L, 5L, 10L, tempDir.resolve("nullifiers.txt").toString());
 
     rlnConfig =
         new LineaRlnValidatorConfiguration(

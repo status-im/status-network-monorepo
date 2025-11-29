@@ -11,21 +11,26 @@ echo "🔍 Verifying network readiness..."
 check_rpc() {
     local rpc_url=$1
     local network_name=$2
-    local max_attempts=10
+    local max_attempts=60  # ~5 min wait (Besu + JVM + plugin init takes 3-4 min)
     local attempt=1
     
     echo "📡 Checking $network_name at $rpc_url..."
     
     while [ $attempt -le $max_attempts ]; do
-        if curl -s -X POST -H "Content-Type: application/json" \
+        # Check for valid JSON-RPC response (not timeout/gateway errors)
+        local response
+        response=$(curl -s -m 5 -X POST -H "Content-Type: application/json" \
            --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
-           "$rpc_url" >/dev/null 2>&1; then
+           "$rpc_url" 2>&1) || true
+        
+        # Use [[ ]] which doesn't trigger set -e on pattern mismatch
+        if [[ "$response" == *'"jsonrpc"'* ]]; then
             echo "✅ $network_name is responsive"
             return 0
         fi
         
         echo "⏳ $network_name not ready (attempt $attempt/$max_attempts)..."
-        sleep 2
+        sleep 5
         attempt=$((attempt + 1))
     done
     

@@ -1,98 +1,77 @@
-import fs from "fs/promises";
-import { exec } from "child_process";
-import { promisify } from "util";
+import { ethers } from "ethers";
 import { createTestLogger } from "../../config/logger";
 import { RLN_CONFIG } from "../config/rln-config";
 
-const execAsync = promisify(exec);
 const logger = createTestLogger();
 
 export interface DenyListEntry {
   address: string;
-  timestamp: Date;
+  deniedAt: Date;
+  expiresAt?: Date | undefined;
+  reason?: string | undefined;
 }
 
 /**
  * Deny List Manager for testing deny list functionality
- * Supports both file-based and API-based deny list access
- * Can access deny list inside Docker container via docker exec
+ *
+ * The deny list is now stored in the RLN prover's PostgreSQL database and accessed via gRPC.
+ * This test manager uses multiple approaches to check deny list status:
+ *
+ * 1. Primary: Uses `linea_estimateGas` RPC - denied users get premium gas multiplier
+ * 2. Secondary: Uses gRPC endpoint via JSON-RPC proxy (if available)
+ * 3. Fallback: Behavior-based detection (transaction rejection patterns)
+ *
+ * Note: Direct file-based access is no longer supported since the deny list
+ * has been migrated from a text file to the prover's database.
  */
 export class DenyListTestManager {
-  private containerName: string = "sequencer";
-  private containerDenyListPath: string = "/data/gasless-deny-list.txt";
+  private provider: ethers.JsonRpcProvider;
+  private premiumGasThreshold: bigint;
+  private rlnProverUrl: string;
 
-  constructor(
-    private denyListFilePath: string = RLN_CONFIG.test.denyListPath,
-    private karmaServiceUrl: string = RLN_CONFIG.services.karmaServiceUrl,
-  ) {}
-
-  /**
-   * Check if an address is on the deny list via file (local or Docker container)
-   */
-  async isDeniedViaFile(address: string): Promise<boolean> {
-    try {
-      const entries = await this.readDenyListFromContainer();
-      return entries.some((e) => e.address.toLowerCase() === address.toLowerCase());
-    } catch (error) {
-      logger.warn("Failed to read deny list from container", { error });
-      // Fall back to local file
-      try {
-        const entries = await this.readDenyListFromFile();
-        return entries.some((e) => e.address.toLowerCase() === address.toLowerCase());
-      } catch {
-        return false;
-      }
-    }
+  constructor(rlnProverUrl: string = RLN_CONFIG.services.rlnProverUrl, rpcUrl: string = RLN_CONFIG.services.rpcUrl) {
+    this.rlnProverUrl = rlnProverUrl;
+    this.provider = new ethers.JsonRpcProvider(rpcUrl);
+    this.premiumGasThreshold = ethers.parseUnits(String(RLN_CONFIG.test.premiumGasThresholdGwei), "gwei");
   }
 
   /**
-   * Read deny list from Docker container
+   * Check if an address is on the deny list by comparing gas estimates.
+   * Denied users receive inflated gas estimates with premium multiplier.
+   *
+   * This is the most reliable method since it tests actual system behavior.
    */
-  async readDenyListFromContainer(): Promise<DenyListEntry[]> {
+  async isDeniedViaGasEstimate(address: string): Promise<boolean> {
     try {
-      const { stdout } = await execAsync(
-        `docker exec ${this.containerName} cat ${this.containerDenyListPath} 2>/dev/null || echo ""`,
-      );
+      // Get gas estimate for a simple transfer
+      const estimate = await this.provider.send("linea_estimateGas", [
+        {
+          from: address,
+          to: "0x0000000000000000000000000000000000000001",
+          value: "0x0",
+          data: "0x",
+        },
+      ]);
 
-      if (!stdout.trim()) {
-        return [];
+      // Check if the baseFeePerGas or priorityFeePerGas indicates premium
+      // Denied users will have higher gas price requirements
+      if (estimate.baseFeePerGas) {
+        const baseFee = BigInt(estimate.baseFeePerGas);
+        // If base fee is significantly higher than threshold, user is likely denied
+        // The premium multiplier is typically 1.5x
+        if (baseFee >= this.premiumGasThreshold) {
+          logger.debug("User appears to be denied (high gas estimate)", {
+            address,
+            baseFee: baseFee.toString(),
+            threshold: this.premiumGasThreshold.toString(),
+          });
+          return true;
+        }
       }
 
-      return stdout
-        .split("\n")
-        .filter((line) => line.trim() && !line.startsWith("#"))
-        .map((line) => {
-          const [address, timestamp] = line.split(",");
-          return {
-            address: address?.trim() || "",
-            timestamp: timestamp ? new Date(timestamp.trim()) : new Date(),
-          };
-        })
-        .filter((entry) => entry.address);
+      return false;
     } catch (error) {
-      logger.debug("Could not read deny list from container", { error });
-      throw error;
-    }
-  }
-
-  /**
-   * Check if an address is on the deny list via API
-   */
-  async isDeniedViaApi(address: string): Promise<boolean> {
-    try {
-      const response = await fetch(`${this.karmaServiceUrl}/v1/karma/${address}`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      if (!response.ok) {
-        return false;
-      }
-
-      const data = await response.json();
-      return data.is_denied === true;
-    } catch (error) {
-      logger.warn("Failed to check deny status via API", {
+      logger.debug("Gas estimate check failed, trying other methods", {
         address,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -101,61 +80,92 @@ export class DenyListTestManager {
   }
 
   /**
-   * Check if an address is on the deny list (tries container file first, then API)
+   * Check if an address is on the deny list via RLN prover gRPC service.
+   * Uses HTTP-based JSON-RPC proxy if available.
    */
-  async isDenied(address: string): Promise<boolean> {
-    // Try container file first (most reliable)
+  async isDeniedViaProver(address: string): Promise<boolean> {
     try {
-      const entries = await this.readDenyListFromContainer();
-      const isDenied = entries.some((e) => e.address.toLowerCase() === address.toLowerCase());
-      if (isDenied) {
-        logger.debug("Address found in container deny list", { address });
+      // Try to call the deny list endpoint via HTTP
+      // The RLN prover may expose a REST API for deny list queries
+      const response = await fetch(`${this.rlnProverUrl}/deny-list/check`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: address.toLowerCase() }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.isDenied === true;
+      }
+
+      return false;
+    } catch (error) {
+      logger.debug("Prover deny list check failed", {
+        address,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Check if an address is on the deny list by attempting a gasless transaction.
+   * If the transaction is rejected with a deny-related error, the user is denied.
+   */
+  async isDeniedViaBehavior(address: string, wallet: ethers.Wallet): Promise<boolean> {
+    try {
+      // Attempt a gasless transaction
+      const tx = {
+        to: "0x0000000000000000000000000000000000000001",
+        value: 0n,
+        gasPrice: 0n,
+        gasLimit: 21000n,
+        data: "0x",
+      };
+
+      await wallet.sendTransaction(tx);
+      // If transaction succeeds or is pending, user is not denied
+      return false;
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      // Check for deny list related error messages
+      if (errMsg.match(/denied|deny.?list|blocked|premium.*gas.*required/i)) {
+        logger.debug("User is denied (behavior check)", { address, error: errMsg });
         return true;
       }
-    } catch {
-      // Container access failed, continue to other methods
-    }
-
-    // Try API
-    try {
-      return await this.isDeniedViaApi(address);
-    } catch {
-      // Fall back to local file
-      return await this.isDeniedViaFile(address);
+      // Other errors don't necessarily mean denied
+      return false;
     }
   }
 
   /**
-   * Read all deny list entries from file
+   * Check if an address is on the deny list.
+   * Tries multiple methods for reliability.
    */
-  async readDenyListFromFile(): Promise<DenyListEntry[]> {
-    try {
-      const content = await fs.readFile(this.denyListFilePath, "utf-8");
-      return content
-        .split("\n")
-        .filter((line) => line.trim())
-        .map((line) => {
-          const [address, timestamp] = line.split(",");
-          return {
-            address: address.trim(),
-            timestamp: new Date(timestamp.trim()),
-          };
-        });
-    } catch (error: unknown) {
-      if (error instanceof Error && (error as NodeJS.ErrnoException).code === "ENOENT") {
-        return [];
-      }
-      throw error;
+  async isDenied(address: string): Promise<boolean> {
+    // Method 1: Check via gas estimate (most reliable)
+    const deniedViaGas = await this.isDeniedViaGasEstimate(address);
+    if (deniedViaGas) {
+      return true;
     }
+
+    // Method 2: Check via prover API
+    const deniedViaProver = await this.isDeniedViaProver(address);
+    if (deniedViaProver) {
+      return true;
+    }
+
+    return false;
   }
 
   /**
-   * Wait for an address to be added to the deny list
+   * Wait for an address to be added to the deny list.
    */
   async waitForDenied(address: string, timeout: number = 30000): Promise<void> {
     logger.debug("Waiting for address to be denied", { address, timeout });
 
     const startTime = Date.now();
+    const pollInterval = 1000; // 1 second
 
     while (Date.now() - startTime < timeout) {
       if (await this.isDenied(address)) {
@@ -163,14 +173,14 @@ export class DenyListTestManager {
         return;
       }
 
-      await this.sleep(1000);
+      await this.sleep(pollInterval);
     }
 
     throw new Error(`Address ${address} not added to deny list after ${timeout}ms`);
   }
 
   /**
-   * Wait for an address to be removed from the deny list
+   * Wait for an address to be removed from the deny list.
    */
   async waitForNotDenied(address: string, timeout: number = 30000): Promise<void> {
     logger.debug("Waiting for address to be removed from deny list", {
@@ -179,6 +189,7 @@ export class DenyListTestManager {
     });
 
     const startTime = Date.now();
+    const pollInterval = 1000; // 1 second
 
     while (Date.now() - startTime < timeout) {
       if (!(await this.isDenied(address))) {
@@ -186,22 +197,49 @@ export class DenyListTestManager {
         return;
       }
 
-      await this.sleep(1000);
+      await this.sleep(pollInterval);
     }
 
     throw new Error(`Address ${address} still on deny list after ${timeout}ms`);
   }
 
   /**
-   * Get deny list entry for an address
+   * Get deny list entry details for an address via prover API.
+   * Returns null if not on deny list or if API is unavailable.
    */
   async getDenyListEntry(address: string): Promise<DenyListEntry | null> {
-    const entries = await this.readDenyListFromFile();
-    return entries.find((e) => e.address.toLowerCase() === address.toLowerCase()) ?? null;
+    try {
+      const response = await fetch(`${this.rlnProverUrl}/deny-list/entry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: address.toLowerCase() }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.entry) {
+          return {
+            address: data.entry.address,
+            deniedAt: new Date(data.entry.deniedAt * 1000),
+            expiresAt: data.entry.expiresAt ? new Date(data.entry.expiresAt * 1000) : undefined,
+            reason: data.entry.reason,
+          };
+        }
+      }
+
+      return null;
+    } catch (error) {
+      logger.debug("Failed to get deny list entry", {
+        address,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
   }
 
   /**
-   * Get the age of a deny list entry in milliseconds
+   * Get the age of a deny list entry in milliseconds.
+   * Returns null if not on deny list.
    */
   async getEntryAge(address: string): Promise<number | null> {
     const entry = await this.getDenyListEntry(address);
@@ -209,70 +247,92 @@ export class DenyListTestManager {
       return null;
     }
 
-    return Date.now() - entry.timestamp.getTime();
+    return Date.now() - entry.deniedAt.getTime();
   }
 
   /**
-   * Clear the deny list file (for test cleanup)
+   * Clear the deny list for testing purposes.
+   * This requires admin access to the prover's database.
+   * In most cases, tests should work around existing entries.
    */
   async clearDenyList(): Promise<void> {
-    logger.debug("Clearing deny list", { path: this.denyListFilePath });
+    logger.warn("clearDenyList() is not supported with database-backed deny list");
+    logger.warn("Tests should use new addresses or wait for TTL expiry");
+  }
 
+  /**
+   * Manually add an address to the deny list for testing.
+   * This requires admin access to the prover's database.
+   */
+  async addToDenyList(address: string, reason?: string): Promise<void> {
     try {
-      await fs.writeFile(this.denyListFilePath, "", { encoding: "utf-8", mode: 0o600 });
-      logger.debug("Deny list cleared");
+      const response = await fetch(`${this.rlnProverUrl}/deny-list/add`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          address: address.toLowerCase(),
+          reason: reason || "Test addition",
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to add to deny list: ${response.status}`);
+      }
+
+      logger.debug("Address added to deny list via API", { address });
     } catch (error) {
-      logger.warn("Failed to clear deny list", { error });
+      logger.warn("Failed to add to deny list via API, may need to trigger via quota violation", {
+        address,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
   /**
-   * Manually add an address to the deny list file (for testing)
+   * Remove an address from the deny list for testing.
+   * This is typically done by paying premium gas, which the sequencer handles.
    */
-  async addToDenyListFile(address: string): Promise<void> {
-    const timestamp = new Date().toISOString();
-    const entry = `${address.toLowerCase()},${timestamp}\n`;
-
+  async removeFromDenyList(address: string): Promise<void> {
     try {
-      await fs.appendFile(this.denyListFilePath, entry, { encoding: "utf-8", mode: 0o600 });
-      logger.debug("Address added to deny list file", { address });
+      const response = await fetch(`${this.rlnProverUrl}/deny-list/remove`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: address.toLowerCase() }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to remove from deny list: ${response.status}`);
+      }
+
+      logger.debug("Address removed from deny list via API", { address });
     } catch (error) {
-      // Create file if it doesn't exist
-      await fs.writeFile(this.denyListFilePath, entry, { encoding: "utf-8", mode: 0o600 });
-      logger.debug("Created deny list file and added address", { address });
+      logger.warn("Failed to remove from deny list via API, use premium gas transaction instead", {
+        address,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
   /**
-   * Remove an address from the deny list file (for testing)
-   */
-  async removeFromDenyListFile(address: string): Promise<void> {
-    const entries = await this.readDenyListFromFile();
-    const filteredEntries = entries.filter((e) => e.address.toLowerCase() !== address.toLowerCase());
-
-    const content = filteredEntries.map((e) => `${e.address},${e.timestamp.toISOString()}`).join("\n");
-
-    await fs.writeFile(this.denyListFilePath, content ? content + "\n" : "", {
-      encoding: "utf-8",
-      mode: 0o600,
-    });
-    logger.debug("Address removed from deny list file", { address });
-  }
-
-  /**
-   * Get the total number of entries in the deny list
+   * Get the total number of entries in the deny list.
+   * Returns -1 if API is unavailable.
    */
   async getEntryCount(): Promise<number> {
-    const entries = await this.readDenyListFromFile();
-    return entries.length;
-  }
+    try {
+      const response = await fetch(`${this.rlnProverUrl}/deny-list/count`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
 
-  /**
-   * Get all denied addresses
-   */
-  async getAllDeniedAddresses(): Promise<string[]> {
-    const entries = await this.readDenyListFromFile();
-    return entries.map((e) => e.address);
+      if (response.ok) {
+        const data = await response.json();
+        return data.count || 0;
+      }
+
+      return -1;
+    } catch {
+      return -1;
+    }
   }
 
   private sleep(ms: number): Promise<void> {

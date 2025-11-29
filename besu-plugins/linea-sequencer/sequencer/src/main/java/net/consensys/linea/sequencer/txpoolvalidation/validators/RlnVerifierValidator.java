@@ -1215,11 +1215,6 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
   }
 
   @VisibleForTesting
-  void loadDenyListFromFileForTest() {
-    denyListManager.reloadFromFile();
-  }
-
-  @VisibleForTesting
   Optional<CachedProof> getProofFromCacheForTest(String txHash) {
     return Optional.ofNullable(sharedRlnProofCache.getIfPresent(txHash));
   }

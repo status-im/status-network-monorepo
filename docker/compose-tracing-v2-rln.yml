@@ -43,17 +43,11 @@ services:
       file: compose-spec-l2-services-rln.yml
       service: sequencer
 
-  # RLN Prover service
+  # RLN Prover service (also handles karma/quota management)
   rln-prover:
     extends:
       file: compose-spec-l2-services-rln.yml
       service: rln-prover
-
-  # Karma service for transaction quota management
-  karma-service:
-    extends:
-      file: compose-spec-l2-services-rln.yml
-      service: karma-service
 
   # RPC node with gRPC transaction validator
   l2-node-besu:

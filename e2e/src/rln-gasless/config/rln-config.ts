@@ -33,16 +33,19 @@ export const RLN_CONFIG = {
   },
 
   // Service URLs
+  // Note: RLN Prover handles both proof generation and karma/deny-list services
   services: {
     rpcUrl: process.env.RPC_URL || "http://localhost:9045",
     sequencerUrl: process.env.SEQUENCER_URL || "http://localhost:8545",
-    karmaServiceUrl: process.env.KARMA_SERVICE_URL || "http://localhost:50053",
     rlnProverUrl: process.env.RLN_PROVER_URL || "http://localhost:50051",
+    // karmaServiceUrl points to the same RLN prover (unified service)
+    karmaServiceUrl: process.env.KARMA_SERVICE_URL || "http://localhost:50051",
   },
 
   // Test configuration
+  // Note: Deny list is now stored in the RLN prover's PostgreSQL database
+  // and accessed via gRPC - no file path needed
   test: {
-    denyListPath: process.env.DENY_LIST_PATH || "/tmp/rln-deny-list.txt",
     premiumGasThresholdGwei: 10,
     premiumGasMultiplier: 1.5,
     epochDurationSeconds: getEnvNumber("RLN_EPOCH_DURATION_SECONDS", 60), // 60s epochs in test mode
