@@ -70,14 +70,16 @@ pub struct AppArgs {
         help = "Websocket rpc url (e.g. wss://eth-mainnet.g.alchemy.com/v2/your-api-key)"
     )]
     pub ws_rpc_url: Option<Url>,
-    #[arg(long = "db", help = "Db path", default_value = "./storage/db")]
-    pub db_path: PathBuf,
-    #[arg(
-        long = "tree",
-        help = "Merkle tree folder",
-        default_value = "./storage/trees"
-    )]
-    pub merkle_tree_folder: PathBuf,
+    // #[arg(long = "db", help = "Db path", default_value = "./storage/db")]
+    // pub db_path: PathBuf,
+    // #[arg(
+    //     long = "tree",
+    //     help = "Merkle tree folder",
+    //     default_value = "./storage/trees"
+    // )]
+    // pub merkle_tree_folder: PathBuf,
+    #[arg(long = "db", help = "Db url")]
+    pub db_url: Option<String>,
     #[arg(long = "tree-count", help = "Merkle tree count", default_value = "1")]
     pub merkle_tree_count: u64,
     #[arg(
@@ -274,6 +276,7 @@ mod tests {
         let config = AppArgsConfig {
             ip: None,
             port: Some(config_port),
+            db_url: None,
             mock_sc: Some(true),
             ..Default::default()
         };

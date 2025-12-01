@@ -11,12 +11,13 @@ use rln::protocol::serialize_proof_values;
 use tracing::{Instrument, debug, debug_span, error, info, warn};
 // internal
 use crate::epoch_service::{Epoch, EpochSlice};
-use crate::error::{AppError, ProofGenerationError, ProofGenerationStringError};
+use crate::error::{AppError2, ProofGenerationError, ProofGenerationStringError};
 use crate::metrics::{
     BROADCAST_CHANNEL_QUEUE_LEN, PROOF_SERVICE_GEN_PROOF_TIME, PROOF_SERVICE_PROOF_COMPUTED,
 };
 use crate::proof_generation::{ProofGenerationData, ProofSendingData};
-use crate::user_db::UserDb;
+// use crate::user_db::UserDb;
+use crate::user_db_2::UserDb2;
 use crate::user_db_types::RateLimit;
 use rln_proof::{RlnData, compute_rln_proof_and_values};
 
@@ -28,7 +29,7 @@ pub struct ProofService {
     broadcast_sender:
         tokio::sync::broadcast::Sender<Result<ProofSendingData, ProofGenerationStringError>>,
     current_epoch: Arc<RwLock<(Epoch, EpochSlice)>>,
-    user_db: UserDb,
+    user_db: UserDb2,
     rate_limit: RateLimit,
     id: u64,
 }
@@ -40,7 +41,7 @@ impl ProofService {
             Result<ProofSendingData, ProofGenerationStringError>,
         >,
         current_epoch: Arc<RwLock<(Epoch, EpochSlice)>>,
-        user_db: UserDb,
+        user_db: UserDb2,
         rate_limit: RateLimit,
         id: u64,
     ) -> Self {
@@ -56,7 +57,7 @@ impl ProofService {
         }
     }
 
-    pub(crate) async fn serve(&self) -> Result<(), AppError> {
+    pub(crate) async fn serve(&self) -> Result<(), AppError2> {
         info!(
             "[ProofService {}] Starting serve() - waiting for messages on channel",
             self.id
@@ -102,6 +103,10 @@ impl ProofService {
             // Communicate between rayon & current task
             let (send, recv) = tokio::sync::oneshot::channel();
 
+            let merkle_proof_ = user_db
+                .get_merkle_proof(&proof_generation_data.tx_sender)
+                .await;
+
             // Move to a task (as generating the proof can take quite some time) - avoid blocking the tokio runtime
             // Note: avoid tokio spawn_blocking as it does not perform great for CPU bounds tasks
             //       see https://ryhl.io/blog/async-what-is-blocking/
@@ -113,6 +118,14 @@ impl ProofService {
             rayon::spawn(move || {
                 debug!("[ProofService {}] Rayon task started", counter_id);
                 let proof_generation_start = std::time::Instant::now();
+
+                let merkle_proof = match merkle_proof_ {
+                    Ok(proof) => proof,
+                    Err(e) => {
+                        let _ = send.send(Err(ProofGenerationError::MerkleProofError(e)));
+                        return;
+                    }
+                };
 
                 let message_id = {
                     let mut m_id = proof_generation_data.tx_counter;
@@ -136,15 +149,6 @@ impl ProofService {
                     v
                 };
                 let epoch = hash_to_field_le(epoch_bytes.as_slice());
-
-                let merkle_proof = match user_db.get_merkle_proof(&proof_generation_data.tx_sender)
-                {
-                    Ok(merkle_proof) => merkle_proof,
-                    Err(e) => {
-                        let _ = send.send(Err(ProofGenerationError::MerkleProofError(e)));
-                        return;
-                    }
-                };
 
                 // let compute_proof_start = std::time::Instant::now();
                 let (proof, proof_values) = match compute_rln_proof_and_values(
@@ -256,6 +260,7 @@ impl ProofService {
     }
 }
 
+#[cfg(feature = "postgres")]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,7 +280,9 @@ mod tests {
         protocol::{deserialize_proof_values, verify_proof},
     };
     // internal
-    use crate::user_db::{MERKLE_TREE_HEIGHT, UserDbConfig};
+    use crate::tests_common::create_database_connection_1;
+    use crate::user_db::MERKLE_TREE_HEIGHT;
+    use crate::user_db_2::UserDb2Config;
     use crate::user_db_service::UserDbService;
     use rln_proof::RlnIdentifier;
 
@@ -287,7 +294,7 @@ mod tests {
     #[derive(thiserror::Error, Debug)]
     enum AppErrorExt {
         #[error("AppError: {0}")]
-        AppError(#[from] AppError),
+        AppError(#[from] AppError2),
         #[error("Future timeout")]
         Elapsed,
         #[error("Proof generation failed: {0}")]
@@ -302,7 +309,7 @@ mod tests {
         sender: Address,
         proof_tx: &mut async_channel::Sender<ProofGenerationData>,
         rln_identifier: Arc<RlnIdentifier>,
-        user_db: &UserDb,
+        user_db: &UserDb2,
     ) -> Result<(), AppErrorExt> {
         // used by test_proof_generation unit test
 
@@ -310,9 +317,10 @@ mod tests {
         debug!("Waiting a bit before sending proof...");
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         debug!("Sending proof...");
+        let user_identity = user_db.get_user_identity(&ADDR_1).await.unwrap();
         proof_tx
             .send(ProofGenerationData {
-                user_identity: user_db.get_user(&ADDR_1).unwrap(),
+                user_identity,
                 rln_identifier,
                 tx_counter: 0,
                 tx_sender: sender,
@@ -364,6 +372,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[function_name::named]
     // #[tracing_test::traced_test]
     async fn test_proof_generation() {
         // Queues
@@ -377,27 +386,28 @@ mod tests {
         let epoch_store = Arc::new(RwLock::new((epoch, epoch_slice)));
 
         // User db
-        let temp_folder = tempfile::tempdir().unwrap();
-        let temp_folder_tree = tempfile::tempdir().unwrap();
-        let config = UserDbConfig {
-            db_path: PathBuf::from(temp_folder.path()),
-            merkle_tree_folder: PathBuf::from(temp_folder_tree.path()),
+        let config = UserDb2Config {
             tree_count: 1,
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
+        let (_, db_conn) = create_database_connection_1(file!(), function_name!())
+            .await
+            .unwrap();
         let user_db_service = UserDbService::new(
+            db_conn,
             config,
             Default::default(),
             epoch_store.clone(),
             10.into(),
             Default::default(),
         )
+        .await
         .unwrap();
         let user_db = user_db_service.get_user_db();
-        user_db.on_new_user(&ADDR_1).unwrap();
-        user_db.on_new_user(&ADDR_2).unwrap();
+        user_db.on_new_user(&ADDR_1).await.unwrap();
+        user_db.on_new_user(&ADDR_2).await.unwrap();
 
         let rln_identifier = Arc::new(RlnIdentifier::new(b"foo bar baz"));
 

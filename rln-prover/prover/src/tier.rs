@@ -3,6 +3,7 @@ use std::ops::ControlFlow;
 // third-party
 use alloy::primitives::U256;
 use derive_more::{Deref, DerefMut, From, Into};
+use serde::{Deserialize, Serialize};
 // internal
 use smart_contract::Tier;
 
@@ -18,7 +19,7 @@ impl From<&str> for TierName {
     }
 }
 
-#[derive(Debug, Clone, Default, From, Into, Deref, DerefMut, PartialEq)]
+#[derive(Debug, Clone, Default, From, Into, Deref, DerefMut, PartialEq, Serialize, Deserialize)]
 pub struct TierLimits(Vec<Tier>);
 
 impl<const N: usize> From<[Tier; N]> for TierLimits {

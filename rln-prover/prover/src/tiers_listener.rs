@@ -3,19 +3,20 @@ use alloy::{primitives::Address, providers::Provider, sol_types::SolEvent};
 use futures::StreamExt;
 use tracing::error;
 // internal
-use crate::error::AppError;
+use crate::error::AppError2;
 use crate::tier::TierLimits;
-use crate::user_db::UserDb;
+// use crate::user_db::UserDb;
+use crate::user_db_2::UserDb2;
 use smart_contract::KarmaTiers;
 use smart_contract::KarmaTiers::KarmaTiersInstance;
 
 pub(crate) struct TiersListener {
     sc_address: Address,
-    user_db: UserDb,
+    user_db: UserDb2,
 }
 
 impl TiersListener {
-    pub(crate) fn new(sc_address: Address, user_db: UserDb) -> Self {
+    pub(crate) fn new(sc_address: Address, user_db: UserDb2) -> Self {
         Self {
             sc_address,
             user_db,
@@ -23,7 +24,7 @@ impl TiersListener {
     }
 
     /// Listen to Smart Contract specified events
-    pub(crate) async fn listen<P: Provider + Clone>(&self, provider: P) -> Result<(), AppError> {
+    pub(crate) async fn listen<P: Provider + Clone>(&self, provider: P) -> Result<(), AppError2> {
         // let provider = self.setup_provider_ws().await.map_err(AppError::from)?;
 
         let filter = alloy::rpc::types::Filter::new()
@@ -47,13 +48,14 @@ impl TiersListener {
                                 "Error while getting tiers limits from smart contract: {}",
                                 e
                             );
-                            return Err(AppError::KarmaTiersError(e));
+                            return Err(AppError2::KarmaTiersError(e));
                         }
                     };
 
                 if let Err(e) = self
                     .user_db
                     .on_tier_limits_updated(TierLimits::from(tier_limits))
+                    .await
                 {
                     // If there is an error here, we assume this is an error by the user
                     // updating the Tier limits (and thus we don't want to shut down the prover)

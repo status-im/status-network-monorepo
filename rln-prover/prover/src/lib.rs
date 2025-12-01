@@ -18,7 +18,12 @@ mod user_db_types;
 
 // tests
 mod epoch_service_tests;
+mod grpc_e2e;
 mod proof_service_tests;
+#[cfg(test)]
+pub mod tests_common;
+mod user_db_2;
+mod user_db_2_tests;
 mod user_db_tests;
 
 // std
@@ -29,13 +34,14 @@ use std::time::Duration;
 // third-party
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::signers::local::PrivateKeySigner;
+use sea_orm::Database;
 use tokio::task::JoinSet;
 use tracing::{debug, info};
 use zeroize::Zeroizing;
 // internal
 pub use crate::args::{ARGS_DEFAULT_GENESIS, AppArgs, AppArgsConfig};
 use crate::epoch_service::EpochService;
-use crate::error::AppError;
+use crate::error::AppError2;
 use crate::grpc_service::GrpcProverService;
 use crate::karma_sc_listener::KarmaScEventListener;
 pub use crate::mock::MockUser;
@@ -43,15 +49,16 @@ use crate::mock::read_mock_user;
 use crate::proof_service::ProofService;
 use crate::tier::TierLimits;
 use crate::tiers_listener::TiersListener;
-use crate::user_db::{MERKLE_TREE_HEIGHT, UserDbConfig};
-use crate::user_db_error::RegisterError;
+use crate::user_db::MERKLE_TREE_HEIGHT;
+use crate::user_db_2::UserDb2Config;
+use crate::user_db_error::{RegisterError2, UserDb2OpenError};
 use crate::user_db_service::UserDbService;
 use crate::user_db_types::RateLimit;
 use rln_proof::RlnIdentifier;
 use smart_contract::KarmaTiers::KarmaTiersInstance;
 use smart_contract::{KarmaTiersError, TIER_LIMITS};
 
-pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError> {
+pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
     // Epoch
     let epoch_service = EpochService::try_from((Duration::from_secs(60 * 2), ARGS_DEFAULT_GENESIS))
         .expect("Failed to create epoch service");
@@ -103,20 +110,24 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError> {
     tier_limits.validate()?;
 
     // User db service
-    let user_db_config = UserDbConfig {
-        db_path: app_args.db_path.clone(),
-        merkle_tree_folder: app_args.merkle_tree_folder.clone(),
+    let user_db_config = UserDb2Config {
         tree_count: app_args.merkle_tree_count,
         max_tree_count: app_args.merkle_tree_max_count,
         tree_depth: MERKLE_TREE_HEIGHT,
     };
+    let db_url = app_args.db_url.unwrap();
+    let db_conn = Database::connect(db_url)
+        .await
+        .map_err(UserDb2OpenError::from)?;
     let user_db_service = UserDbService::new(
+        db_conn,
         user_db_config,
         epoch_service.epoch_changes.clone(),
         epoch_service.current_epoch.clone(),
         RateLimit::new(app_args.spam_limit),
         tier_limits,
-    )?;
+    )
+    .await?;
 
     if app_args.mock_sc.is_some()
         && let Some(user_filepath) = app_args.mock_user.as_ref()
@@ -131,17 +142,19 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError> {
             );
 
             let user_db = user_db_service.get_user_db();
-            if let Err(e) = user_db.on_new_user(&mock_user.address) {
+            if let Err(e) = user_db.on_new_user(&mock_user.address).await {
                 match e {
-                    RegisterError::AlreadyRegistered(_) => {
+                    RegisterError2::AlreadyRegistered(_) => {
                         debug!("User {} already registered", mock_user.address);
                     }
                     _ => {
-                        return Err(AppError::from(e));
+                        return Err(AppError2::from(e));
                     }
                 }
             }
-            user_db.on_new_tx(&mock_user.address, Some(mock_user.tx_count))?;
+            user_db
+                .on_new_tx(&mock_user.address, Some(mock_user.tx_count))
+                .await?;
         }
     }
 

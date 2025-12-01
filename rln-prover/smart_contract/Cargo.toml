@@ -24,6 +24,7 @@ async-trait.workspace = true
 thiserror.workspace = true
 rustls.workspace = true
 log = "0.4.28"
+serde = { version = "1.0.228", features = ["derive"] }
 
 [dev-dependencies]
 claims = "0.8"

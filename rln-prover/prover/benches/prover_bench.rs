@@ -17,6 +17,7 @@ use tokio::task::JoinSet;
 use tonic::Response;
 // internal
 use prover::{AppArgs, MockUser, run_prover};
+use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
 
 // grpc
 pub mod prover_proto {
@@ -29,6 +30,7 @@ use prover_proto::{
 };
 
 use lazy_static::lazy_static;
+use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
 use std::sync::Once;
 
 lazy_static! {
@@ -49,6 +51,52 @@ pub fn setup_tracing() {
             .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
             .init();
     });
+}
+
+async fn create_database_connection(
+    f_name: &str,
+    test_name: &str,
+) -> Result<(String, DatabaseConnection), DbErr> {
+    // Drop / Create db_name then return a connection to it
+
+    let db_name = format!(
+        "{}_{}",
+        std::path::Path::new(f_name)
+            .file_stem()
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        test_name
+    );
+
+    println!("db_name: {}", db_name);
+
+    let db_url_base = "postgres://myuser:mysecretpassword@localhost";
+    let db_url = format!("{}/{}", db_url_base, "mydatabase");
+    let db = Database::connect(db_url)
+        .await
+        .expect("Database connection 0 failed");
+
+    db.execute_raw(Statement::from_string(
+        db.get_database_backend(),
+        format!("DROP DATABASE IF EXISTS \"{}\";", db_name),
+    ))
+    .await?;
+    db.execute_raw(Statement::from_string(
+        db.get_database_backend(),
+        format!("CREATE DATABASE \"{}\";", db_name),
+    ))
+    .await?;
+
+    db.close().await?;
+
+    let db_url_final = format!("{}/{}", db_url_base, db_name);
+    let db = Database::connect(&db_url_final)
+        .await
+        .expect("Database connection failed");
+    MigratorCreate::up(&db, None).await?;
+
+    Ok((db_url_final, db))
 }
 
 async fn proof_sender(port: u16, addresses: Vec<Address>, proof_count: usize) {
@@ -165,15 +213,22 @@ fn proof_generation_bench(c: &mut Criterion) {
     temp_file.flush().unwrap();
 
     let port = 50051;
-    let temp_folder = tempfile::tempdir().unwrap();
-    let temp_folder_tree = tempfile::tempdir().unwrap();
+    // let temp_folder = tempfile::tempdir().unwrap();
+    // let temp_folder_tree = tempfile::tempdir().unwrap();
+
+    //     create_database_connection("prover_benches", "prover_bench")
+    //     .await
+    //     .unwrap();
+    // End Setup db
+
     // let proof_service_count = 4;
-    let app_args = AppArgs {
+    let mut app_args = AppArgs {
         ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
         port,
         ws_rpc_url: None,
-        db_path: temp_folder.path().to_path_buf(),
-        merkle_tree_folder: temp_folder_tree.path().to_path_buf(),
+        db_url: None,
+        // db_path: temp_folder.path().to_path_buf(),
+        // merkle_tree_folder: temp_folder_tree.path().to_path_buf(),
         merkle_tree_count: 1,
         merkle_tree_max_count: 1,
         ksc_address: None,
@@ -203,6 +258,12 @@ fn proof_generation_bench(c: &mut Criterion) {
     // Spawn prover
     let notify_start_1 = notify_start.clone();
     rt.spawn(async move {
+        // Setup db
+        let (db_url, _db_conn) = create_database_connection("prover_benches", "prover_bench")
+            .await
+            .unwrap();
+        app_args.db_url = Some(db_url);
+
         tokio::spawn(run_prover(app_args));
         tokio::time::sleep(Duration::from_secs(10)).await;
         println!("Prover is ready, notifying it...");

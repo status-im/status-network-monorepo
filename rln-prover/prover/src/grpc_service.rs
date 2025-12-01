@@ -21,13 +21,13 @@ use tower_http::cors::{Any, CorsLayer};
 use tracing::{debug, error, info, warn};
 use url::Url;
 // internal
-use crate::error::{AppError, ProofGenerationStringError};
+use crate::error::{AppError2, ProofGenerationStringError};
 use crate::metrics::{
     GET_PROOFS_LISTENERS, GET_USER_TIER_INFO_REQUESTS, GaugeWrapper,
     PROOF_SERVICES_CHANNEL_QUEUE_LEN, SEND_TRANSACTION_REQUESTS,
 };
 use crate::proof_generation::{ProofGenerationData, ProofSendingData};
-use crate::user_db::{UserDb, UserTierInfo};
+use crate::user_db::UserTierInfo;
 use rln_proof::RlnIdentifier;
 use smart_contract::{KarmaAmountExt, KarmaSC::KarmaSCInstance, MockKarmaSc};
 
@@ -39,6 +39,7 @@ pub mod prover_proto {
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
         tonic::include_file_descriptor_set!("prover_descriptor");
 }
+use crate::user_db_2::{UserDb2, UserTierInfo2};
 use crate::user_db_types::RateLimit;
 use prover_proto::{
     GetUserTierInfoReply,
@@ -77,7 +78,7 @@ const PROVER_TX_HASH_BYTESIZE: usize = 32;
 #[derive(Debug)]
 pub struct ProverService<KSC: KarmaAmountExt> {
     proof_sender: Sender<ProofGenerationData>,
-    user_db: UserDb,
+    user_db: UserDb2,
     rln_identifier: Arc<RlnIdentifier>,
     broadcast_channel: (
         broadcast::Sender<Result<ProofSendingData, ProofGenerationStringError>>,
@@ -115,8 +116,8 @@ where
             return Err(Status::invalid_argument("No sender address"));
         };
 
-        let user_id = if let Some(id) = self.user_db.get_user(&sender) {
-            id.clone()
+        let user_id = if let Some(rln_id) = self.user_db.get_user_identity(&sender).await {
+            rln_id
         } else {
             return Err(Status::not_found("Sender not registered"));
         };
@@ -130,7 +131,8 @@ where
         // Update the counter as soon as possible (should help to prevent spamming...)
         let counter = self
             .user_db
-            .on_new_tx(&sender, tx_counter_incr)
+            .on_new_tx(&sender, tx_counter_incr.map(|v| v as i64)) // FIXME: 'as'
+            .await
             .unwrap_or_default();
 
         if counter > self.rate_limit {
@@ -346,7 +348,7 @@ pub(crate) struct GrpcProverService<P: Provider> {
     ),
     pub addr: SocketAddr,
     pub rln_identifier: RlnIdentifier,
-    pub user_db: UserDb,
+    pub user_db: UserDb2,
     pub karma_sc_info: Option<(Url, Address)>,
     // pub rln_sc_info: Option<(Url, Address)>,
     pub provider: Option<P>,
@@ -357,7 +359,7 @@ pub(crate) struct GrpcProverService<P: Provider> {
 }
 
 impl<P: Provider + Clone + Send + Sync + 'static> GrpcProverService<P> {
-    pub(crate) async fn serve(&self) -> Result<(), AppError> {
+    pub(crate) async fn serve(&self) -> Result<(), AppError2> {
         let karma_sc = if let Some(karma_sc_info) = self.karma_sc_info.as_ref()
             && let Some(provider) = self.provider.as_ref()
         {
@@ -430,11 +432,11 @@ impl<P: Provider + Clone + Send + Sync + 'static> GrpcProverService<P> {
             .add_optional_service(reflection_service)
             .add_service(r)
             .serve(self.addr)
-            .map_err(AppError::from)
+            .map_err(AppError2::from)
             .await
     }
 
-    pub(crate) async fn serve_with_mock(&self) -> Result<(), AppError> {
+    pub(crate) async fn serve_with_mock(&self) -> Result<(), AppError2> {
         let prover_service = ProverService {
             proof_sender: self.proof_sender.clone(),
             user_db: self.user_db.clone(),
@@ -500,7 +502,7 @@ impl<P: Provider + Clone + Send + Sync + 'static> GrpcProverService<P> {
             .add_optional_service(reflection_service)
             .add_service(r)
             .serve(self.addr)
-            .map_err(AppError::from)
+            .map_err(AppError2::from)
             .await
     }
 }
@@ -526,12 +528,46 @@ impl From<UserTierInfo> for UserTierInfoResult {
     }
 }
 
+/// UserTierInfo2 to UserTierInfoResult (Grpc message) conversion
+impl From<UserTierInfo2> for UserTierInfoResult {
+    fn from(tier_info: UserTierInfo2) -> Self {
+        let mut res = UserTierInfoResult {
+            current_epoch: tier_info.current_epoch.into(),
+            // current_epoch_slice: tier_info.current_epoch_slice.into(),
+            current_epoch_slice: 0,
+            tx_count: tier_info.epoch_tx_count,
+            tier: None,
+        };
+
+        if tier_info.tier_name.is_some() && tier_info.tier_limit.is_some() {
+            res.tier = Some(Tier {
+                name: tier_info.tier_name.unwrap().into(),
+                quota: tier_info.tier_limit.unwrap().into(),
+            })
+        }
+
+        res
+    }
+}
+
 /// UserTierInfoError to UserTierInfoError (Grpc message) conversion
 impl<E> From<crate::user_db_error::UserTierInfoError<E>> for UserTierInfoError
 where
     E: std::error::Error,
 {
     fn from(value: crate::user_db_error::UserTierInfoError<E>) -> Self {
+        UserTierInfoError {
+            message: value.to_string(),
+        }
+    }
+}
+
+/// UserTierInfoError to UserTierInfoError (Grpc message) conversion
+impl<E> From<crate::user_db_error::UserTierInfoError2<E>> for UserTierInfoError
+where
+    E: std::error::Error,
+{
+    fn from(value: crate::user_db_error::UserTierInfoError2<E>) -> Self {
         UserTierInfoError {
             message: value.to_string(),
         }

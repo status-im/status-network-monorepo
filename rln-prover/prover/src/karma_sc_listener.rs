@@ -10,15 +10,16 @@ use num_bigint::BigUint;
 use tonic::codegen::tokio_stream::StreamExt;
 use tracing::{debug, error, info};
 // internal
-use crate::error::{AppError, HandleTransferError, RegisterSCError};
-use crate::user_db::UserDb;
-use crate::user_db_error::RegisterError;
+use crate::error::{AppError2, HandleTransferError2, RegisterSCError};
+// use crate::user_db::UserDb;
+use crate::user_db_2::UserDb2;
+use crate::user_db_error::RegisterError2;
 use smart_contract::{KarmaAmountExt, KarmaRLNSC, KarmaSC, RLNRegister};
 
 pub(crate) struct KarmaScEventListener {
     karma_sc_address: Address,
     rln_sc_address: Address,
-    user_db: UserDb,
+    user_db: UserDb2,
     minimal_amount: U256,
 }
 
@@ -26,7 +27,7 @@ impl KarmaScEventListener {
     pub(crate) fn new(
         karma_sc_address: Address,
         rln_sc_address: Address,
-        user_db: UserDb,
+        user_db: UserDb2,
         minimal_amount: U256,
     ) -> Self {
         Self {
@@ -42,7 +43,7 @@ impl KarmaScEventListener {
         &self,
         provider: P,
         provider_with_signer: PS,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), AppError2> {
         let karma_sc = KarmaSC::new(self.karma_sc_address, provider.clone());
         let rln_sc = KarmaRLNSC::new(self.rln_sc_address, provider_with_signer);
 
@@ -65,7 +66,7 @@ impl KarmaScEventListener {
                 Some(&KarmaSC::Transfer::SIGNATURE_HASH) => {
                     self.transfer_event(&log, &karma_sc, &rln_sc)
                         .await
-                        .map_err(AppError::RegistryError)?;
+                        .map_err(AppError2::RegistryError)?;
                 }
                 Some(&KarmaSC::AccountSlashed::SIGNATURE_HASH) => {
                     self.slash_event(&log).await;
@@ -131,7 +132,7 @@ impl KarmaScEventListener {
         log: &Log,
         karma_sc: &KSC,
         rln_sc: &RLNSC,
-    ) -> Result<(), HandleTransferError> {
+    ) -> Result<(), HandleTransferError2> {
         match KarmaSC::Transfer::decode_log_data(log.data()) {
             Ok(transfer_event) => {
                 match self
@@ -141,7 +142,7 @@ impl KarmaScEventListener {
                     Ok(addr) => {
                         info!("Registered new user: {}", addr);
                     }
-                    Err(HandleTransferError::Register(RegisterError::AlreadyRegistered(
+                    Err(HandleTransferError2::Register(RegisterError2::AlreadyRegistered(
                         address,
                     ))) => {
                         debug!("Already registered: {}", address);
@@ -189,7 +190,7 @@ impl KarmaScEventListener {
         karma_sc: &KSC,
         rln_sc: &RLNSC,
         transfer_event: KarmaSC::Transfer,
-    ) -> Result<Address, HandleTransferError> {
+    ) -> Result<Address, HandleTransferError2> {
         let from_address: Address = transfer_event.from;
         let to_address: Address = transfer_event.to;
         let amount: U256 = transfer_event.value;
@@ -203,7 +204,7 @@ impl KarmaScEventListener {
                     let balance = karma_sc
                         .karma_amount(&to_address)
                         .await
-                        .map_err(|e| HandleTransferError::FetchBalanceOf(e.into()))?;
+                        .map_err(|e| HandleTransferError2::FetchBalanceOf(e.into()))?;
                     // Only register the user if he has a minimal amount of Karma token
                     balance >= self.minimal_amount
                 }
@@ -213,11 +214,12 @@ impl KarmaScEventListener {
                 let id_commitment = self
                     .user_db
                     .on_new_user(&to_address)
-                    .map_err(HandleTransferError::Register);
+                    .await
+                    .map_err(HandleTransferError2::Register);
 
                 // Don't stop the registry_listener if the user_db is full
                 // Prover will still be functional
-                if let Err(HandleTransferError::Register(RegisterError::TooManyUsers)) =
+                if let Err(HandleTransferError2::Register(RegisterError2::TooManyUsers)) =
                     id_commitment
                 {
                     error!("Cannot register a new user: {:?}", id_commitment);
@@ -231,13 +233,29 @@ impl KarmaScEventListener {
                 if let Err(e) = rln_sc.register_user(&to_address, id_co).await {
                     // Fail to register the user on smart contract
                     // Remove the user in internal Db
-                    if !self.user_db.remove_user(&to_address, false) {
-                        // Fails if DB & SC are inconsistent
-                        panic!("Unable to register user to SC and to remove it from DB...");
+                    let rem_res = self.user_db.remove_user(&to_address).await;
+
+                    match rem_res {
+                        Err(e) => {
+                            // Fails if DB & SC are inconsistent
+                            error!("Fail to remove user ({:?}) from DB: {:?}", to_address, e);
+                            panic!("Fail to register user to SC and to remove it from DB...");
+                        }
+                        Ok(res) => {
+                            if !res {
+                                error!("Fail to remove user ({:?}) from DB", to_address);
+                                panic!("Fail to register user to SC and to remove it from DB...");
+                            } else {
+                                debug!(
+                                    "Successfully removed user ({:?}), after failing to register him",
+                                    to_address
+                                );
+                            }
+                        }
                     }
 
                     let e_ = RegisterSCError::from(e.into());
-                    return Err(HandleTransferError::ScRegister(e_));
+                    return Err(HandleTransferError2::ScRegister(e_));
                 }
             }
         }
@@ -250,8 +268,27 @@ impl KarmaScEventListener {
         match KarmaSC::AccountSlashed::decode_log_data(log.data()) {
             Ok(slash_event) => {
                 let address_slashed: Address = slash_event.account;
-                if !self.user_db.remove_user(&address_slashed, false) {
-                    error!("Cannot remove user ({:?}) from DB", address_slashed);
+                let rem_res = self.user_db.remove_user(&address_slashed).await;
+                match rem_res {
+                    Err(e) => {
+                        // Fails if DB & SC are inconsistent
+                        error!(
+                            "Fail to remove slashed user ({:?}) from DB: {:?}",
+                            address_slashed, e
+                        );
+                        panic!("Fail to register user to SC and to remove it from DB...");
+                    }
+                    Ok(res) => {
+                        if !res {
+                            error!(
+                                "Fail to remove slashed user ({:?}) from DB",
+                                address_slashed
+                            );
+                            panic!("Fail to register user to SC and to remove it from DB...");
+                        } else {
+                            debug!("Removed slashed user ({:?})", address_slashed);
+                        }
+                    }
                 }
             }
             Err(e) => {
@@ -268,6 +305,7 @@ impl KarmaScEventListener {
     }
 }
 
+#[cfg(feature = "postgres")]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,8 +318,12 @@ mod tests {
     use parking_lot::RwLock;
     // internal
     use crate::epoch_service::{Epoch, EpochSlice};
-    use crate::user_db::{MERKLE_TREE_HEIGHT, UserDbConfig};
+    use crate::user_db::MERKLE_TREE_HEIGHT;
+    // use crate::user_db::{MERKLE_TREE_HEIGHT, UserDbConfig};
+    use crate::tests_common::create_database_connection_1;
+    use crate::user_db_2::UserDb2Config;
     use crate::user_db_service::UserDbService;
+    // use function_name::named;
 
     // const ADDR_1: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
     const ADDR_2: Address = address!("0xb20a608c624Ca5003905aA834De7156C68b2E1d0");
@@ -316,31 +358,40 @@ mod tests {
     }
 
     #[tokio::test]
+    #[function_name::named]
     async fn test_handle_transfer_event() {
         let epoch = Epoch::from(11);
         let epoch_slice = EpochSlice::from(42);
         let epoch_store = Arc::new(RwLock::new((epoch, epoch_slice)));
-        let temp_folder = tempfile::tempdir().unwrap();
-        let temp_folder_tree = tempfile::tempdir().unwrap();
-        let config = UserDbConfig {
-            db_path: PathBuf::from(temp_folder.path()),
-            merkle_tree_folder: PathBuf::from(temp_folder_tree.path()),
+        let config = UserDb2Config {
             tree_count: 1,
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
+        let (_, db_conn) = create_database_connection_1(file!(), function_name!())
+            .await
+            .unwrap();
         let user_db_service = UserDbService::new(
+            db_conn,
             config,
             Default::default(),
             epoch_store,
             10.into(),
             Default::default(),
         )
+        .await
         .unwrap();
         let user_db = user_db_service.get_user_db();
 
-        assert!(user_db_service.get_user_db().get_user(&ADDR_2).is_none());
+        assert!(
+            user_db_service
+                .get_user_db()
+                .get_user(&ADDR_2)
+                .await
+                .unwrap()
+                .is_none()
+        );
 
         let minimal_amount = U256::from(25);
         let registry = KarmaScEventListener {
@@ -363,6 +414,13 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(user_db_service.get_user_db().get_user(&ADDR_2).is_some());
+        assert!(
+            user_db_service
+                .get_user_db()
+                .get_user(&ADDR_2)
+                .await
+                .unwrap()
+                .is_some()
+        );
     }
 }
