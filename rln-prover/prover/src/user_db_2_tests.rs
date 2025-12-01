@@ -93,45 +93,45 @@ mod tests {
 
         assert_eq!(
             user_db.get_tx_counter(&ADDR_1).await,
-            Ok((EpochCounter::from(0), EpochSliceCounter::from(0)))
+            Ok(EpochCounter::from(0))
         );
         assert_eq!(
             user_db.get_tx_counter(&ADDR_2).await,
-            Ok((EpochCounter::from(0), EpochSliceCounter::from(0)))
+            Ok(EpochCounter::from(0))
         );
 
         // Now update user tx counter
         assert_eq!(
             user_db.on_new_tx(&ADDR_1, None).await,
-            Ok(EpochSliceCounter::from(1))
+            Ok(EpochCounter::from(1))
         );
         assert_eq!(
             user_db.on_new_tx(&ADDR_1, None).await,
-            Ok(EpochSliceCounter::from(2))
+            Ok(EpochCounter::from(2))
         );
         assert_eq!(
             user_db.on_new_tx(&ADDR_1, Some(2)).await,
-            Ok(EpochSliceCounter::from(4))
+            Ok(EpochCounter::from(4))
         );
 
         assert_eq!(
             user_db.on_new_tx(&ADDR_2, None).await,
-            Ok(EpochSliceCounter::from(1))
+            Ok(EpochCounter::from(1))
         );
 
         assert_eq!(
             user_db.on_new_tx(&ADDR_2, None).await,
-            Ok(EpochSliceCounter::from(2))
+            Ok(EpochCounter::from(2))
         );
 
         assert_eq!(
             user_db.get_tx_counter(&ADDR_1).await,
-            Ok((EpochCounter::from(4), EpochSliceCounter::from(4)))
+            Ok(EpochCounter::from(4))
         );
 
         assert_eq!(
             user_db.get_tx_counter(&ADDR_2).await,
-            Ok((EpochCounter::from(2), EpochSliceCounter::from(2)))
+            Ok(EpochCounter::from(2))
         );
     }
 
@@ -179,11 +179,11 @@ mod tests {
 
             assert_eq!(
                 user_db.on_new_tx(&ADDR_1, Some(2)).await,
-                Ok(EpochSliceCounter::from(2))
+                Ok(EpochCounter::from(2))
             );
             assert_eq!(
                 user_db.on_new_tx(&ADDR_2, Some(1000)).await,
-                Ok(EpochSliceCounter::from(1000))
+                Ok(EpochCounter::from(1000))
             );
 
             db_conn.close().await.unwrap();
@@ -213,11 +213,11 @@ mod tests {
             assert!(user_db.has_user(&ADDR_2).await.unwrap());
             assert_eq!(
                 user_db.get_tx_counter(&ADDR_1).await.unwrap(),
-                (2.into(), 2.into())
+                EpochCounter::from(2)
             );
             assert_eq!(
                 user_db.get_tx_counter(&ADDR_2).await.unwrap(),
-                (1000.into(), 1000.into())
+                EpochCounter::from(1000)
             );
 
             let user_model = user_db.get_user(&ADDR_1).await.unwrap().unwrap();

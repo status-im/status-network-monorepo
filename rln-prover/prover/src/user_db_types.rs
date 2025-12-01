@@ -81,6 +81,18 @@ impl From<RateLimit> for Fr {
 #[derive(Debug, Default, Clone, Copy, PartialEq, From, Into, Add)]
 pub(crate) struct EpochCounter(u64);
 
+impl PartialEq<RateLimit> for EpochCounter {
+    fn eq(&self, other: &RateLimit) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl PartialOrd<RateLimit> for EpochCounter {
+    fn partial_cmp(&self, other: &RateLimit) -> Option<std::cmp::Ordering> {
+        Some(self.0.cmp(&other.0))
+    }
+}
+
 /// A Tx counter for a user in a given epoch slice
 #[derive(Debug, Default, Clone, Copy, PartialEq, From, Into, Add)]
 pub(crate) struct EpochSliceCounter(u64);

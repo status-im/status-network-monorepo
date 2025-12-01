@@ -30,9 +30,9 @@ impl MigrationTrait for Migration {
                     // TODO: address as binary + length limit (20 bytes)
                     .col(text(TxCounter::Address).unique_key())
                     .col(big_integer(TxCounter::Epoch).default(0))
-                    .col(big_integer(TxCounter::EpochSlice).default(0))
                     .col(big_integer(TxCounter::EpochCounter).default(0))
-                    .col(big_integer(TxCounter::EpochSliceCounter).default(0))
+                    // .col(big_integer(TxCounter::EpochSlice).default(0))
+                    // .col(big_integer(TxCounter::EpochSliceCounter).default(0))
                     .to_owned(),
             )
             .await?;
@@ -156,9 +156,9 @@ enum TxCounter {
     Id,
     Address,
     Epoch,
-    EpochSlice,
+    // EpochSlice,
     EpochCounter,
-    EpochSliceCounter,
+    // EpochSliceCounter,
 }
 
 #[allow(clippy::enum_variant_names)]
