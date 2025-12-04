@@ -146,7 +146,7 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
 
     /// @dev Sets the slash reveal window time.
     /// @param _slashRevealWindowTime: new reveal window time in seconds.
-    /// @notice The window time must be at least 1 second and no more than 365 days.
+    /// @notice The window time must be at least 1 second and no more than 1 day.
     ///         A non-zero value is required to ensure the queuing mechanism functions correctly.
     ///         An excessively large value could lock commitments indefinitely.
     function setSlashRevealWindowTime(uint256 _slashRevealWindowTime) external onlyRole(DEFAULT_ADMIN_ROLE) {
