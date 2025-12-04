@@ -171,54 +171,7 @@ contract RLNTest is Test {
         vm.stopPrank();
     }
 
-    /* ---------- SLASH ---------- */
-
-    function test_slash_succeeds() public {
-        uint256 distributorBalance = 50 ether;
-        vm.startPrank(owner);
-        karma.mint(address(distributor1), distributorBalance); // Mint Karma tokens to distributor1
-        distributor1.setUserKarmaShare(user2Addr, 10 ether);
-        vm.stopPrank();
-
-        // Register the identity first
-        vm.startPrank(registerAddr);
-        rln.register(identityCommitment1, user2Addr);
-        vm.stopPrank();
-
-        // Retrieve the assigned index
-        (, uint256 index1) = _memberData(identityCommitment1);
-
-        // burn event
-        vm.expectEmit(true, true, true, true);
-        emit IERC20Upgradeable.Transfer(user2Addr, address(0), 5 ether);
-
-        // reward mint event
-        vm.expectEmit(true, true, true, true);
-        emit IERC20Upgradeable.Transfer(address(0), rewardRecipientAddr, 0.5 ether);
-
-        // slash event
-        vm.expectEmit(true, true, true, true);
-        emit RLN.MemberSlashed(index1, slasherAddr);
-
-        vm.prank(slasherAddr);
-        rln.slash(privateKey1, rewardRecipientAddr);
-
-        // After slash, the member record should be cleared
-        (address u1, uint256 i1) = _memberData(identityCommitment1);
-        assertEq(u1, address(0));
-        assertEq(i1, 0);
-    }
-
-    function test_slash_fails_when_not_registered() public {
-        // Attempt to slash a non‐existent identity
-        vm.startPrank(slasherAddr);
-        vm.expectRevert(RLN.RLN__MemberNotFound.selector);
-        rln.slash(privateKey0, rewardRecipientAddr);
-        vm.stopPrank();
-    }
-
     /* ---------- SLASH COMMIT/REVEAL ---------- */
-
     function test_SlashCommitRevertsIfNoSlashRole() public {
         bytes32 hash = keccak256(abi.encodePacked(privateKey0, rewardRecipientAddr));
 

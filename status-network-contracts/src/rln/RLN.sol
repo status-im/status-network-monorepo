@@ -117,6 +117,23 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
         }
     }
 
+    /// @dev Slashes identity with privateKey.
+    /// @param privateKey: RLN private key as bytes32;
+    /// @param rewardRecipient: Address that will receive the slash reward;
+    function _slash(bytes32 privateKey, address rewardRecipient) internal onlyRole(SLASHER_ROLE) {
+        // Hash the private key using Poseidon to get identityCommitment
+        uint256 identityCommitment = poseidonHasher.hash(uint256(privateKey));
+
+        User memory member = members[identityCommitment];
+        if (member.userAddress == address(0)) {
+            revert RLN__MemberNotFound();
+        }
+        karma.slash(member.userAddress, rewardRecipient);
+        delete members[identityCommitment];
+
+        emit MemberSlashed(member.index, msg.sender);
+    }
+
     /// @dev Sets the slash reveal window time.
     /// @param _slashRevealWindowTime: new reveal window time in seconds.
     /// @notice The window time must be at least 1 second and no more than 365 days.
@@ -152,23 +169,6 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
         unchecked {
             identityCommitmentIndex = index + 1;
         }
-    }
-
-    /// @dev Slashes identity with privateKey.
-    /// @param privateKey: RLN private key as bytes32;
-    /// @param rewardRecipient: Address that will receive the slash reward;
-    function slash(bytes32 privateKey, address rewardRecipient) public onlyRole(SLASHER_ROLE) {
-        // Hash the private key using Poseidon to get identityCommitment
-        uint256 identityCommitment = poseidonHasher.hash(uint256(privateKey));
-
-        User memory member = members[identityCommitment];
-        if (member.userAddress == address(0)) {
-            revert RLN__MemberNotFound();
-        }
-        karma.slash(member.userAddress, rewardRecipient);
-        delete members[identityCommitment];
-
-        emit MemberSlashed(member.index, msg.sender);
     }
 
     /// @dev Commits to a future slash operation using a hash.
@@ -225,6 +225,6 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
         }
 
         delete slashCommitments[account][hash];
-        slash(privateKey, rewardRecipient);
+        _slash(privateKey, rewardRecipient);
     }
 }
