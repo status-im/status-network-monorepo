@@ -117,23 +117,6 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
         }
     }
 
-    /// @dev Slashes identity with privateKey.
-    /// @param privateKey: RLN private key as bytes32;
-    /// @param rewardRecipient: Address that will receive the slash reward;
-    function _slash(bytes32 privateKey, address rewardRecipient) internal onlyRole(SLASHER_ROLE) {
-        // Hash the private key using Poseidon to get identityCommitment
-        uint256 identityCommitment = poseidonHasher.hash(uint256(privateKey));
-
-        User memory member = members[identityCommitment];
-        if (member.userAddress == address(0)) {
-            revert RLN__MemberNotFound();
-        }
-        karma.slash(member.userAddress, rewardRecipient);
-        delete members[identityCommitment];
-
-        emit MemberSlashed(member.index, msg.sender);
-    }
-
     /// @dev Computes the slash commitment key with the slasher address and hash.
     /// The slasher address is included to ensure uniqueness per slasher, not allowing anyone else to override the same
     /// hash without even knowing the private key.
@@ -237,6 +220,23 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
         }
 
         delete slashCommitments[account][key];
-        _slash(privateKey, rewardRecipient);
+
+        uint256 identityCommitment = poseidonHasher.hash(uint256(privateKey));
+        User memory member = members[identityCommitment];
+        if (member.userAddress == address(0)) {
+            revert RLN__MemberNotFound();
+        }
+
+        // We make sure that the account slashed matches the account used during the commit phase
+        // otherwise someone could front-run the slasher by committing to slash a different account
+        // to skip the queuing mechanism.
+        if (account != member.userAddress) {
+            revert RLN__InvalidCommitment();
+        }
+
+        karma.slash(member.userAddress, rewardRecipient);
+        delete members[identityCommitment];
+
+        emit MemberSlashed(member.index, msg.sender);
     }
 }
