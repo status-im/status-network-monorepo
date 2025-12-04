@@ -134,6 +134,16 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
         emit MemberSlashed(member.index, msg.sender);
     }
 
+    /// @dev Computes the slash commitment key with the slasher address and hash.
+    /// The slasher address is included to ensure uniqueness per slasher, not allowing anyone else to override the same
+    /// hash without even knowing the private key.
+    /// @param sender: address of the slasher;
+    /// @param hash: keccak256 hash of abi.encodePacked(privateKey, rewardRecipient);
+    /// @return bytes32: the computed commitment key.
+    function _slashCommitmentKey(address sender, bytes32 hash) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(sender, hash));
+    }
+
     /// @dev Sets the slash reveal window time.
     /// @param _slashRevealWindowTime: new reveal window time in seconds.
     /// @notice The window time must be at least 1 second and no more than 365 days.
@@ -190,7 +200,8 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
             revealStartTime = lastReveal + slashRevealWindowTime;
         }
 
-        slashCommitments[account][hash] = revealStartTime;
+        bytes32 key = _slashCommitmentKey(msg.sender, hash);
+        slashCommitments[account][key] = revealStartTime;
         lastRevealStartTime[account] = revealStartTime;
     }
 
@@ -214,7 +225,8 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
     {
         /// forge-lint: disable-next-line(asm-keccak256)
         bytes32 hash = keccak256(abi.encodePacked(privateKey, rewardRecipient));
-        uint256 revealStartTime = slashCommitments[account][hash];
+        bytes32 key = _slashCommitmentKey(msg.sender, hash);
+        uint256 revealStartTime = slashCommitments[account][key];
 
         if (revealStartTime == 0) {
             revert RLN__InvalidCommitment();
@@ -224,7 +236,7 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
             revert RLN__RevealWindowNotStarted();
         }
 
-        delete slashCommitments[account][hash];
+        delete slashCommitments[account][key];
         _slash(privateKey, rewardRecipient);
     }
 }

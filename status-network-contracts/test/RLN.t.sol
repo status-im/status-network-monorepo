@@ -190,6 +190,7 @@ contract RLNTest is Test {
 
     function test_SlashCommitAddsNewHashWithSlashRole() public {
         bytes32 hash = keccak256(abi.encodePacked(privateKey0, rewardRecipientAddr));
+        bytes32 key = keccak256(abi.encodePacked(slasherAddr, hash));
 
         // Verify commitment doesn't exist yet
         assertEq(rln.slashCommitments(user1Addr, hash), 0);
@@ -199,7 +200,7 @@ contract RLNTest is Test {
         rln.slashCommit(user1Addr, hash);
 
         // Verify commitment was added with a revealStartTime
-        assertGt(rln.slashCommitments(user1Addr, hash), 0);
+        assertGt(rln.slashCommitments(user1Addr, key), 0);
 
         // Verify lastRevealStartTime was updated
         assertGt(rln.lastRevealStartTime(user1Addr), 0);
@@ -238,11 +239,13 @@ contract RLNTest is Test {
 
         // Commit the slash
         bytes32 hash = keccak256(abi.encodePacked(privateKey0, rewardRecipientAddr));
+        bytes32 key = keccak256(abi.encodePacked(slasherAddr, hash));
+
         vm.prank(slasherAddr);
         rln.slashCommit(user1Addr, hash);
 
         // Verify commitment exists with a revealStartTime
-        uint256 revealStartTime = rln.slashCommitments(user1Addr, hash);
+        uint256 revealStartTime = rln.slashCommitments(user1Addr, key);
         assertGt(revealStartTime, 0);
 
         // Warp time to allow reveal (skip to the reveal window)
@@ -265,7 +268,7 @@ contract RLNTest is Test {
         rln.slashReveal(user1Addr, privateKey0, rewardRecipientAddr);
 
         // Verify commitment was removed
-        assertEq(rln.slashCommitments(user1Addr, hash), 0);
+        assertEq(rln.slashCommitments(user1Addr, key), 0);
 
         // Verify member was slashed
         (address userAddress, uint256 userIndex) = _memberData(identityCommitment0);
@@ -299,18 +302,23 @@ contract RLNTest is Test {
     function test_SlashCommitCreatesQueueForMultipleCommits() public {
         // Commit three slashes for the same account
         bytes32 hash1 = keccak256(abi.encodePacked(privateKey0, rewardRecipientAddr));
+        bytes32 key1 = keccak256(abi.encodePacked(slasherAddr, hash1));
+
         bytes32 hash2 = keccak256(abi.encodePacked(privateKey1, rewardRecipientAddr));
+        bytes32 key2 = keccak256(abi.encodePacked(slasherAddr, hash2));
+
         bytes32 hash3 = keccak256(abi.encodePacked(privateKey2, rewardRecipientAddr));
+        bytes32 key3 = keccak256(abi.encodePacked(slasherAddr, hash3));
 
         vm.startPrank(slasherAddr);
         rln.slashCommit(user1Addr, hash1);
-        uint256 revealTime1 = rln.slashCommitments(user1Addr, hash1);
+        uint256 revealTime1 = rln.slashCommitments(user1Addr, key1);
 
         rln.slashCommit(user1Addr, hash2);
-        uint256 revealTime2 = rln.slashCommitments(user1Addr, hash2);
+        uint256 revealTime2 = rln.slashCommitments(user1Addr, key2);
 
         rln.slashCommit(user1Addr, hash3);
-        uint256 revealTime3 = rln.slashCommitments(user1Addr, hash3);
+        uint256 revealTime3 = rln.slashCommitments(user1Addr, key3);
         vm.stopPrank();
 
         // Verify that each subsequent commit has a later reveal time
