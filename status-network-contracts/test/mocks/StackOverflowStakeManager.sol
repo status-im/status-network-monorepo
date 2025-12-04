@@ -81,7 +81,7 @@ contract StackOverflowStakeManager is UUPSUpgradeable, IStakeManager, TrustedCod
     }
 
     // solhint-disable-next-line
-    function registerVault() external override {
+    function registerVault(address) external override {
         // implementation
     }
 

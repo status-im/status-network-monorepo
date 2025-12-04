@@ -79,6 +79,8 @@ contract StakeManager is
     uint256 public rewardStartTime;
     /// @notice Time when rewards end.
     uint256 public rewardEndTime;
+    /// @notice Address of the vault factory.
+    address public vaultFactory;
     /// @notice Maps vault addresses to vault data
     mapping(address vault => VaultData data) public vaultData;
     /// @notice Maps Account address to a list of vaults
@@ -112,6 +114,11 @@ contract StakeManager is
 
     modifier onlyRewardsSupplier() {
         _onlyRewardsSupplier(msg.sender);
+        _;
+    }
+
+    modifier onlyVaultFactory() {
+        _onlyVaultFactory(msg.sender);
         _;
     }
 
@@ -163,11 +170,21 @@ contract StakeManager is
     }
 
     /**
-     * @notice Registers a vault with its owner. Called by the vault itself during initialization.
-     * @dev Only callable by contracts with trusted codehash
+     * @notice Allows the owner to set the vault factory.
+     * @param _vaultFactory The address of the vault factory.
      */
-    function registerVault() external onlyNotEmergencyMode whenNotPaused onlyTrustedCodehash {
-        address vault = msg.sender;
+    function setVaultFactory(address _vaultFactory) external onlyNotEmergencyMode onlyRole(DEFAULT_ADMIN_ROLE) {
+        vaultFactory = _vaultFactory;
+        emit VaultFactorySet(_vaultFactory);
+    }
+
+    /**
+     * @notice Registers a vault with its owner. Called by the vault itself during initialization.
+     * @dev Only callable by the `vaultFactory`. This is to ensure that only vaults with correct owners are registered.
+     * @param vault The address of the vault to register.
+     */
+    function registerVault(address vault) external onlyNotEmergencyMode whenNotPaused onlyVaultFactory {
+        _onlyTrustedCodehash(vault.codehash);
         address owner = IStakeVault(vault).owner();
 
         if (vaultOwners[vault] != address(0)) {
@@ -714,6 +731,12 @@ contract StakeManager is
 
     function _onlyRewardsSupplier(address sender) internal view {
         if (sender != rewardsSupplier) {
+            revert StakeManager__Unauthorized();
+        }
+    }
+
+    function _onlyVaultFactory(address sender) internal view {
+        if (sender != vaultFactory) {
             revert StakeManager__Unauthorized();
         }
     }

@@ -26,10 +26,6 @@ rule allowedActionsAfterLeaving(method f) {
     f.selector == sig:withdraw(address,uint256,address).selector ||
     f.selector == sig:unstake(uint256).selector ||
     f.selector == sig:unstake(uint256,address).selector ||
-    // Calling register() is possible in cases where someone creates a vault without
-    // registering and *then* calling leave() directly.
-    // Unlikely scenario, but also not harmful, so no need to prevent it.
-    f.selector == sig:register().selector ||
     // In practice, `migrateFromVault()` will only be called from stake manager when `migrateToVault()`
     // is called on the stake vault, which is prohibited when hasLeft() is true.
     f.selector == sig:migrateFromVault(IStakeVault.MigrationData).selector ||

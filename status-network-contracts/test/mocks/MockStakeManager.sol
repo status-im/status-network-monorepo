@@ -18,7 +18,7 @@ contract MockStakeManager is ITrustedCodehashAccess, IStakeManager {
         return true;
     }
 
-    function registerVault() external {
+    function registerVault(address) external {
         return;
     }
 

@@ -4,6 +4,7 @@ pragma solidity 0.8.26;
 
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
+import { IStakeManager } from "./interfaces/IStakeManager.sol";
 import { StakeVault } from "./StakeVault.sol";
 
 /**
@@ -97,7 +98,7 @@ contract VaultFactory is Ownable {
     function createVault() external returns (StakeVault clone) {
         clone = StakeVault(Clones.clone(vaultImplementation));
         clone.initialize(msg.sender, stakeManager);
-        clone.register();
         emit VaultCreated(address(clone), msg.sender);
+        IStakeManager(stakeManager).registerVault(address(clone));
     }
 }

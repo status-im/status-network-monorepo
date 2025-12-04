@@ -144,6 +144,7 @@ rule allowedActionsWhenPaused(method f) {
     f.selector == sig:streamer.revokeRole(bytes32, address).selector ||
     f.selector == sig:streamer.renounceRole(bytes32, address).selector ||
     f.selector == sig:streamer.setTrustedCodehash(bytes32, bool).selector ||
+    f.selector == sig:streamer.setVaultFactory(address).selector ||
     f.selector == sig:streamer.__TrustedCodehashAccess_init(address).selector ||
     f.selector == sig:streamer.enableEmergencyMode().selector ||
     f.selector == sig:streamer.unpause().selector;
