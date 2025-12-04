@@ -17,6 +17,11 @@ contract RegisterVaultTest is StakeManagerTest {
         _createTestVault(makeAddr("foo"));
     }
 
+    function test_RevertWhen_SenderNotAuthorized() public {
+        vm.expectRevert(IStakeManager.StakeManager__Unauthorized.selector);
+        streamer.registerVault(makeAddr("foo"));
+    }
+
     function test_RevertWHen_Paused() public {
         vm.prank(admin);
         streamer.pause();

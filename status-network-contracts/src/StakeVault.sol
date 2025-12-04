@@ -107,14 +107,6 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
     }
 
     /**
-     * @notice Registers the vault with the stake manager.
-     * @dev This is necessary to allow the stake manager to interact with the vault.
-     */
-    function register() public {
-        stakeManager.registerVault();
-    }
-
-    /**
      * @notice Stake tokens for a specified time.
      * @dev This function is only callable by the owner.
      * @dev Can only be called if the stake manager is trusted.

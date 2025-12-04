@@ -40,6 +40,8 @@ interface IStakeManager is ITrustedCodehashAccess, IStakeConstants {
 
     /// @notice Emitted when a reward supplier is set
     event RewardsSupplierSet(address indexed supplier);
+    /// @notice Emitted when the vault factory is set
+    event VaultFactorySet(address indexed factory);
     /// @notice Emitted when a reward is set
     event RewardSet(uint256 amount, uint256 duration, uint256 startTime, uint256 endTime);
     /// @notice Emitted when a vault is registered.
@@ -63,8 +65,9 @@ interface IStakeManager is ITrustedCodehashAccess, IStakeConstants {
 
     /**
      * @notice Registers a vault with its owner. Called by the vault itself during initialization.
+     * @param vault The address of the vault to register.
      */
-    function registerVault() external;
+    function registerVault(address vault) external;
 
     /**
      * @notice Allows users to stake and start accruing MPs.

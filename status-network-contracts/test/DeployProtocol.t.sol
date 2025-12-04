@@ -75,6 +75,11 @@ contract DeployProtocolTest is Test {
             address(karma),
             "StakeManager should use Karma as rewards supplier"
         );
+        assertEq(
+            address(stakeManager.vaultFactory()),
+            address(vaultFactory),
+            "StakeManager should reference correct VaultFactory"
+        );
     }
 
     function testVaultFactoryConfiguration() public view {

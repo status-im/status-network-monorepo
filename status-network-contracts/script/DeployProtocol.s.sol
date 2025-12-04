@@ -207,6 +207,8 @@ contract DeployProtocolScript is BaseScript {
         simpleKarmaDistributor.setRewardsSupplier(address(karma));
         console.log("Set rewards supplier (Karma) for SimpleRewardDistributor");
 
+        stakeManager.setVaultFactory(address(vaultFactory));
+        console.log("Set vault factory (VaultFactory) for StakeManager");
         // whitelist StakeVault proxy clone codehash in StakeManager
         stakeManager.setTrustedCodehash(vaultProxyClone.codehash, true);
         console.log("Set trusted codehash for StakeVault proxy clone:", vaultProxyClone);

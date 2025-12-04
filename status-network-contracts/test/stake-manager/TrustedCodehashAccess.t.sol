@@ -15,16 +15,14 @@ contract TrustedCodehashAccessTest is StakeManagerTest {
 
     function test_RevertWhenProxyCloneCodehashNotTrusted() public {
         // create independent (possibly malicious) StakeVault
+        // the reason this tpl will fail is because StakeManager only trusts
+        // the proxy clone codehash, not the implementation codehash
         address vaultTpl = address(new StakeVault(stakingToken));
-        StakeVault proxyClone = StakeVault(Clones.clone(vaultTpl));
-        proxyClone.initialize(address(this), address(streamer));
+        vm.prank(admin);
+        vaultFactory.setVaultImplementation(vaultTpl);
 
         // registering already fails as codehash is not trusted
         vm.expectRevert(ITrustedCodehashAccess.TrustedCodehashAccess__UnauthorizedCodehash.selector);
-        proxyClone.register();
-
-        // staking fails as codehash is not trusted
-        vm.expectRevert(ITrustedCodehashAccess.TrustedCodehashAccess__UnauthorizedCodehash.selector);
-        proxyClone.stake(10e10, 0);
+        vaultFactory.createVault();
     }
 }

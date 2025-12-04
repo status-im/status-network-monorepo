@@ -50,6 +50,7 @@ contract StakeManagerTest is StakeMath, Test {
         karma.addRewardDistributor(address(streamer));
         karma.setAllowedToTransfer(address(streamer), true);
         streamer.setRewardsSupplier(address(karma));
+        streamer.setVaultFactory(address(vaultFactory));
         streamer.grantRole(streamer.GUARDIAN_ROLE(), address(guardian));
         streamer.setTrustedCodehash(vaultProxyClone.codehash, true);
         vm.stopPrank();

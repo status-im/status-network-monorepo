@@ -29,11 +29,6 @@ interface IStakeVault {
     function stakeManager() external view returns (IStakeManager);
 
     /**
-     * @notice Registers the vault with the stake manager proxy
-     */
-    function register() external;
-
-    /**
      * @notice The timestamp until which the funds are locked
      * @return uint256 The timestamp until which the funds are locked
      */
