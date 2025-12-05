@@ -299,6 +299,32 @@ contract RLNTest is Test {
         rln.slashReveal(user1Addr, privateKey0, rewardRecipientAddr);
     }
 
+    function test_SlashRevealRevertsIfAccountIsDifferentFromTheOneUsedDuringCommit() public {
+        vm.startPrank(owner);
+        karma.mint(user1Addr, 10 ether);
+        karma.mint(user2Addr, 10 ether);
+        vm.stopPrank();
+
+        vm.startPrank(registerAddr);
+        rln.register(identityCommitment1, user1Addr);
+        rln.register(identityCommitment2, user2Addr);
+        vm.stopPrank();
+
+        // commit slash for pk1 and user1
+        bytes32 hash1 = keccak256(abi.encodePacked(privateKey1, rewardRecipientAddr));
+        vm.prank(slasherAddr);
+        rln.slashCommit(user1Addr, hash1);
+
+        // malicious commit trying to slash pk1 using the empty queue of user2
+        vm.prank(slasherAddr);
+        rln.slashCommit(user2Addr, hash1);
+
+        // Attempt to reveal pk1 using queue for user2, so we skip the first commit in the queue
+        vm.expectRevert(RLN.RLN__InvalidCommitment.selector);
+        vm.prank(slasherAddr);
+        rln.slashReveal(user2Addr, privateKey1, rewardRecipientAddr);
+    }
+
     function test_SlashCommitCreatesQueueForMultipleCommits() public {
         // Commit three slashes for the same account
         bytes32 hash1 = keccak256(abi.encodePacked(privateKey0, rewardRecipientAddr));
