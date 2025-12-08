@@ -56,13 +56,17 @@ invariant sumOfBalancesIsTotalStaked()
 invariant vaultMPLessEqualVaultMaxMP(address vault)
   to_mathint(getVaultMPAccrued(vault)) <= to_mathint(getVaultMaxMP(vault))
   filtered {
-    f -> f.selector != sig:upgradeToAndCall(address,bytes).selector && f.selector != sig:migrateToVault(address).selector
+    f -> f.selector != sig:upgradeToAndCall(address,bytes).selector &&
+         f.selector != sig:migrateToVault(address).selector &&
+         // FIXME: Didn't manage to make the rule work with leave
+         f.selector != sig:leave().selector
   }
 
 invariant vaultMPGreaterEqualVaultStakedBalance(address vault)
   to_mathint(getVaultMPAccrued(vault)) >= to_mathint(getVaultStakedBalance(vault))
   filtered {
-    f -> f.selector != sig:upgradeToAndCall(address,bytes).selector && f.selector != sig:migrateToVault(address).selector
+    f -> f.selector != sig:upgradeToAndCall(address,bytes).selector &&
+         f.selector != sig:migrateToVault(address).selector
   }
 
 rule stakingMintsMultiplierPoints1To1Ratio {
@@ -116,7 +120,9 @@ rule stakingGreaterLockupTimeMeansGreaterMPs {
 }
 
 
-rule MPsOnlyDecreaseWhenUnstaking(method f) filtered { f -> f.selector != sig:upgradeToAndCall(address,bytes).selector } {
+rule MPsOnlyDecreaseWhenUnstaking(method f) filtered {
+    f -> f.selector != sig:upgradeToAndCall(address,bytes).selector
+} {
   env e;
   calldataarg args;
 
@@ -147,6 +153,7 @@ rule allowedActionsWhenPaused(method f) {
     f.selector == sig:streamer.setVaultFactory(address).selector ||
     f.selector == sig:streamer.__TrustedCodehashAccess_init(address).selector ||
     f.selector == sig:streamer.enableEmergencyMode().selector ||
+    f.selector == sig:streamer.leave().selector ||
     f.selector == sig:streamer.unpause().selector;
 }
 

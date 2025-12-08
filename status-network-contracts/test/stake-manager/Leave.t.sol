@@ -63,66 +63,6 @@ contract LeaveTest is StakeManagerTest {
         assertEq(stakingToken.balanceOf(alice), aliceInitialBalance, "Alice has all her funds back");
     }
 
-    function test_LeaveShouldRedeemRewardsToActualKarma() public {
-        vm.startPrank(admin);
-        karma.setReward(address(streamer), 1000e18, 10 days);
-        vm.stopPrank();
-
-        uint256 aliceInitialBalance = stakingToken.balanceOf(alice);
-        uint256 streamerInitialKarmaBalance = karma.balanceOfRewardDistributor(address(streamer));
-
-        _stake(alice, 100e18, 0);
-
-        assertEq(stakingToken.balanceOf(alice), aliceInitialBalance - 100e18, "Alice should have staked tokens");
-
-        checkStreamer(
-            CheckStreamerParams({
-                totalStaked: 100e18,
-                totalMPStaked: 100e18,
-                totalMPAccrued: 100e18,
-                totalMaxMP: 500e18,
-                stakingBalance: 100e18,
-                rewardBalance: 0,
-                rewardIndex: 0
-            })
-        );
-
-        vm.warp(block.timestamp + 10 days);
-
-        _leave(alice);
-
-        // stake manager properly updates accounting
-        checkStreamer(
-            CheckStreamerParams({
-                totalStaked: 0,
-                totalMPStaked: 0,
-                totalMPAccrued: 0,
-                totalMaxMP: 0,
-                stakingBalance: 0,
-                rewardBalance: 0,
-                rewardIndex: 0
-            })
-        );
-
-        // vault should be empty as funds have been moved out
-        checkVault(
-            CheckVaultParams({
-                account: vaults[alice],
-                rewardBalance: 0,
-                stakedBalance: 0,
-                vaultBalance: 0,
-                rewardIndex: 0,
-                mpAccrued: 0,
-                maxMP: 0,
-                rewardsAccrued: 0
-            })
-        );
-
-        assertEq(stakingToken.balanceOf(alice), aliceInitialBalance, "Alice has all her funds back");
-        assertEq(karma.balanceOfRewardDistributor(address(streamer)), 0, "Streamer has no Karma left");
-        assertEq(karma.balanceOf(alice), streamerInitialKarmaBalance, "Alice has all the Karma rewards");
-    }
-
     function test_LeaveShouldKeepFundsLockedInStakeVault() public {
         uint256 aliceInitialBalance = stakingToken.balanceOf(alice);
         uint256 stakeAmount = 10e18;
@@ -147,6 +87,77 @@ contract LeaveTest is StakeManagerTest {
         vault.withdraw(token, stakeAmount);
 
         assertEq(stakingToken.balanceOf(alice), aliceInitialBalance, "Alice has withdrawn her funds");
+    }
+
+    function test_LeaveShouldNotRedeemAccruedRewardsWhenSystemIsPaused() public {
+        vm.startPrank(admin);
+        karma.setReward(address(streamer), 1000e18, 10 days);
+        vm.stopPrank();
+
+        uint256 aliceInitialBalance = stakingToken.balanceOf(alice);
+
+        _stake(alice, 100e18, 0);
+
+        assertEq(stakingToken.balanceOf(alice), aliceInitialBalance - 100e18, "Alice should have staked tokens");
+
+        checkStreamer(
+            CheckStreamerParams({
+                totalStaked: 100e18,
+                totalMPStaked: 100e18,
+                totalMPAccrued: 100e18,
+                totalMaxMP: 500e18,
+                stakingBalance: 100e18,
+                rewardBalance: 0,
+                rewardIndex: 0
+            })
+        );
+
+        vm.warp(block.timestamp + 5 days);
+
+        // Check that rewards have accrued (before pause)
+        uint256 aliceRewardsBeforePause = streamer.rewardsBalanceOf(vaults[alice]);
+        assertEq(aliceRewardsBeforePause, 500e18, "Alice should have half the rewards (5 days)");
+
+        // Update global state to reflect accrued rewards
+        streamer.updateGlobalState();
+        // Pause the system
+        vm.prank(guardian);
+        streamer.pause();
+
+        assertTrue(streamer.paused(), "System should be paused");
+
+        // Get totalRewardsAccrued before leave
+        uint256 totalRewardsAccruedBeforeLeave = streamer.totalRewardsAccrued();
+        assertGt(totalRewardsAccruedBeforeLeave, 0, "Total rewards accrued should be greater than 0");
+
+        // Alice leaves while system is paused
+        _leave(alice);
+
+        // Verify totalRewardsAccrued was properly decremented
+        assertEq(
+            streamer.totalRewardsAccrued(),
+            totalRewardsAccruedBeforeLeave,
+            "Total rewards accrued should not be decremented"
+        );
+
+        // Vault should be empty
+        checkVault(
+            CheckVaultParams({
+                account: vaults[alice],
+                rewardBalance: 0,
+                stakedBalance: 0,
+                vaultBalance: 0,
+                rewardIndex: 0,
+                mpAccrued: 0,
+                maxMP: 0,
+                rewardsAccrued: 0
+            })
+        );
+
+        assertEq(streamer.rewardsBalanceOf(vaults[alice]), 0, "Alice should have lost her unsettled rewards");
+
+        // Alice gets her staked tokens back
+        assertEq(stakingToken.balanceOf(alice), aliceInitialBalance, "Alice should have all her staked tokens back");
     }
 }
 
