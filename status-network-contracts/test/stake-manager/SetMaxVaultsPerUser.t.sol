@@ -5,7 +5,7 @@ import { IStakeManager } from "../../src/interfaces/IStakeManager.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { StakeManagerTest } from "./StakeManagerBase.t.sol";
 
-contract SetRewardSupplierTest is StakeManagerTest {
+contract SetMaxVaultsPerUserTest is StakeManagerTest {
     function setUp() public virtual override {
         super.setUp();
     }
@@ -18,7 +18,7 @@ contract SetRewardSupplierTest is StakeManagerTest {
         // attempt to set reward supplier
         vm.prank(admin);
         vm.expectRevert(IStakeManager.StakeManager__EmergencyModeEnabled.selector);
-        streamer.setRewardsSupplier(alice);
+        streamer.setMaxVaultsPerUser(10);
     }
 
     function test_RevertWhen_NotAdmin() public {
@@ -35,12 +35,19 @@ contract SetRewardSupplierTest is StakeManagerTest {
             )
         );
         vm.prank(alice);
-        streamer.setRewardsSupplier(alice);
+        streamer.setMaxVaultsPerUser(10);
     }
 
-    function test_SetRewardSupplier_Success() public {
+    function test_RevertWhen_SettingZero() public {
         vm.prank(admin);
-        streamer.setRewardsSupplier(alice);
-        assertEq(streamer.rewardsSupplier(), alice);
+        vm.expectRevert(IStakeManager.StakeManager__MaxVaultsPerUserCannotBeZero.selector);
+        streamer.setMaxVaultsPerUser(0);
+    }
+
+    function test_SetMaxVaultsPerUser_Success() public {
+        vm.prank(admin);
+        streamer.setMaxVaultsPerUser(10);
+        assertEq(streamer.maxVaultsPerUser(), 10);
     }
 }
+

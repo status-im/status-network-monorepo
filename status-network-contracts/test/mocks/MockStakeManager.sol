@@ -1,6 +1,7 @@
 pragma solidity 0.8.26;
 
 import { IStakeManager } from "../../src/interfaces/IStakeManager.sol";
+import { IStakeVault } from "../../src/interfaces/IStakeVault.sol";
 import { ITrustedCodehashAccess } from "../../src/interfaces/ITrustedCodehashAccess.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -41,6 +42,10 @@ contract MockStakeManager is ITrustedCodehashAccess, IStakeManager {
 
     function migrateToVault(address) external {
         return;
+    }
+
+    function createMigrationVault() external returns (IStakeVault) {
+        return IStakeVault(address(0));
     }
 
     function updateVault(address) external {
@@ -85,5 +90,13 @@ contract MockStakeManager is ITrustedCodehashAccess, IStakeManager {
 
     function MAX_MULTIPLIER() external view returns (uint256) {
         return 0;
+    }
+
+    function MAX_VAULTS_PER_USER() external view returns (uint8) {
+        return 5;
+    }
+
+    function getAccountVaults(address owner) external view returns (address[] memory) {
+        return new address[](3);
     }
 }

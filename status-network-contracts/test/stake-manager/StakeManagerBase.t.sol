@@ -19,6 +19,7 @@ contract StakeManagerTest is StakeMath, Test {
     StakeManager public streamer;
     VaultFactory public vaultFactory;
     Karma public karma;
+    uint256 maxVaultsPerUser = 5;
 
     address internal admin;
     address internal alice = makeAddr("alice");
@@ -35,7 +36,8 @@ contract StakeManagerTest is StakeMath, Test {
         DeployVaultFactoryScript vaultFactoryDeployment = new DeployVaultFactoryScript();
 
         (karma,) = karmaDeployment.runForTest();
-        (StakeManager stakeManager, DeploymentConfig deploymentConfig) = deployment.runForTest(address(karma));
+        (StakeManager stakeManager, DeploymentConfig deploymentConfig) =
+            deployment.runForTest(address(karma), maxVaultsPerUser);
         (address _deployer, address _stakingToken) = deploymentConfig.activeNetworkConfig();
         (VaultFactory _vaultFactory,, address vaultProxyClone,) =
             vaultFactoryDeployment.runForTest(address(stakeManager), _stakingToken);

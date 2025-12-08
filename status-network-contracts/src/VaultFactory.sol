@@ -27,8 +27,10 @@ import { StakeVault } from "./StakeVault.sol";
 contract VaultFactory is Ownable {
     /// @notice Emitted when the provided `StakeManager` address is zero.
     error VaultFactory__InvalidStakeManagerAddress();
-    /// @notice Emitted when a new vault is created.
+    /// @notice Emitted when the caller is not authorized to perform the action.
+    error VaultFactory__Unauthorized();
 
+    /// @notice Emitted when a new vault is created.
     event VaultCreated(address indexed vault, address indexed owner);
     /// @notice Emitted when the `StakeManager` contract address is changed.
     event StakeManagerAddressChanged(address indexed newStakeManagerAddress);
@@ -40,9 +42,16 @@ contract VaultFactory is Ownable {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @dev Address of the `StakeManager` contract instance.
-    address public stakeManager;
+    IStakeManager public stakeManager;
     /// @dev Address of the `StakeVault` implementation contract.
     address public vaultImplementation;
+
+    modifier onlyStakeManager() {
+        if (msg.sender != address(stakeManager)) {
+            revert VaultFactory__Unauthorized();
+        }
+        _;
+    }
 
     /*//////////////////////////////////////////////////////////////////////////
                                      CONSTRUCTOR
@@ -59,7 +68,7 @@ contract VaultFactory is Ownable {
         if (_stakeManager == address(0)) {
             revert VaultFactory__InvalidStakeManagerAddress();
         }
-        stakeManager = _stakeManager;
+        stakeManager = IStakeManager(_stakeManager);
         vaultImplementation = _vaultImplementation;
         _transferOwnership(_owner);
     }
@@ -75,7 +84,7 @@ contract VaultFactory is Ownable {
      * @param _stakeManager Address of the `StakeManager` contract instance.
      */
     function setStakeManager(address _stakeManager) external onlyOwner {
-        stakeManager = _stakeManager;
+        stakeManager = IStakeManager(_stakeManager);
         emit StakeManagerAddressChanged(_stakeManager);
     }
 
@@ -93,12 +102,27 @@ contract VaultFactory is Ownable {
     /**
      * @notice Creates an instance of a `StakeVault` contract.
      * @dev Also takes care of registering the newly created `StakeVault` contract.
-     * @return clone Address of the newly created `StakeVault` contract.
+     * @return vault Address of the newly created `StakeVault` contract.
      */
-    function createVault() external returns (StakeVault clone) {
+    function createVault() external returns (StakeVault vault) {
+        vault = _createVault(msg.sender);
+        stakeManager.registerVault(address(vault));
+    }
+
+    /**
+     * @notice Creates an instance of a `StakeVault` contract.
+     * @dev The vault being migrated from must be registered in the `StakeManager`.
+     * @dev Does not register the newly created `StakeVault` contract.
+     * @param vaultOwner Address of the owner of the migration vault.
+     * @return clone Address of the newly created migration `StakeVault` contract.
+     */
+    function createVaultWithoutRegistration(address vaultOwner) external onlyStakeManager returns (StakeVault clone) {
+        return _createVault(vaultOwner);
+    }
+
+    function _createVault(address owner) internal returns (StakeVault clone) {
         clone = StakeVault(Clones.clone(vaultImplementation));
-        clone.initialize(msg.sender, stakeManager);
-        emit VaultCreated(address(clone), msg.sender);
-        IStakeManager(stakeManager).registerVault(address(clone));
+        clone.initialize(owner, address(stakeManager));
+        emit VaultCreated(address(clone), owner);
     }
 }

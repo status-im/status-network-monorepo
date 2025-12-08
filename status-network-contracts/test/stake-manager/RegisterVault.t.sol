@@ -30,6 +30,18 @@ contract RegisterVaultTest is StakeManagerTest {
         _createTestVault(makeAddr("foo"));
     }
 
+    function test_RevertWhen_MaxVaultLimitIsReached() public {
+        address owner = makeAddr("vault owner");
+        _createTestVault(owner);
+        _createTestVault(owner);
+        _createTestVault(owner);
+        _createTestVault(owner);
+        _createTestVault(owner);
+
+        vm.expectRevert(IStakeManager.StakeManager__MaxVaultsPerUserReached.selector);
+        _createTestVault(owner);
+    }
+
     function test_VaultRegistration() public view {
         address[4] memory accounts = [alice, bob, charlie, dave];
         for (uint256 i = 0; i < accounts.length; i++) {

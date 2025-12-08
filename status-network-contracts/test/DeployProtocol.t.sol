@@ -32,9 +32,10 @@ contract DeployProtocolTest is Test {
         stakingToken = new MockToken("Staking Token", "STK");
 
         deployProtocol = new DeployProtocolScript();
+        uint256 maxVaultsPerUser = 5;
 
         (karma, metadataGenerator, karmaNFT, stakeManager, vaultFactory, vaultImpl, deploymentConfig) =
-            deployProtocol.runForTest(address(stakingToken));
+            deployProtocol.runForTest(address(stakingToken), maxVaultsPerUser);
 
         (deployer,) = deploymentConfig.activeNetworkConfig();
     }

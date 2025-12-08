@@ -12,6 +12,8 @@ import { IRewardDistributor } from "./interfaces/IRewardDistributor.sol";
 import { TrustedCodehashAccess } from "./TrustedCodehashAccess.sol";
 import { StakeMath } from "./math/StakeMath.sol";
 
+import { VaultFactory } from "./VaultFactory.sol";
+
 // solhint-disable max-states-count
 /**
  * @title StakeManager
@@ -81,6 +83,8 @@ contract StakeManager is
     uint256 public rewardEndTime;
     /// @notice Address of the vault factory.
     address public vaultFactory;
+    /// @notice Maximum number of vaults a user can have.
+    uint256 public maxVaultsPerUser;
     /// @notice Maps vault addresses to vault data
     mapping(address vault => VaultData data) public vaultData;
     /// @notice Maps Account address to a list of vaults
@@ -144,14 +148,24 @@ contract StakeManager is
      * @param _owner Address of the owner of the contract.
      * @param _stakingToken Address of the staking token.
      * @param _rewardToken Address of the reward token.
+     * @param _maxVaultsPerUser Maximum number of vaults a user can have.
      */
-    function initialize(address _owner, address _stakingToken, address _rewardToken) external initializer {
+    function initialize(
+        address _owner,
+        address _stakingToken,
+        address _rewardToken,
+        uint256 _maxVaultsPerUser
+    )
+        external
+        initializer
+    {
         __TrustedCodehashAccess_init(_owner);
         __UUPSUpgradeable_init();
 
         STAKING_TOKEN = IERC20(_stakingToken);
         REWARD_TOKEN = IERC20(_rewardToken);
         lastMPUpdatedTime = block.timestamp;
+        maxVaultsPerUser = _maxVaultsPerUser;
     }
 
     /**
@@ -159,12 +173,7 @@ contract StakeManager is
      * @dev The supplier is going to be the `Karma` token.
      * @param _rewardsSupplier The address of the rewards supplier.
      */
-    function setRewardsSupplier(address _rewardsSupplier)
-        external
-        onlyNotEmergencyMode
-        whenNotPaused
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
+    function setRewardsSupplier(address _rewardsSupplier) external onlyNotEmergencyMode onlyRole(DEFAULT_ADMIN_ROLE) {
         rewardsSupplier = _rewardsSupplier;
         emit RewardsSupplierSet(_rewardsSupplier);
     }
@@ -179,13 +188,33 @@ contract StakeManager is
     }
 
     /**
-     * @notice Registers a vault with its owner. Called by the vault itself during initialization.
+     * @notice Allows the owner to set the maximum number of vaults per user.
+     * @param _maxVaultsPerUser The maximum number of vaults a user can have.
+     */
+    function setMaxVaultsPerUser(uint256 _maxVaultsPerUser)
+        external
+        onlyNotEmergencyMode
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        if (_maxVaultsPerUser == 0) {
+            revert StakeManager__MaxVaultsPerUserCannotBeZero();
+        }
+        maxVaultsPerUser = _maxVaultsPerUser;
+        emit MaxVaultsPerUserSet(_maxVaultsPerUser);
+    }
+
+    /**
+     * @notice Registers a vault with its owner. Called by the vault factory.
      * @dev Only callable by the `vaultFactory`. This is to ensure that only vaults with correct owners are registered.
      * @param vault The address of the vault to register.
+     * max vaults per user check.
      */
     function registerVault(address vault) external onlyNotEmergencyMode whenNotPaused onlyVaultFactory {
-        _onlyTrustedCodehash(vault.codehash);
         address owner = IStakeVault(vault).owner();
+        if (vaults[owner].length >= maxVaultsPerUser) {
+            revert StakeManager__MaxVaultsPerUserReached();
+        }
+        _onlyTrustedCodehash(vault.codehash);
 
         if (vaultOwners[vault] != address(0)) {
             revert StakeManager__VaultAlreadyRegistered();
@@ -328,6 +357,7 @@ contract StakeManager is
             _unstake(vault.stakedBalance, vault);
         }
         delete vaultData[msg.sender];
+        _deregisterVault(msg.sender);
         emit VaultLeft(msg.sender);
     }
 
@@ -508,10 +538,35 @@ contract StakeManager is
         });
 
         IStakeVault(migrateTo).migrateFromVault(migrationData);
-
-        delete vaultData[msg.sender];
+        _deregisterVault(msg.sender);
 
         emit VaultMigrated(msg.sender, migrateTo);
+    }
+
+    /**
+     * @notice Creates a new vault for migration purposes.
+     * @dev This function is only callable by trusted stake vaults.
+     * @dev The newly created vault is automatically registered.
+     * @dev The new vault is created using the `VaultFactory`.
+     * @return vault The address of the newly created migration vault.
+     */
+    function createMigrationVault()
+        external
+        onlyNotEmergencyMode
+        whenNotPaused
+        onlyTrustedCodehash
+        onlyRegisteredVault
+        returns (IStakeVault vault)
+    {
+        // we know the owner of the vault is legit because of onlyRegisteredVault modifier
+        address vaultOwner = vaultOwners[msg.sender];
+        vault = VaultFactory(vaultFactory).createVaultWithoutRegistration(vaultOwner);
+
+        // ensure the newly created vault is registered
+        vaultOwners[address(vault)] = vaultOwner;
+        vaults[vaultOwner].push(address(vault));
+        emit VaultRegistered(address(vault), vaultOwner);
+        return vault;
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -575,6 +630,23 @@ contract StakeManager is
         totalMPAccrued -= _deltaMpTotal;
         totalMaxMP -= _deltaMpMax;
         totalStaked -= amount;
+    }
+
+    function _deregisterVault(address vaultAddress) internal {
+        address owner = vaultOwners[vaultAddress];
+        delete vaultOwners[vaultAddress];
+
+        address[] storage ownerVaults = vaults[owner];
+        for (uint256 i = 0; i < ownerVaults.length; i++) {
+            if (ownerVaults[i] == vaultAddress) {
+                ownerVaults[i] = ownerVaults[ownerVaults.length - 1];
+                ownerVaults.pop();
+                break;
+            }
+        }
+
+        delete vaultData[vaultAddress];
+        emit VaultDeregistered(vaultAddress, owner);
     }
 
     function _totalShares() internal view returns (uint256) {

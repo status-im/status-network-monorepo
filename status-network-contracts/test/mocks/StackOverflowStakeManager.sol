@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import { IStakeManager } from "./../../src/interfaces/IStakeManager.sol";
+import { IStakeVault } from "./../../src/interfaces/IStakeVault.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { TrustedCodehashAccess } from "./../../src/TrustedCodehashAccess.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -16,6 +17,7 @@ contract StackOverflowStakeManager is UUPSUpgradeable, IStakeManager, TrustedCod
     uint256 public constant MIN_LOCKUP_PERIOD = 90 days;
     uint256 public constant MAX_LOCKUP_PERIOD = 4 * 365 days;
     uint256 public constant MAX_MULTIPLIER = 4;
+    uint8 public constant MAX_VAULTS_PER_USER = 3;
 
     uint256 public totalStaked;
     uint256 public totalMPAccrued;
@@ -88,5 +90,13 @@ contract StackOverflowStakeManager is UUPSUpgradeable, IStakeManager, TrustedCod
     // solhint-disable-next-line
     function migrateToVault(address _migrateTo) external override {
         // implementation
+    }
+
+    function createMigrationVault() external override returns (IStakeVault) {
+        // implementation
+    }
+
+    function getAccountVaults(address owner) external view returns (address[] memory) {
+        return new address[](3);
     }
 }

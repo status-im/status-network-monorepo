@@ -63,6 +63,20 @@ contract LeaveTest is StakeManagerTest {
         assertEq(stakingToken.balanceOf(alice), aliceInitialBalance, "Alice has all her funds back");
     }
 
+    function test_LeaveShouldDeregisterLeavingVault() public {
+        uint256 stakeAmount = 100e18;
+
+        _stake(alice, stakeAmount, 0);
+
+        address[] memory vaultsBefore = streamer.getAccountVaults(alice);
+        assertEq(vaultsBefore.length, 1, "Alice should have one vault registered");
+
+        _leave(alice);
+
+        address[] memory vaultsAfter = streamer.getAccountVaults(alice);
+        assertEq(vaultsAfter.length, 0, "Alice should have no vaults registered after leaving");
+    }
+
     function test_LeaveShouldKeepFundsLockedInStakeVault() public {
         uint256 aliceInitialBalance = stakingToken.balanceOf(alice);
         uint256 stakeAmount = 10e18;

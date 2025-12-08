@@ -17,6 +17,6 @@ contract SetStakeManagerTest is VaultFactoryTest {
     function testSetStakeManager() public {
         vm.prank(admin);
         vaultFactory.setStakeManager(makeAddr("some address"));
-        assertEq(vaultFactory.stakeManager(), makeAddr("some address"));
+        assertEq(address(vaultFactory.stakeManager()), makeAddr("some address"));
     }
 }

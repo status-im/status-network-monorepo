@@ -212,13 +212,7 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
         if (IStakeVault(migrateTo).owner() != owner()) {
             revert StakeVault__NotAuthorized();
         }
-        stakeManager.migrateToVault(migrateTo);
-        depositedBalance = 0;
-        lockUntil = 0;
-        bool success = STAKING_TOKEN.transfer(migrateTo, STAKING_TOKEN.balanceOf(address(this)));
-        if (!success) {
-            revert StakeVault__MigrationFailed();
-        }
+        _migrateToVault(migrateTo);
     }
 
     /**
@@ -232,6 +226,17 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
         }
         lockUntil = data.lockUntil;
         depositedBalance = data.depositedBalance;
+    }
+
+    /**
+     * @notice Replace the current vault with a new migration vault created by the stake manager.
+     * @dev This function is only callable by the owner.
+     * @dev Reverts when the stake manager reverts or the funds can't be transferred.
+     */
+    function replaceVault() external onlyOwner onlyNotLeft returns (address) {
+        address migrateTo = address(stakeManager.createMigrationVault());
+        _migrateToVault(migrateTo);
+        return migrateTo;
     }
 
     /**
@@ -287,6 +292,16 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
     /*//////////////////////////////////////////////////////////////////////////
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
+
+    function _migrateToVault(address migrateTo) internal {
+        stakeManager.migrateToVault(migrateTo);
+        depositedBalance = 0;
+        lockUntil = 0;
+        bool success = STAKING_TOKEN.transfer(migrateTo, STAKING_TOKEN.balanceOf(address(this)));
+        if (!success) {
+            revert StakeVault__MigrationFailed();
+        }
+    }
 
     /**
      * @dev Overrides the `_transferOwnership` function to prevent ownership transfer.
