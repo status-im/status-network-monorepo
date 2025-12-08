@@ -26,7 +26,6 @@ until the lock period expires.
 When a vault calls `leave()`:
 
 - The vault is immediately marked as having left (`hasLeft = true`)
-- Accrued Karma rewards are transferred to the owner immediately
 - Staking tokens (SNT) are only transferred if `lockUntil <= block.timestamp`
 
 ### No Incentive to Leave Early
@@ -35,7 +34,6 @@ Since locked stakes remain locked even after calling `leave()`, there's no incen
 expires. Users calling `leave()` while locked will:
 
 - Be marked as having left the system
-- Receive their accrued Karma rewards immediately
 - **Not** receive their staking tokens until the lock expires
 
 This ensures the lock period mechanism maintains its integrity even when users exit the system.

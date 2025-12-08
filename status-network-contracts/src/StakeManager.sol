@@ -321,29 +321,13 @@ contract StakeManager is
      * @dev After calling this function, the vault will no longer be able to stake or earn rewards.
      * @dev The vault will still be registered, but with zero balances.
      */
-    function leave() external whenNotPaused onlyTrustedCodehash {
-        _updateGlobalState();
-        _updateVault(msg.sender, false);
-
+    function leave() external onlyTrustedCodehash {
         VaultData storage vault = vaultData[msg.sender];
-
         if (vault.stakedBalance > 0) {
             // calling `_unstake` to update accounting accordingly
             _unstake(vault.stakedBalance, vault);
         }
-
-        uint256 rewardsToRedeem = vault.rewardsAccrued;
-        // reset accrued rewards
-        totalRewardsAccrued -= rewardsToRedeem;
-        vault.rewardsAccrued = 0;
-        vault.rewardIndex = 0;
-        // further cleanup that isn't done in `_unstake`
-        vault.lastMPUpdateTime = 0;
-
-        bool success = REWARD_TOKEN.transfer(IStakeVault(msg.sender).owner(), rewardsToRedeem);
-        if (!success) {
-            revert StakeManager__RewardTransferFailed();
-        }
+        delete vaultData[msg.sender];
         emit VaultLeft(msg.sender);
     }
 
@@ -467,6 +451,7 @@ contract StakeManager is
 
     /**
      * @notice Pauses the system.
+     * @dev Updates global state before pausing to freeze rewards/MPs at the pause timestamp.
      */
     function pause() external onlyNotEmergencyMode onlyAdminOrGuardian {
         _pause();
@@ -474,6 +459,7 @@ contract StakeManager is
 
     /**
      * @notice Unpauses the system.
+     * @dev Resets time tracking for MPs and rewards to prevent accruing rewards for paused period.
      */
     function unpause() external onlyNotEmergencyMode onlyAdminOrGuardian {
         _unpause();

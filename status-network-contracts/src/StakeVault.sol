@@ -171,7 +171,6 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
     /**
      * @notice Allows the vault to leave the system and withdraw all funds.
      * @dev This function is only callable by the owner.
-     * @dev Vaults can only leave the system if the stake manager is not trusted.
      * @param _destination The address to receive the funds.
      */
     function leave(address _destination) external onlyOwner validDestination(_destination) {
