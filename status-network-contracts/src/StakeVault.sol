@@ -48,7 +48,8 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
     error StakeVault__MarkedAsLeft();
     /// @notice Emitted when leaving the system failed
     error StakeVault__FailedToLeave();
-
+    /// @notice Emitted when migration failed
+    error StakeVault__InvalidMigrationTarget();
     /*//////////////////////////////////////////////////////////////////////////
                                   STATE VARIABLES
     //////////////////////////////////////////////////////////////////////////*/
@@ -214,6 +215,9 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
      * @param migrateTo The address of the new vault.
      */
     function migrateToVault(address migrateTo) external onlyOwner onlyNotLeft {
+        if (migrateTo == address(this)) {
+            revert StakeVault__InvalidMigrationTarget();
+        }
         if (IStakeVault(migrateTo).owner() != owner()) {
             revert StakeVault__NotAuthorized();
         }
