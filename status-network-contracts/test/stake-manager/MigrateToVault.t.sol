@@ -8,7 +8,7 @@ import { StakeVault } from "../../src/StakeVault.sol";
 
 import { StakeManagerTest } from "./StakeManagerBase.t.sol";
 
-contract StakeVaultMigrationTest is StakeManagerTest {
+contract StakeVaultMigrateToVaultTest is StakeManagerTest {
     function setUp() public virtual override {
         super.setUp();
     }
@@ -117,6 +117,7 @@ contract StakeVaultMigrationTest is StakeManagerTest {
         uint256 prevVaultLockUntil = StakeVault(vaults[alice]).lockUntil();
 
         uint256 prevVaultDepositedBalance = StakeVault(vaults[alice]).depositedBalance();
+        uint256 prevVaultAmount = streamer.getAccountVaults(alice).length;
 
         // alice migrates to new vault
         vm.prank(alice);
@@ -149,6 +150,11 @@ contract StakeVaultMigrationTest is StakeManagerTest {
             })
         );
 
+        assertEq(
+            streamer.getAccountVaults(alice).length,
+            prevVaultAmount - 1,
+            "alice should have one vault less, as the old one is deregistered"
+        );
         assertEq(
             StakeVault(newVault).depositedBalance(), prevVaultDepositedBalance, "deposited balance should be preserved"
         );

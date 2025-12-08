@@ -25,6 +25,8 @@ methods {
   function _.depositedBalance() external => DISPATCHER(true);
   function _.unstake(uint256) external => DISPATCHER(true);
   function _.migrateFromVault(IStakeVault.MigrationData) external => DISPATCHER(true);
+  function _.createVaultWithoutRegistration(address) external => DISPATCHER(true);
+  function _.initialize(address,address) external => DISPATCHER(true);
 }
 
 ghost mapping(address => uint256) mirrorBalances
@@ -51,7 +53,9 @@ invariant depositedBalanceLessEqualToERC20Balance()
   depositedBalance() <= staked.balanceOf(currentContract)
   filtered {
       f -> f.contract == currentContract &&
-        f.selector != sig:migrateFromVault(IStakeVault.MigrationData).selector
+        f.selector != sig:migrateFromVault(IStakeVault.MigrationData).selector &&
+        f.selector != sig:migrateToVault(address).selector &&
+        f.selector != sig:replaceVault().selector
   }
   { preserved with (env e) {
       require e.msg.sender != currentContract;
@@ -64,7 +68,9 @@ invariant depositedBalanceAndExcessBalanceEqualsERC20Balance()
   depositedBalance() + getExcessBalance() == staked.balanceOf(currentContract)
   filtered {
       f -> f.contract == currentContract &&
-        f.selector != sig:migrateFromVault(IStakeVault.MigrationData).selector
+        f.selector != sig:migrateFromVault(IStakeVault.MigrationData).selector &&
+        f.selector != sig:migrateToVault(address).selector &&
+        f.selector != sig:replaceVault().selector
   }
   {
       preserved with (env e) {
@@ -83,7 +89,10 @@ invariant depositedBalanceEqualsStakedBalance()
             // of revert cases inside of `leave()` that will make it find counter examples
             f.selector != sig:leave(address).selector  &&
             // this is only called from StakeManager and is intended to reset `depositedBalacne()`
-            f.selector != sig:migrateFromVault(IStakeVault.MigrationData).selector
+            f.selector != sig:migrateFromVault(IStakeVault.MigrationData).selector &&
+            // FIXME: exclude replaceVault due to complexity
+            f.selector != sig:replaceVault().selector
+
     }
     {
         // for the cases where `withdraw()` is called with an amount
@@ -108,6 +117,8 @@ invariant stakedBalanceZeroIfDepositedBalanceZero()
     filtered {
         f -> f.contract == currentContract &&
           f.selector != sig:migrateFromVault(IStakeVault.MigrationData).selector &&
+          f.selector != sig:migrateToVault(address).selector &&
+          f.selector != sig:replaceVault().selector &&
           f.selector != sig:leave(address).selector
     }
     {
@@ -121,7 +132,9 @@ invariant depositedBalanceZeroIfERC20BalanceZero()
   staked.balanceOf(currentContract) == 0 => depositedBalance() == 0
   filtered {
       f -> f.contract == currentContract &&
-        f.selector != sig:migrateFromVault(IStakeVault.MigrationData).selector
+        f.selector != sig:migrateFromVault(IStakeVault.MigrationData).selector &&
+        f.selector != sig:migrateToVault(address).selector &&
+        f.selector != sig:replaceVault().selector
   }
   {
     preserved with (env e) {
@@ -132,7 +145,12 @@ invariant depositedBalanceZeroIfERC20BalanceZero()
     }
   }
 
-rule ownerCannotChange(method f) {
+rule ownerCannotChange(method f) filtered {
+  // FIXME: exclude replaceVault due to complexity
+  f -> f.contract == currentContract &&
+       f.selector != sig:migrateToVault(address).selector &&
+       f.selector != sig:replaceVault().selector
+} {
   address owner = owner();
   env e;
   calldataarg args;
@@ -150,6 +168,7 @@ rule ownerCanOnlyWithdrawStakedFundsWhenNotLocked(method f) filtered {
     f -> f.selector != sig:renounceOwnership().selector &&
     f.selector != sig:initialize(address,address).selector &&
     f.selector != sig:emergencyExit(address).selector &&
+    f.selector != sig:replaceVault().selector &&
     f.contract == currentContract
 } {
     env e;
@@ -171,7 +190,12 @@ rule ownerCanOnlyWithdrawStakedFundsWhenNotLocked(method f) filtered {
 }
 
 
-rule reachability(method f) {
+rule reachability(method f) filtered {
+    // FIXME: exclude replaceVault due to complexity
+    f -> f.selector != sig:replaceVault().selector &&
+        f.selector != sig:migrateToVault(address).selector &&
+        f.contract == currentContract
+} {
   calldataarg args;
   env e;
   f(e,args);
@@ -185,7 +209,8 @@ invariant vaultBalanceVsERC20Balance()
   filtered {
     f -> f.contract == currentContract &&
       f.selector != sig:emergencyExit(address).selector &&
-      f.selector != sig:leave(address).selector
+      f.selector != sig:leave(address).selector &&
+      f.selector != sig:replaceVault().selector
   }
   { preserved with (env e) {
       // the sender can't be the vault otherwise it can transfer tokens

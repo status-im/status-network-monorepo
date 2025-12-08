@@ -29,7 +29,7 @@ contract VaultFactoryTest is Test {
         DeployVaultFactoryScript vaultFactoryDeployment = new DeployVaultFactoryScript();
 
         (StakeManager _stakeManager, DeploymentConfig deploymentConfig) =
-            stakeManagerDeployment.runForTest(address(stakingToken));
+            stakeManagerDeployment.runForTest(address(stakingToken), 5);
         (address _deployer,) = deploymentConfig.activeNetworkConfig();
         (VaultFactory _vaultFactory,, address vaultProxyClone,) =
             vaultFactoryDeployment.runForTest(address(_stakeManager), address(stakingToken));

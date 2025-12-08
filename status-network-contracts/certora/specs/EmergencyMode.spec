@@ -21,7 +21,7 @@ definition isPausableFunction(method f) returns bool = (
 );
 
 definition isInitializerFunction(method f) returns bool = (
-  f.selector == sig:streamer.initialize(address,address,address).selector
+  f.selector == sig:streamer.initialize(address,address,address,uint256).selector
 );
 
 definition isUUPSUpgradeableFunction(method f) returns bool = (
@@ -33,9 +33,11 @@ definition isUUPSUpgradeableFunction(method f) returns bool = (
 definition noCallDuringEmergency(method f) returns bool = (
   f.selector == sig:streamer.updateGlobalState().selector
                 || f.selector == sig:streamer.setRewardsSupplier(address).selector
+                || f.selector == sig:streamer.setMaxVaultsPerUser(uint256).selector
                 || f.selector == sig:streamer.setVaultFactory(address).selector
                 || f.selector == sig:streamer.registerVault(address).selector
                 || f.selector == sig:streamer.migrateToVault(address).selector
+                || f.selector == sig:streamer.createMigrationVault().selector
                 || f.selector == sig:streamer.updateAccount(address).selector
                 || f.selector == sig:streamer.updateVault(address).selector
                 || f.selector == sig:streamer.unstake(uint256).selector

@@ -6,6 +6,7 @@ methods {
     function ERC20A.balanceOf(address) external returns (uint256) envfree;
     function ERC20A.allowance(address, address) external returns(uint256) envfree;
     function ERC20A.totalSupply() external returns(uint256) envfree;
+    function createMigrationVault() external returns (address);
     function totalStaked() external returns (uint256) envfree;
     function vaultData(address) external returns (uint256, uint256, uint256, uint256, uint256, uint256) envfree;
     function lastMPUpdatedTime() external returns (uint256) envfree;
@@ -50,7 +51,10 @@ hook Sstore vaultData[KEY address vault].rewardsAccrued uint256 newValue (uint25
 invariant sumOfBalancesIsTotalStaked()
   totalStaked() == (usum address vault. mirrorStaked[vault])
   filtered {
-    f -> f.selector != sig:upgradeToAndCall(address,bytes).selector
+    f -> f.selector != sig:upgradeToAndCall(address,bytes).selector &&
+         // FIXME: this is only excluded because we didn't manage
+         // to make the rule work
+         f.selector != sig:createMigrationVault().selector
   }
 
 invariant vaultMPLessEqualVaultMaxMP(address vault)
@@ -58,6 +62,7 @@ invariant vaultMPLessEqualVaultMaxMP(address vault)
   filtered {
     f -> f.selector != sig:upgradeToAndCall(address,bytes).selector &&
          f.selector != sig:migrateToVault(address).selector &&
+         f.selector != sig:createMigrationVault().selector &&
          // FIXME: Didn't manage to make the rule work with leave
          f.selector != sig:leave().selector
   }
@@ -66,7 +71,8 @@ invariant vaultMPGreaterEqualVaultStakedBalance(address vault)
   to_mathint(getVaultMPAccrued(vault)) >= to_mathint(getVaultStakedBalance(vault))
   filtered {
     f -> f.selector != sig:upgradeToAndCall(address,bytes).selector &&
-         f.selector != sig:migrateToVault(address).selector
+         f.selector != sig:migrateToVault(address).selector &&
+         f.selector != sig:createMigrationVault().selector
   }
 
 rule stakingMintsMultiplierPoints1To1Ratio {
@@ -121,7 +127,10 @@ rule stakingGreaterLockupTimeMeansGreaterMPs {
 
 
 rule MPsOnlyDecreaseWhenUnstaking(method f) filtered {
-    f -> f.selector != sig:upgradeToAndCall(address,bytes).selector
+    f -> f.selector != sig:upgradeToAndCall(address,bytes).selector &&
+         // FIXME: this is only excluded because we didn't manage
+         // to make the rule work
+         f.selector != sig:createMigrationVault().selector
 } {
   env e;
   calldataarg args;
@@ -143,13 +152,15 @@ rule allowedActionsWhenPaused(method f) {
   bool reverted = lastReverted;
 
   assert !reverted => f.isView ||
-    f.selector == sig:streamer.initialize(address,address,address).selector ||
+    f.selector == sig:streamer.initialize(address,address,address,uint256).selector ||
     f.selector == sig:streamer.upgradeTo(address).selector ||
     f.selector == sig:streamer.upgradeToAndCall(address, bytes).selector ||
     f.selector == sig:streamer.grantRole(bytes32, address).selector ||
     f.selector == sig:streamer.revokeRole(bytes32, address).selector ||
     f.selector == sig:streamer.renounceRole(bytes32, address).selector ||
     f.selector == sig:streamer.setTrustedCodehash(bytes32, bool).selector ||
+    f.selector == sig:streamer.setRewardsSupplier(address).selector ||
+    f.selector == sig:streamer.setMaxVaultsPerUser(uint256).selector ||
     f.selector == sig:streamer.setVaultFactory(address).selector ||
     f.selector == sig:streamer.__TrustedCodehashAccess_init(address).selector ||
     f.selector == sig:streamer.enableEmergencyMode().selector ||

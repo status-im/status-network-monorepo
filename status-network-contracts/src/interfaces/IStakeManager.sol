@@ -4,6 +4,7 @@ pragma solidity 0.8.26;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ITrustedCodehashAccess } from "./ITrustedCodehashAccess.sol";
 import { IStakeConstants } from "./IStakeConstants.sol";
+import { IStakeVault } from "./IStakeVault.sol";
 
 /**
  * @title IStakeManager
@@ -19,6 +20,8 @@ interface IStakeManager is ITrustedCodehashAccess, IStakeConstants {
     error StakeManager__VaultAlreadyRegistered();
     /// @notice Emitted when the vault is invalid
     error StakeManager__InvalidVault();
+    /// @notice Emitted when the maximum number of vaults per user is reached.
+    error StakeManager__MaxVaultsPerUserReached();
     /// @notice Emitted when the amount to stake is zero.
     error StakeManager__AmountCannotBeZero();
     /// @notice Emitted when emergency mode is enabled.
@@ -37,6 +40,8 @@ interface IStakeManager is ITrustedCodehashAccess, IStakeConstants {
     error StakeManager__FundsLocked();
     /// @notice Emitted when transfering rewards fails
     error StakeManager__RewardTransferFailed();
+    /// @notice Emitted when the max vaults per user is set to zero
+    error StakeManager__MaxVaultsPerUserCannotBeZero();
 
     /// @notice Emitted when a reward supplier is set
     event RewardsSupplierSet(address indexed supplier);
@@ -46,6 +51,8 @@ interface IStakeManager is ITrustedCodehashAccess, IStakeConstants {
     event RewardSet(uint256 amount, uint256 duration, uint256 startTime, uint256 endTime);
     /// @notice Emitted when a vault is registered.
     event VaultRegistered(address indexed vault, address indexed owner);
+    /// @notice Emitted when a vault is deregistered.
+    event VaultDeregistered(address indexed vault, address indexed owner);
     /// @notice Emitted when a vault is migrated.
     event VaultMigrated(address indexed from, address indexed to);
     /// @notice Emitted when funds are staked.
@@ -62,6 +69,8 @@ interface IStakeManager is ITrustedCodehashAccess, IStakeConstants {
     event VaultUpdated(address indexed vault, uint256 rewardsAccrued, uint256 mpAccrued);
     /// @notice Emitted when rewards are redeemed
     event RewardsRedeemed(address indexed vault, uint256 amount);
+    /// @notice Emitted when the max vaults per user is set
+    event MaxVaultsPerUserSet(uint256 maxVaults);
 
     /**
      * @notice Registers a vault with its owner. Called by the vault itself during initialization.
@@ -104,10 +113,23 @@ interface IStakeManager is ITrustedCodehashAccess, IStakeConstants {
     function migrateToVault(address migrateTo) external;
 
     /**
+     * @notice Creates a new migration vault for the caller.
+     * @return address The address of the newly created migration vault.
+     */
+    function createMigrationVault() external returns (IStakeVault);
+
+    /**
      * @notice Allows users to claim their accrued rewards.
      * @param vaultAddress The address of the vault to update.
      */
     function updateVault(address vaultAddress) external;
+
+    /**
+     * @notice Returns a user's list of vaults
+     * @param account Address of user
+     * @return address[] List of vaults
+     */
+    function getAccountVaults(address account) external view returns (address[] memory);
 
     /**
      * @notice Flag whether emergency mode is enabled.
