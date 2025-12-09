@@ -321,7 +321,7 @@ class RlnValidationPerformanceTest {
     // Test behavior when many threads try to use the same nullifiers
     int threadCount = 20;
     String conflictedNullifier =
-        "0xconflicted000000000000000000000000000000000000000000000000000000";
+        "0xc0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffee00";
 
     ExecutorService executor = Executors.newFixedThreadPool(threadCount);
     CountDownLatch latch = new CountDownLatch(threadCount);
@@ -487,7 +487,7 @@ class RlnValidationPerformanceTest {
   @Test
   void testNullifierConflictUnderHighLoad() throws InterruptedException {
     // Test nullifier conflict detection under high concurrent load
-    String conflictNullifier = "0xconflicted000000000000000000000000000000000000000000000000000000";
+    String conflictNullifier = "0xc0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffee00";
     String conflictEpoch = "high-load-epoch";
 
     int threadCount = 50;

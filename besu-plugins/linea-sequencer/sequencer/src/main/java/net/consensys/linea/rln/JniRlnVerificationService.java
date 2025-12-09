@@ -61,6 +61,10 @@ public class JniRlnVerificationService implements RlnVerificationService {
       return true;
     } catch (ClassNotFoundException | UnsatisfiedLinkError e) {
       return false;
+    } catch (NoClassDefFoundError | ExceptionInInitializerError e) {
+      // These are thrown when the class's static initializer has previously failed
+      // (e.g., native library load failed on first attempt)
+      return false;
     }
   }
 
