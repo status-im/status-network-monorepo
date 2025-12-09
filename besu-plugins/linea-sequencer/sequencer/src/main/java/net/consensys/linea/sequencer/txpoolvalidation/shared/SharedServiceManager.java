@@ -74,16 +74,30 @@ public class SharedServiceManager implements Closeable {
   private void initializeSharedServices(
       LineaRlnValidatorConfiguration rlnConfig, LineaRpcConfiguration rpcConfig) {
     try {
-      // Initialize DenyListManager
+      // Common gRPC configuration for all services (RLN prover endpoint)
+      String grpcHost = rlnConfig.rlnProofServiceHost();
+      int grpcPort = rlnConfig.rlnProofServicePort();
+      boolean useTls = rlnConfig.rlnProofServiceUseTls();
+
+      // Initialize DenyListManager with gRPC backend (connected to RLN prover's database)
       if (rlnConfig.sharedGaslessConfig() != null) {
-        String denyListPath = rlnConfig.sharedGaslessConfig().denyListPath();
-        long entryMaxAgeMinutes = rlnConfig.denyListEntryMaxAgeMinutes();
-        long refreshIntervalSeconds = rlnConfig.sharedGaslessConfig().denyListRefreshSeconds();
+        // Convert max age from minutes to seconds for TTL
+        long ttlSeconds = rlnConfig.denyListEntryMaxAgeMinutes() * 60;
+        long cacheRefreshSeconds = rlnConfig.sharedGaslessConfig().denyListRefreshSeconds();
 
         this.denyListManager =
             new DenyListManager(
-                "SharedServiceManager", denyListPath, entryMaxAgeMinutes, refreshIntervalSeconds);
-        LOG.info("DenyListManager initialized successfully");
+                "SharedServiceManager",
+                grpcHost,
+                grpcPort,
+                useTls,
+                ttlSeconds,
+                cacheRefreshSeconds);
+        LOG.info(
+            "DenyListManager initialized with gRPC backend at {}:{} (TLS: {})",
+            grpcHost,
+            grpcPort,
+            useTls);
       } else {
         LOG.warn("Cannot initialize DenyListManager: sharedGaslessConfig is null");
       }
@@ -112,20 +126,24 @@ public class SharedServiceManager implements Closeable {
         this.karmaServiceClient = null;
       }
 
-      // Initialize NullifierTracker
+      // Initialize NullifierTracker with gRPC backend (same endpoint as deny list)
       if (rlnConfig.sharedGaslessConfig() != null) {
-        String nullifierStoragePath =
-            rlnConfig
-                .sharedGaslessConfig()
-                .denyListPath()
-                .replace("deny_list.txt", "nullifiers.txt");
-        long nullifierExpiryHours =
-            rlnConfig.denyListEntryMaxAgeMinutes() / 60 * 2; // 2x deny list expiry for safety
+        // Cache TTL should match epoch duration for proper cleanup
+        long cacheTtlMinutes = Math.max(60, rlnConfig.denyListEntryMaxAgeMinutes() * 2);
 
         this.nullifierTracker =
             new NullifierTracker(
-                "SharedServiceManager", nullifierStoragePath, nullifierExpiryHours);
-        LOG.info("NullifierTracker initialized successfully");
+                "SharedServiceManager",
+                grpcHost,
+                grpcPort,
+                useTls,
+                1_000_000L, // 1M cache capacity for 500+ TPS
+                cacheTtlMinutes);
+        LOG.info(
+            "NullifierTracker initialized with gRPC backend at {}:{}, cache TTL: {} min",
+            grpcHost,
+            grpcPort,
+            cacheTtlMinutes);
       } else {
         LOG.warn("Cannot initialize NullifierTracker: sharedGaslessConfig is null");
       }

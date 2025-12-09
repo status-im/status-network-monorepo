@@ -84,12 +84,13 @@ class RlnValidatorBasicTest {
     when(blockHeader.getNumber()).thenReturn(12345L);
 
     // Create test configuration using constructor
+    // Note: Deny list is now stored in the RLN prover's PostgreSQL database and accessed via gRPC
     LineaSharedGaslessConfiguration sharedConfig =
         new LineaSharedGaslessConfiguration(
-            "/tmp/test_deny_list.txt",
-            300L, // denyListRefreshSeconds
+            300L, // denyListCacheRefreshSeconds
             1L, // premiumGasPriceThresholdGWei
-            10L // denyListEntryMaxAgeMinutes
+            10L, // denyListEntryMaxAgeMinutes
+            "/tmp/test_nullifiers.txt" // nullifierStoragePath
             );
 
     rlnConfig =
@@ -140,7 +141,7 @@ class RlnValidatorBasicTest {
   @Test
   void testValidatorCreationWithDisabledConfig() {
     LineaSharedGaslessConfiguration disabledSharedConfig =
-        new LineaSharedGaslessConfiguration("/tmp/test_deny_list.txt", 300L, 1L, 10L);
+        new LineaSharedGaslessConfiguration(300L, 1L, 10L, "/tmp/test_nullifiers.txt");
 
     LineaRlnValidatorConfiguration disabledConfig =
         new LineaRlnValidatorConfiguration(
@@ -210,10 +211,11 @@ class RlnValidatorBasicTest {
   @Test
   void testSharedServicesConfiguration() {
     // Test that shared services are properly configured
-    assertThat(rlnConfig.denyListPath()).contains("deny_list.txt");
+    // Note: Deny list is now stored in prover's PostgreSQL database, accessed via gRPC
     assertThat(rlnConfig.denyListRefreshSeconds()).isEqualTo(300L);
     assertThat(rlnConfig.denyListEntryMaxAgeMinutes()).isEqualTo(10L);
     assertThat(rlnConfig.premiumGasPriceThresholdWei()).isEqualTo(1_000_000_000L); // 1 GWei in Wei
+    assertThat(rlnConfig.sharedGaslessConfig().nullifierStoragePath()).contains("nullifiers.txt");
 
     // Test karma service configuration
     assertThat(rlnConfig.karmaServiceHost()).isEqualTo("localhost");

@@ -10,8 +10,8 @@ use rln::{hashers::poseidon_hash, protocol::keygen};
 // db
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel, PaginatorTrait,
-    QueryFilter, Set, TransactionTrait,
+    ColumnTrait, DatabaseConnection, DbErr, EntityTrait, ExprTrait, IntoActiveModel,
+    PaginatorTrait, QueryFilter, Set, TransactionTrait,
 };
 // internal
 use crate::epoch_service::{Epoch, EpochSlice};
@@ -22,7 +22,7 @@ use crate::user_db_error::{
     UserTierInfoError2,
 };
 use crate::user_db_types::{EpochCounter, EpochSliceCounter, RateLimit};
-use prover_db_entity::{m_tree_config, tier_limits, tx_counter, user};
+use prover_db_entity::{deny_list, m_tree_config, tier_limits, tx_counter, user};
 use prover_merkle_tree::{
     MemoryDb, MemoryDbConfig, PersistentDb, PersistentDbConfig, PersistentDbError,
 };
@@ -289,7 +289,7 @@ impl UserDb2 {
 
     fn counters_from_key(&self, model: tx_counter::Model) -> EpochCounter {
         let (epoch, _epoch_slice) = *self.epoch_store.read();
-        let cmp = (model.epoch == i64::from(epoch));
+        let cmp = model.epoch == i64::from(epoch);
 
         match cmp {
             true => {
@@ -307,49 +307,55 @@ impl UserDb2 {
     }
 
     /*
-    fn counters_from_key(&self, model: tx_counter::Model) -> (EpochCounter, EpochSliceCounter) {
-        let (epoch, epoch_slice) = *self.epoch_store.read();
-        let cmp = (
-            model.epoch == i64::from(epoch),
-            model.epoch_slice == i64::from(epoch_slice),
-        );
-
-        match cmp {
-            (true, true) => {
-                // EpochCounter stored in DB == epoch store
-                // We query for an epoch / epoch slice and this is what is stored in the Db
-                // Return the counters
-                (
-                    // FIXME: as
-                    (model.epoch_counter as u64).into(),
-                    // FIXME: as
-                    (model.epoch_slice_counter as u64).into(),
-                )
-            }
-            (true, false) => {
-                // EpochCounter.epoch_slice (stored in Db) != epoch_store.epoch_slice
-                // We query for an epoch slice after what is stored in Db
-                // This can happen if no Tx has updated the epoch slice counter (yet)
-                // FIXME: as
-                (
-                    (model.epoch_counter as u64).into(),
-                    EpochSliceCounter::from(0),
-                )
-            }
-            (false, true) => {
-                // EpochCounter.epoch (stored in DB) != epoch_store.epoch
-                // We query for an epoch after what is stored in Db
-                // This can happen if no Tx has updated the epoch counter (yet)
-                (EpochCounter::from(0), EpochSliceCounter::from(0))
-            }
-            (false, false) => {
-                // EpochCounter (stored in DB) != epoch_store
-                // Outdated value (both for epoch & epoch slice)
-                (EpochCounter::from(0), EpochSliceCounter::from(0))
+    =======
+                Some(res) => Ok(self.counters_from_key(res)),
             }
         }
-    }
-    */
+
+    >>>>>>> 1cbd5c6a (Cargo fmt)
+        fn counters_from_key(&self, model: tx_counter::Model) -> (EpochCounter, EpochSliceCounter) {
+            let (epoch, epoch_slice) = *self.epoch_store.read();
+            let cmp = (
+                model.epoch == i64::from(epoch),
+                model.epoch_slice == i64::from(epoch_slice),
+            );
+
+            match cmp {
+                (true, true) => {
+                    // EpochCounter stored in DB == epoch store
+                    // We query for an epoch / epoch slice and this is what is stored in the Db
+                    // Return the counters
+                    (
+                        // FIXME: as
+                        (model.epoch_counter as u64).into(),
+                        // FIXME: as
+                        (model.epoch_slice_counter as u64).into(),
+                    )
+                }
+                (true, false) => {
+                    // EpochCounter.epoch_slice (stored in Db) != epoch_store.epoch_slice
+                    // We query for an epoch slice after what is stored in Db
+                    // This can happen if no Tx has updated the epoch slice counter (yet)
+                    // FIXME: as
+                    (
+                        (model.epoch_counter as u64).into(),
+                        EpochSliceCounter::from(0),
+                    )
+                }
+                (false, true) => {
+                    // EpochCounter.epoch (stored in DB) != epoch_store.epoch
+                    // We query for an epoch after what is stored in Db
+                    // This can happen if no Tx has updated the epoch counter (yet)
+                    (EpochCounter::from(0), EpochSliceCounter::from(0))
+                }
+                (false, false) => {
+                    // EpochCounter (stored in DB) != epoch_store
+                    // Outdated value (both for epoch & epoch slice)
+                    (EpochCounter::from(0), EpochSliceCounter::from(0))
+                }
+            }
+        }
+        */
 
     // user register & delete (with app logic)
 
@@ -600,6 +606,235 @@ impl UserDb2 {
         };
 
         Ok(user_tier_info)
+    }
+
+    // ============ Deny List Methods ============
+
+    /// Check if an address is on the deny list and not expired
+    ///
+    /// Returns true if the address is denied (and not expired), false otherwise
+    pub async fn is_denied(&self, address: &Address) -> Result<bool, DbErr> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let address_str = address.to_string().to_lowercase();
+
+        // Single query: check if exists AND (no expiry OR not expired)
+        let count = deny_list::Entity::find()
+            .filter(deny_list::Column::Address.eq(&address_str))
+            .filter(
+                deny_list::Column::ExpiresAt
+                    .is_null()
+                    .or(deny_list::Column::ExpiresAt.gt(now)),
+            )
+            .count(&self.db)
+            .await?;
+
+        Ok(count > 0)
+    }
+
+    /// Add an address to the deny list
+    /// Uses UPSERT for atomicity and performance
+    ///
+    /// - `address`: The address to deny
+    /// - `ttl_seconds`: Optional time-to-live in seconds (None means no expiry)
+    ///
+    /// Returns true if the address was newly added, false if it was already present
+    pub async fn add_to_deny_list(
+        &self,
+        address: &Address,
+        _reason: Option<String>, // Ignored - not stored for performance
+        ttl_seconds: Option<i64>,
+    ) -> Result<bool, DbErr> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let expires_at = ttl_seconds.map(|ttl| now + ttl);
+        let address_str = address.to_string().to_lowercase();
+
+        // Use insert with on_conflict for atomic upsert
+        let new_entry = deny_list::ActiveModel {
+            address: Set(address_str.clone()),
+            expires_at: Set(expires_at),
+            denied_at: Set(Some(now)),
+        };
+
+        let result = deny_list::Entity::insert(new_entry)
+            .on_conflict(
+                sea_orm::sea_query::OnConflict::column(deny_list::Column::Address)
+                    .update_columns([deny_list::Column::ExpiresAt, deny_list::Column::DeniedAt])
+                    .to_owned(),
+            )
+            .exec(&self.db)
+            .await;
+
+        match result {
+            Ok(_) => Ok(true),
+            Err(DbErr::RecordNotInserted) => Ok(false), // Was updated, not inserted
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Remove an address from the deny list
+    ///
+    /// Returns true if the address was removed, false if it wasn't on the list
+    pub async fn remove_from_deny_list(&self, address: &Address) -> Result<bool, DbErr> {
+        let address_str = address.to_string().to_lowercase();
+
+        let result = deny_list::Entity::delete_many()
+            .filter(deny_list::Column::Address.eq(address_str))
+            .exec(&self.db)
+            .await?;
+
+        Ok(result.rows_affected > 0)
+    }
+
+    /// Get deny list entry for an address (if exists and not expired)
+    ///
+    /// Returns the deny list entry model if found and not expired
+    pub async fn get_deny_list_entry(
+        &self,
+        address: &Address,
+    ) -> Result<Option<deny_list::Model>, DbErr> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let address_str = address.to_string().to_lowercase();
+
+        // Single query with expiry check
+        deny_list::Entity::find()
+            .filter(deny_list::Column::Address.eq(address_str))
+            .filter(
+                deny_list::Column::ExpiresAt
+                    .is_null()
+                    .or(deny_list::Column::ExpiresAt.gt(now)),
+            )
+            .one(&self.db)
+            .await
+    }
+
+    /// Clean up expired deny list entries
+    ///
+    /// Returns the number of entries removed
+    pub async fn cleanup_expired_deny_list_entries(&self) -> Result<u64, DbErr> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let result = deny_list::Entity::delete_many()
+            .filter(
+                deny_list::Column::ExpiresAt
+                    .is_not_null()
+                    .and(deny_list::Column::ExpiresAt.lte(now)),
+            )
+            .exec(&self.db)
+            .await?;
+
+        Ok(result.rows_affected)
+    }
+
+    // ============ Nullifier Methods (High-Throughput) ============
+
+    /// Check if a nullifier exists for the given epoch
+    /// Returns true if the nullifier already exists (duplicate/replay), false otherwise
+    pub async fn nullifier_exists(&self, nullifier: &[u8], epoch: i64) -> Result<bool, DbErr> {
+        use prover_db_entity::nullifiers;
+
+        let count = nullifiers::Entity::find()
+            .filter(nullifiers::Column::Nullifier.eq(nullifier.to_vec()))
+            .filter(nullifiers::Column::Epoch.eq(epoch))
+            .count(&self.db)
+            .await?;
+
+        Ok(count > 0)
+    }
+
+    /// Record a nullifier for the given epoch
+    /// Returns Ok(true) if inserted, Ok(false) if already exists (duplicate)
+    ///
+    /// Uses INSERT ... ON CONFLICT DO NOTHING for atomic check-and-insert
+    pub async fn record_nullifier(&self, nullifier: &[u8], epoch: i64) -> Result<bool, DbErr> {
+        use prover_db_entity::nullifiers;
+
+        let new_entry = nullifiers::ActiveModel {
+            nullifier: Set(nullifier.to_vec()),
+            epoch: Set(epoch),
+        };
+
+        // Try to insert, ignore if already exists
+        let result = nullifiers::Entity::insert(new_entry)
+            .on_conflict(
+                sea_orm::sea_query::OnConflict::columns([
+                    nullifiers::Column::Nullifier,
+                    nullifiers::Column::Epoch,
+                ])
+                .do_nothing()
+                .to_owned(),
+            )
+            .exec(&self.db)
+            .await;
+
+        match result {
+            Ok(_) => Ok(true),                          // Inserted successfully
+            Err(DbErr::RecordNotInserted) => Ok(false), // Already existed
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Check and record a nullifier atomically
+    /// Returns Ok(true) if nullifier is new and was recorded
+    /// Returns Ok(false) if nullifier already existed (duplicate/replay attack)
+    ///
+    /// This is the primary method for nullifier tracking at high throughput
+    pub async fn check_and_record_nullifier(
+        &self,
+        nullifier: &[u8],
+        epoch: i64,
+    ) -> Result<bool, DbErr> {
+        // record_nullifier already does atomic check-and-insert
+        self.record_nullifier(nullifier, epoch).await
+    }
+
+    /// Clean up nullifiers from old epochs
+    /// Call this periodically to prevent unbounded table growth
+    ///
+    /// - `keep_epochs`: Number of recent epochs to keep
+    /// - `current_epoch`: The current epoch
+    ///
+    /// Returns the number of nullifiers removed
+    pub async fn cleanup_old_nullifiers(
+        &self,
+        current_epoch: i64,
+        keep_epochs: i64,
+    ) -> Result<u64, DbErr> {
+        use prover_db_entity::nullifiers;
+
+        let cutoff_epoch = current_epoch - keep_epochs;
+
+        let result = nullifiers::Entity::delete_many()
+            .filter(nullifiers::Column::Epoch.lt(cutoff_epoch))
+            .exec(&self.db)
+            .await?;
+
+        Ok(result.rows_affected)
+    }
+
+    /// Get count of nullifiers for a specific epoch
+    /// Useful for monitoring and debugging
+    pub async fn get_nullifier_count_for_epoch(&self, epoch: i64) -> Result<u64, DbErr> {
+        use prover_db_entity::nullifiers;
+
+        nullifiers::Entity::find()
+            .filter(nullifiers::Column::Epoch.eq(epoch))
+            .count(&self.db)
+            .await
     }
 }
 

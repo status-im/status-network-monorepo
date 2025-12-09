@@ -4,4 +4,4 @@ CREATE DATABASE l1_blockscout_db;
 CREATE DATABASE l2_blockscout_db;
 CREATE DATABASE linea_transaction_exclusion;
 CREATE DATABASE blobscan;
-
+CREATE DATABASE prover_db;

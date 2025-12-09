@@ -40,10 +40,29 @@ pub mod prover_proto {
         tonic::include_file_descriptor_set!("prover_descriptor");
 }
 use crate::user_db_2::{UserDb2, UserTierInfo2};
+use crate::user_db_error::UserTierInfoError2;
 use crate::user_db_types::RateLimit;
 use prover_proto::{
+    // Deny list messages
+    AddToDenyListReply,
+    AddToDenyListRequest,
+    CheckAndRecordNullifierReply,
+    CheckAndRecordNullifierRequest,
+    // Nullifier messages
+    CheckNullifierReply,
+    CheckNullifierRequest,
+    DenyListEntry,
+    DenyListError,
+    GetDenyListEntryReply,
+    GetDenyListEntryRequest,
     GetUserTierInfoReply,
     GetUserTierInfoRequest,
+    IsDeniedReply,
+    IsDeniedRequest,
+    RecordNullifierReply,
+    RecordNullifierRequest,
+    RemoveFromDenyListReply,
+    RemoveFromDenyListRequest,
     // RegisterUserReply,
     // RegisterUserRequest,
     // RegistrationStatus,
@@ -56,6 +75,7 @@ use prover_proto::{
     Tier,
     UserTierInfoError,
     UserTierInfoResult,
+    get_deny_list_entry_reply::Resp as DenyListResp,
     get_user_tier_info_reply::Resp,
     rln_proof_reply::Resp as GetProofsResp,
     rln_prover_server::{RlnProver, RlnProverServer},
@@ -336,6 +356,223 @@ where
             Err(e) => Ok(Response::new(GetUserTierInfoReply {
                 resp: Some(Resp::Error(e.into())),
             })),
+        }
+    }
+
+    // ============ Deny List Methods ============
+
+    #[tracing::instrument(skip(self), err, ret)]
+    async fn is_denied(
+        &self,
+        request: Request<IsDeniedRequest>,
+    ) -> Result<Response<IsDeniedReply>, Status> {
+        debug!("is_denied request: {:?}", request);
+        let req = request.into_inner();
+
+        let address = if let Some(addr) = req.address {
+            if let Ok(addr) = Address::try_from(addr.value.as_slice()) {
+                addr
+            } else {
+                return Err(Status::invalid_argument("Invalid address"));
+            }
+        } else {
+            return Err(Status::invalid_argument("No address provided"));
+        };
+
+        match self.user_db.is_denied(&address).await {
+            Ok(is_denied) => Ok(Response::new(IsDeniedReply { is_denied })),
+            Err(e) => {
+                error!("Failed to check deny list: {:?}", e);
+                Err(Status::internal(format!("Database error: {}", e)))
+            }
+        }
+    }
+
+    #[tracing::instrument(skip(self), err, ret)]
+    async fn add_to_deny_list(
+        &self,
+        request: Request<AddToDenyListRequest>,
+    ) -> Result<Response<AddToDenyListReply>, Status> {
+        debug!("add_to_deny_list request: {:?}", request);
+        let req = request.into_inner();
+
+        let address = if let Some(addr) = req.address {
+            if let Ok(addr) = Address::try_from(addr.value.as_slice()) {
+                addr
+            } else {
+                return Err(Status::invalid_argument("Invalid address"));
+            }
+        } else {
+            return Err(Status::invalid_argument("No address provided"));
+        };
+
+        match self
+            .user_db
+            .add_to_deny_list(&address, req.reason, req.ttl_seconds)
+            .await
+        {
+            Ok(was_new) => {
+                info!(
+                    "Address {} {} to deny list",
+                    address,
+                    if was_new { "added" } else { "updated" }
+                );
+                Ok(Response::new(AddToDenyListReply {
+                    success: true,
+                    was_new,
+                }))
+            }
+            Err(e) => {
+                error!("Failed to add to deny list: {:?}", e);
+                Err(Status::internal(format!("Database error: {}", e)))
+            }
+        }
+    }
+
+    #[tracing::instrument(skip(self), err, ret)]
+    async fn remove_from_deny_list(
+        &self,
+        request: Request<RemoveFromDenyListRequest>,
+    ) -> Result<Response<RemoveFromDenyListReply>, Status> {
+        debug!("remove_from_deny_list request: {:?}", request);
+        let req = request.into_inner();
+
+        let address = if let Some(addr) = req.address {
+            if let Ok(addr) = Address::try_from(addr.value.as_slice()) {
+                addr
+            } else {
+                return Err(Status::invalid_argument("Invalid address"));
+            }
+        } else {
+            return Err(Status::invalid_argument("No address provided"));
+        };
+
+        match self.user_db.remove_from_deny_list(&address).await {
+            Ok(removed) => {
+                if removed {
+                    info!("Address {} removed from deny list", address);
+                } else {
+                    debug!("Address {} was not on deny list", address);
+                }
+                Ok(Response::new(RemoveFromDenyListReply { removed }))
+            }
+            Err(e) => {
+                error!("Failed to remove from deny list: {:?}", e);
+                Err(Status::internal(format!("Database error: {}", e)))
+            }
+        }
+    }
+
+    #[tracing::instrument(skip(self), err, ret)]
+    async fn get_deny_list_entry(
+        &self,
+        request: Request<GetDenyListEntryRequest>,
+    ) -> Result<Response<GetDenyListEntryReply>, Status> {
+        debug!("get_deny_list_entry request: {:?}", request);
+        let req = request.into_inner();
+
+        let address = if let Some(addr) = req.address {
+            if let Ok(addr) = Address::try_from(addr.value.as_slice()) {
+                addr
+            } else {
+                return Err(Status::invalid_argument("Invalid address"));
+            }
+        } else {
+            return Err(Status::invalid_argument("No address provided"));
+        };
+
+        match self.user_db.get_deny_list_entry(&address).await {
+            Ok(Some(entry)) => Ok(Response::new(GetDenyListEntryReply {
+                resp: Some(DenyListResp::Entry(DenyListEntry {
+                    address: entry.address,
+                    denied_at: entry.denied_at.unwrap_or(0),
+                    expires_at: entry.expires_at,
+                    reason: None, // Not stored for performance
+                })),
+            })),
+            Ok(None) => Ok(Response::new(GetDenyListEntryReply {
+                resp: Some(DenyListResp::Error(DenyListError {
+                    message: "Address not found in deny list".to_string(),
+                })),
+            })),
+            Err(e) => {
+                error!("Failed to get deny list entry: {:?}", e);
+                Err(Status::internal(format!("Database error: {}", e)))
+            }
+        }
+    }
+
+    // ============ Nullifier Methods (High-Throughput) ============
+
+    #[tracing::instrument(skip(self), err, ret)]
+    async fn check_nullifier(
+        &self,
+        request: Request<CheckNullifierRequest>,
+    ) -> Result<Response<CheckNullifierReply>, Status> {
+        let req = request.into_inner();
+
+        if req.nullifier.len() != 32 {
+            return Err(Status::invalid_argument("Nullifier must be 32 bytes"));
+        }
+
+        match self
+            .user_db
+            .nullifier_exists(&req.nullifier, req.epoch)
+            .await
+        {
+            Ok(exists) => Ok(Response::new(CheckNullifierReply { exists })),
+            Err(e) => {
+                error!("Failed to check nullifier: {:?}", e);
+                Err(Status::internal(format!("Database error: {}", e)))
+            }
+        }
+    }
+
+    #[tracing::instrument(skip(self), err, ret)]
+    async fn record_nullifier(
+        &self,
+        request: Request<RecordNullifierRequest>,
+    ) -> Result<Response<RecordNullifierReply>, Status> {
+        let req = request.into_inner();
+
+        if req.nullifier.len() != 32 {
+            return Err(Status::invalid_argument("Nullifier must be 32 bytes"));
+        }
+
+        match self
+            .user_db
+            .record_nullifier(&req.nullifier, req.epoch)
+            .await
+        {
+            Ok(recorded) => Ok(Response::new(RecordNullifierReply { recorded })),
+            Err(e) => {
+                error!("Failed to record nullifier: {:?}", e);
+                Err(Status::internal(format!("Database error: {}", e)))
+            }
+        }
+    }
+
+    #[tracing::instrument(skip(self), err, ret)]
+    async fn check_and_record_nullifier(
+        &self,
+        request: Request<CheckAndRecordNullifierRequest>,
+    ) -> Result<Response<CheckAndRecordNullifierReply>, Status> {
+        let req = request.into_inner();
+
+        if req.nullifier.len() != 32 {
+            return Err(Status::invalid_argument("Nullifier must be 32 bytes"));
+        }
+
+        match self
+            .user_db
+            .check_and_record_nullifier(&req.nullifier, req.epoch)
+            .await
+        {
+            Ok(is_valid) => Ok(Response::new(CheckAndRecordNullifierReply { is_valid })),
+            Err(e) => {
+                error!("Failed to check and record nullifier: {:?}", e);
+                Err(Status::internal(format!("Database error: {}", e)))
+            }
         }
     }
 }

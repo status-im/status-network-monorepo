@@ -94,9 +94,17 @@ class RlnVerifierValidatorComprehensiveTest {
     when(blockHeader.getNumber()).thenReturn(1000000L); // Realistic block number
     when(blockHeader.getTimestamp()).thenReturn(1692000000L); // Fixed timestamp
 
-    // Create real shared services
-    Path denyListFile = tempDir.resolve("deny_list.txt");
-    denyListManager = new DenyListManager("ComprehensiveTest", denyListFile.toString(), 300, 5);
+    // Create shared services
+    // Note: DenyListManager now uses gRPC; for testing we use a mock
+    // In production, the DenyListManager connects to the prover's PostgreSQL database via gRPC
+    denyListManager =
+        new DenyListManager(
+            "ComprehensiveTest",
+            "localhost", // gRPC host
+            50051, // gRPC port
+            false, // useTls
+            600L, // ttlSeconds
+            60L); // cacheRefreshIntervalSeconds
     nullifierTracker = new NullifierTracker("ComprehensiveTest", 10000L, 300L);
     karmaServiceClient =
         new KarmaServiceClient("ComprehensiveTest", "localhost", 8545, false, 5000);
@@ -106,12 +114,13 @@ class RlnVerifierValidatorComprehensiveTest {
     when(mockRlnService.isAvailable()).thenReturn(false);
 
     // Create configuration for testing different epoch modes
+    // Note: Deny list is now stored in the RLN prover's PostgreSQL database and accessed via gRPC
     LineaSharedGaslessConfiguration sharedConfig =
         new LineaSharedGaslessConfiguration(
-            denyListFile.toString(),
             300L,
             5L, // 5 GWei premium threshold
-            10L);
+            10L,
+            tempDir.resolve("nullifiers.txt").toString());
 
     rlnConfig =
         new LineaRlnValidatorConfiguration(
@@ -205,7 +214,7 @@ class RlnVerifierValidatorComprehensiveTest {
     for (String mode : epochModes) {
       LineaSharedGaslessConfiguration sharedConfig =
           new LineaSharedGaslessConfiguration(
-              tempDir.resolve("test_" + mode + ".txt").toString(), 300L, 5L, 10L);
+              300L, 5L, 10L, tempDir.resolve("test_" + mode + "_nullifiers.txt").toString());
 
       LineaRlnValidatorConfiguration testConfig =
           new LineaRlnValidatorConfiguration(
@@ -237,7 +246,7 @@ class RlnVerifierValidatorComprehensiveTest {
   void testDisabledValidatorBehavior() throws Exception {
     // Create disabled configuration
     LineaSharedGaslessConfiguration sharedConfig =
-        new LineaSharedGaslessConfiguration("/tmp/test.txt", 300L, 5L, 10L);
+        new LineaSharedGaslessConfiguration(300L, 5L, 10L, "/tmp/test_nullifiers.txt");
 
     LineaRlnValidatorConfiguration disabledConfig =
         new LineaRlnValidatorConfiguration(
@@ -340,7 +349,8 @@ class RlnVerifierValidatorComprehensiveTest {
 
     // Test with BLOCK epoch mode
     LineaSharedGaslessConfiguration sharedConfig =
-        new LineaSharedGaslessConfiguration(tempDir.resolve("test.txt").toString(), 300L, 5L, 10L);
+        new LineaSharedGaslessConfiguration(
+            300L, 5L, 10L, tempDir.resolve("test_nullifiers.txt").toString());
 
     LineaRlnValidatorConfiguration blockConfig =
         new LineaRlnValidatorConfiguration(
@@ -558,7 +568,7 @@ class RlnVerifierValidatorComprehensiveTest {
     for (String mode : epochModes) {
       LineaSharedGaslessConfiguration sharedConfig =
           new LineaSharedGaslessConfiguration(
-              tempDir.resolve("test_" + mode + ".txt").toString(), 300L, 5L, 10L);
+              300L, 5L, 10L, tempDir.resolve("test_" + mode + "_nullifiers.txt").toString());
 
       LineaRlnValidatorConfiguration testConfig =
           new LineaRlnValidatorConfiguration(
@@ -627,7 +637,7 @@ class RlnVerifierValidatorComprehensiveTest {
 
     // Verify security metrics are tracked
     NullifierTracker.NullifierStats stats = nullifierTracker.getStats();
-    assertThat(stats.duplicateAttempts()).isGreaterThanOrEqualTo(1);
+    assertThat(stats.duplicatesDetected()).isGreaterThanOrEqualTo(1);
   }
 
   @Test

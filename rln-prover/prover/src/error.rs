@@ -45,6 +45,8 @@ pub enum AppError {
 
 #[derive(thiserror::Error, Debug)]
 pub enum AppError2 {
+    #[error("{0}")]
+    Custom(String),
     #[error("Tonic (grpc) error: {0}")]
     Tonic(#[from] tonic::transport::Error),
     #[error("Tonic reflection (grpc) error: {0}")]

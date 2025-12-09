@@ -14,51 +14,48 @@
  */
 package net.consensys.linea.sequencer.txpoolvalidation.shared;
 
-import java.io.BufferedReader;
+import io.grpc.ManagedChannel;
+import io.grpc.ManagedChannelBuilder;
+import io.grpc.StatusRuntimeException;
 import java.io.Closeable;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 import java.time.Instant;
-import java.time.format.DateTimeParseException;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
-import org.hyperledger.besu.datatypes.Address;
+import java.util.concurrent.atomic.AtomicBoolean;
+import net.vac.prover.AddToDenyListReply;
+import net.vac.prover.AddToDenyListRequest;
+import net.vac.prover.GetDenyListEntryReply;
+import net.vac.prover.GetDenyListEntryRequest;
+import net.vac.prover.IsDeniedReply;
+import net.vac.prover.IsDeniedRequest;
+import net.vac.prover.RemoveFromDenyListReply;
+import net.vac.prover.RemoveFromDenyListRequest;
+import net.vac.prover.RlnProverGrpc;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Shared deny list manager providing single source of truth for deny list state.
+ * Shared deny list manager that uses gRPC to communicate with the RLN prover's database.
  *
- * <p>This manager encapsulates all deny list functionality including:
+ * <p>This manager provides a unified deny list that is shared between the sequencer and RLN prover,
+ * backed by the prover's PostgreSQL database.
  *
- * <ul>
- *   <li>Thread-safe in-memory cache management
- *   <li>Atomic file I/O operations with proper locking
- *   <li>Automatic TTL-based entry expiration
- *   <li>Scheduled file refresh for external modifications
- *   <li>Clear separation of read-only vs write operations
- * </ul>
- *
- * <p><strong>Usage Pattern:</strong>
+ * <p><strong>Features:</strong>
  *
  * <ul>
- *   <li>RlnVerifierValidator: Uses both read and write operations
- *   <li>LineaEstimateGas: Uses only read operations for efficiency
+ *   <li>gRPC-based communication with the RLN prover service
+ *   <li>Local in-memory cache for read performance
+ *   <li>Automatic cache refresh from database
+ *   <li>Graceful fallback to cache if gRPC is unavailable
+ *   <li>TTL-based entry expiration (handled by the database)
  * </ul>
  *
- * <p><strong>Thread Safety:</strong> All operations are thread-safe using ConcurrentHashMap and
- * synchronized file I/O.
+ * <p><strong>Thread Safety:</strong> All operations are thread-safe using ConcurrentHashMap for the
+ * local cache and gRPC's thread-safe stubs.
  *
  * @author Status Network Development Team
  * @since 1.0
@@ -66,353 +63,387 @@ import org.slf4j.LoggerFactory;
 public class DenyListManager implements Closeable {
   private static final Logger LOG = LoggerFactory.getLogger(DenyListManager.class);
 
-  private final Path denyListFilePath;
-  private final long entryMaxAgeMinutes;
   private final String serviceName;
+  private final String grpcHost;
+  private final int grpcPort;
+  private final boolean useTls;
+  private final long ttlSeconds;
 
-  // Thread-safe in-memory cache - single source of truth
-  private final Map<Address, Instant> denyList = new ConcurrentHashMap<>();
+  // gRPC client components
+  private ManagedChannel channel;
+  private RlnProverGrpc.RlnProverBlockingStub blockingStub;
 
-  private ScheduledExecutorService denyListRefreshScheduler;
+  // Local in-memory cache for read performance
+  private final Map<org.hyperledger.besu.datatypes.Address, CachedDenyEntry> localCache =
+      new ConcurrentHashMap<>();
+
+  // Track if gRPC is available
+  private final AtomicBoolean grpcAvailable = new AtomicBoolean(false);
+
+  // Scheduler for cache refresh
+  private ScheduledExecutorService cacheRefreshScheduler;
+
+  /** Cached deny list entry with timestamp for local TTL checks. */
+  private record CachedDenyEntry(long deniedAtSeconds, Long expiresAtSeconds) {
+    boolean isExpired() {
+      if (expiresAtSeconds == null) {
+        return false; // No expiry
+      }
+      return Instant.now().getEpochSecond() >= expiresAtSeconds;
+    }
+  }
 
   /**
-   * Creates a new DenyListManager with the specified configuration.
+   * Creates a new DenyListManager with gRPC backend.
    *
    * @param serviceName Name for logging and identification purposes
-   * @param denyListPath Path to the deny list file
-   * @param entryMaxAgeMinutes Maximum age for deny list entries in minutes
-   * @param refreshIntervalSeconds How often to refresh from file (0 to disable)
+   * @param grpcHost Host of the RLN prover gRPC service
+   * @param grpcPort Port of the RLN prover gRPC service
+   * @param useTls Whether to use TLS for gRPC connection
+   * @param ttlSeconds Default TTL for deny list entries in seconds (0 means no expiry)
+   * @param cacheRefreshIntervalSeconds How often to refresh local cache (0 to disable)
    */
   public DenyListManager(
       String serviceName,
-      String denyListPath,
-      long entryMaxAgeMinutes,
-      long refreshIntervalSeconds) {
+      String grpcHost,
+      int grpcPort,
+      boolean useTls,
+      long ttlSeconds,
+      long cacheRefreshIntervalSeconds) {
     this.serviceName = serviceName;
-    this.denyListFilePath = Paths.get(denyListPath);
-    this.entryMaxAgeMinutes = entryMaxAgeMinutes;
+    this.grpcHost = grpcHost;
+    this.grpcPort = grpcPort;
+    this.useTls = useTls;
+    this.ttlSeconds = ttlSeconds;
 
-    // Load initial state from file
-    loadDenyListFromFile();
+    // Initialize gRPC connection
+    initializeGrpcClient();
 
-    // Start refresh scheduler if enabled
-    if (refreshIntervalSeconds > 0) {
-      startDenyListRefreshScheduler(refreshIntervalSeconds);
-    } else {
-      LOG.info("{}: Deny list auto-refresh is DISABLED (refresh interval <= 0)", serviceName);
+    // Start cache refresh scheduler if enabled
+    if (cacheRefreshIntervalSeconds > 0) {
+      startCacheRefreshScheduler(cacheRefreshIntervalSeconds);
     }
 
     LOG.info(
-        "{}: DenyListManager initialized successfully. File: {}, MaxAge: {}min, Refresh: {}s",
+        "{}: DenyListManager initialized with gRPC backend at {}:{}, TTL: {}s, CacheRefresh: {}s",
         serviceName,
-        denyListPath,
-        entryMaxAgeMinutes,
-        refreshIntervalSeconds);
+        grpcHost,
+        grpcPort,
+        ttlSeconds,
+        cacheRefreshIntervalSeconds);
+  }
+
+  /** Initializes the gRPC client connection. */
+  private void initializeGrpcClient() {
+    try {
+      ManagedChannelBuilder<?> channelBuilder =
+          ManagedChannelBuilder.forAddress(grpcHost, grpcPort);
+
+      if (useTls) {
+        channelBuilder.useTransportSecurity();
+      } else {
+        channelBuilder.usePlaintext();
+      }
+
+      this.channel = channelBuilder.build();
+      this.blockingStub = RlnProverGrpc.newBlockingStub(channel);
+      this.grpcAvailable.set(true);
+
+      LOG.info("{}: gRPC client initialized for {}:{}", serviceName, grpcHost, grpcPort);
+    } catch (Exception e) {
+      LOG.error("{}: Failed to initialize gRPC client: {}", serviceName, e.getMessage(), e);
+      this.grpcAvailable.set(false);
+    }
   }
 
   /**
    * Checks if an address is currently on the deny list.
    *
-   * <p>This is a read-only operation that automatically handles TTL expiration. Safe for concurrent
-   * access by multiple threads.
+   * <p>First checks local cache, then queries gRPC if needed. Falls back to cache-only if gRPC is
+   * unavailable.
    *
    * @param address The address to check
    * @return true if the address is denied and not expired, false otherwise
    */
-  public boolean isDenied(Address address) {
-    Instant deniedAt = denyList.get(address);
-    if (deniedAt == null) {
-      return false;
-    }
-
-    // Check if entry has expired
-    if (isEntryExpired(deniedAt)) {
-      // Remove expired entry (this might cause a small race condition but it's acceptable)
-      if (denyList.remove(address, deniedAt)) {
-        LOG.debug(
-            "{}: Expired deny list entry for {} removed during check",
-            serviceName,
-            address.toHexString());
-        // Note: We don't persist this removal immediately for performance
-        // It will be cleaned up during the next file refresh
+  public boolean isDenied(org.hyperledger.besu.datatypes.Address address) {
+    // First check local cache
+    CachedDenyEntry cached = localCache.get(address);
+    if (cached != null) {
+      if (cached.isExpired()) {
+        localCache.remove(address);
+        return false;
       }
-      return false;
+      return true;
     }
 
-    return true;
+    // Query gRPC if available
+    if (grpcAvailable.get() && blockingStub != null) {
+      try {
+        IsDeniedRequest request =
+            IsDeniedRequest.newBuilder().setAddress(address.toHexString().toLowerCase()).build();
+
+        IsDeniedReply reply = blockingStub.isDenied(request);
+
+        // Update local cache if denied
+        if (reply.getIsDenied()) {
+          // Fetch full entry to get expiry info
+          fetchAndCacheEntry(address);
+        }
+
+        return reply.getIsDenied();
+      } catch (StatusRuntimeException e) {
+        LOG.warn(
+            "{}: gRPC isDenied call failed for {}: {}. Using cache only.",
+            serviceName,
+            address.toHexString(),
+            e.getStatus());
+        grpcAvailable.set(false);
+        scheduleGrpcReconnect();
+      }
+    }
+
+    return false;
   }
 
   /**
-   * Adds an address to the deny list with current timestamp.
+   * Adds an address to the deny list.
    *
-   * <p>This is a write operation that immediately persists to file. Should only be called by
-   * components that have write access (e.g., RlnVerifierValidator).
+   * <p>Immediately persists to the database via gRPC and updates local cache.
    *
    * @param address The address to add to the deny list
    * @return true if the address was newly added, false if it was already present
    */
-  public boolean addToDenyList(Address address) {
-    Instant now = Instant.now();
-    Instant previous = denyList.put(address, now);
+  public boolean addToDenyList(org.hyperledger.besu.datatypes.Address address) {
+    return addToDenyList(address, null);
+  }
 
-    if (previous == null) {
-      // Persist immediately to ensure consistency
-      saveDenyListToFile();
-      LOG.info(
-          "{}: Address {} added to deny list at {}. Cache size: {}",
-          serviceName,
-          address.toHexString(),
-          now,
-          denyList.size());
-      return true;
+  /**
+   * Adds an address to the deny list with an optional reason.
+   *
+   * @param address The address to add to the deny list
+   * @param reason Optional reason for denial
+   * @return true if the address was newly added, false if it was already present
+   */
+  public boolean addToDenyList(org.hyperledger.besu.datatypes.Address address, String reason) {
+    long now = Instant.now().getEpochSecond();
+    Long expiresAt = ttlSeconds > 0 ? now + ttlSeconds : null;
+
+    // Update local cache immediately
+    localCache.put(address, new CachedDenyEntry(now, expiresAt));
+
+    // Persist via gRPC if available
+    if (grpcAvailable.get() && blockingStub != null) {
+      try {
+        AddToDenyListRequest.Builder requestBuilder =
+            AddToDenyListRequest.newBuilder().setAddress(address.toHexString().toLowerCase());
+
+        if (reason != null) {
+          requestBuilder.setReason(reason);
+        }
+
+        if (ttlSeconds > 0) {
+          requestBuilder.setTtlSeconds(ttlSeconds);
+        }
+
+        AddToDenyListReply reply = blockingStub.addToDenyList(requestBuilder.build());
+
+        LOG.info(
+            "{}: Address {} {} deny list via gRPC (reason: {})",
+            serviceName,
+            address.toHexString(),
+            reply.getWasNew() ? "added to" : "updated in",
+            reason != null ? reason : "none");
+
+        return reply.getWasNew();
+      } catch (StatusRuntimeException e) {
+        LOG.warn(
+            "{}: gRPC addToDenyList call failed for {}: {}. Entry cached locally.",
+            serviceName,
+            address.toHexString(),
+            e.getStatus());
+        grpcAvailable.set(false);
+        scheduleGrpcReconnect();
+      }
     } else {
-      LOG.debug(
-          "{}: Address {} was already on deny list (updated timestamp)",
+      LOG.warn(
+          "{}: gRPC unavailable. Address {} added to local cache only.",
           serviceName,
           address.toHexString());
-      // Still persist to update timestamp
-      saveDenyListToFile();
-      return false;
     }
+
+    return true; // Assume new when we can't verify
   }
 
   /**
    * Removes an address from the deny list.
    *
-   * <p>This is a write operation that immediately persists to file. Should only be called by
-   * components that have write access (e.g., RlnVerifierValidator).
-   *
    * @param address The address to remove from the deny list
    * @return true if the address was removed, false if it wasn't on the list
    */
-  public boolean removeFromDenyList(Address address) {
-    Instant removed = denyList.remove(address);
+  public boolean removeFromDenyList(org.hyperledger.besu.datatypes.Address address) {
+    // Remove from local cache immediately
+    CachedDenyEntry removed = localCache.remove(address);
 
-    if (removed != null) {
-      // Persist immediately to ensure consistency
-      saveDenyListToFile();
-      LOG.info(
-          "{}: Address {} removed from deny list. Cache size: {}",
+    // Persist via gRPC if available
+    if (grpcAvailable.get() && blockingStub != null) {
+      try {
+        RemoveFromDenyListRequest request =
+            RemoveFromDenyListRequest.newBuilder()
+                .setAddress(address.toHexString().toLowerCase())
+                .build();
+
+        RemoveFromDenyListReply reply = blockingStub.removeFromDenyList(request);
+
+        LOG.info(
+            "{}: Address {} {} from deny list via gRPC",
+            serviceName,
+            address.toHexString(),
+            reply.getWasPresent() ? "removed" : "was not");
+
+        return reply.getWasPresent();
+      } catch (StatusRuntimeException e) {
+        LOG.warn(
+            "{}: gRPC removeFromDenyList call failed for {}: {}",
+            serviceName,
+            address.toHexString(),
+            e.getStatus());
+        grpcAvailable.set(false);
+        scheduleGrpcReconnect();
+      }
+    }
+
+    return removed != null;
+  }
+
+  /**
+   * Gets the current size of the local deny list cache (for monitoring/debugging).
+   *
+   * @return Number of addresses currently in the local cache
+   */
+  public int size() {
+    return localCache.size();
+  }
+
+  /**
+   * Checks if the gRPC connection to the prover is available.
+   *
+   * @return true if gRPC is available, false otherwise
+   */
+  public boolean isGrpcAvailable() {
+    return grpcAvailable.get();
+  }
+
+  /** Fetches a deny list entry from gRPC and caches it locally. */
+  private void fetchAndCacheEntry(org.hyperledger.besu.datatypes.Address address) {
+    if (!grpcAvailable.get() || blockingStub == null) {
+      return;
+    }
+
+    try {
+      GetDenyListEntryRequest request =
+          GetDenyListEntryRequest.newBuilder()
+              .setAddress(address.toHexString().toLowerCase())
+              .build();
+
+      GetDenyListEntryReply reply = blockingStub.getDenyListEntry(request);
+
+      if (reply.hasEntry()) {
+        var entry = reply.getEntry();
+        Long expiresAt = entry.hasExpiresAt() ? entry.getExpiresAt() : null;
+        localCache.put(address, new CachedDenyEntry(entry.getDeniedAt(), expiresAt));
+      }
+    } catch (StatusRuntimeException e) {
+      LOG.debug(
+          "{}: Failed to fetch deny list entry for {}: {}",
           serviceName,
           address.toHexString(),
-          denyList.size());
-      return true;
-    } else {
-      LOG.debug(
-          "{}: Address {} was not on deny list, nothing to remove",
-          serviceName,
-          address.toHexString());
-      return false;
+          e.getStatus());
     }
   }
 
-  /**
-   * Gets the current size of the deny list (for monitoring/debugging).
-   *
-   * @return Number of addresses currently on the deny list
-   */
-  public int size() {
-    return denyList.size();
-  }
-
-  /**
-   * Forces a reload of the deny list from file.
-   *
-   * <p>This can be useful for testing or when external changes are made to the file. Thread-safe
-   * and automatically handles TTL expiration during load.
-   */
-  public void reloadFromFile() {
-    loadDenyListFromFile();
-  }
-
-  /** Starts the scheduled task for deny list file refresh. */
-  private void startDenyListRefreshScheduler(long refreshIntervalSeconds) {
-    denyListRefreshScheduler =
+  /** Starts the scheduled task for local cache refresh. */
+  private void startCacheRefreshScheduler(long refreshIntervalSeconds) {
+    cacheRefreshScheduler =
         Executors.newSingleThreadScheduledExecutor(
             r -> {
               Thread t = Executors.defaultThreadFactory().newThread(r);
-              t.setName(serviceName + "-DenyListRefresh");
+              t.setName(serviceName + "-DenyListCacheRefresh");
               t.setDaemon(true);
               return t;
             });
 
-    denyListRefreshScheduler.scheduleAtFixedRate(
-        this::loadDenyListFromFile,
+    cacheRefreshScheduler.scheduleAtFixedRate(
+        this::cleanupExpiredEntries,
         refreshIntervalSeconds,
         refreshIntervalSeconds,
         TimeUnit.SECONDS);
 
     LOG.info(
-        "{}: Scheduled deny list refresh every {} seconds", serviceName, refreshIntervalSeconds);
+        "{}: Scheduled deny list cache cleanup every {} seconds",
+        serviceName,
+        refreshIntervalSeconds);
   }
 
-  /**
-   * Loads the deny list from the configured file path.
-   *
-   * <p>Reads deny list entries from file in format: "address,timestamp" and automatically removes
-   * expired entries based on configured TTL. Updates are atomic to prevent inconsistent state
-   * during concurrent access.
-   */
-  private synchronized void loadDenyListFromFile() {
-    if (!Files.exists(denyListFilePath)) {
-      LOG.debug(
-          "{}: Deny list file not found at {}, keeping current cache",
-          serviceName,
-          denyListFilePath);
-      return;
-    }
-
-    Map<Address, Instant> newDenyListCache = new ConcurrentHashMap<>();
-    Instant now = Instant.now();
-    boolean entriesPruned = false;
-
-    try (BufferedReader reader =
-        Files.newBufferedReader(denyListFilePath, StandardCharsets.UTF_8)) {
-      String line;
-      while ((line = reader.readLine()) != null) {
-        String[] parts = line.split(",", 2);
-        if (parts.length == 2) {
-          try {
-            Address address = Address.fromHexString(parts[0].trim());
-            Instant timestamp = Instant.parse(parts[1].trim());
-
-            if (!isEntryExpired(timestamp, now)) {
-              newDenyListCache.put(address, timestamp);
-            } else {
-              entriesPruned = true;
-              LOG.debug(
-                  "{}: Expired deny list entry for {} (added at {}) removed during load",
-                  serviceName,
-                  address,
-                  timestamp);
-            }
-          } catch (IllegalArgumentException | DateTimeParseException e) {
-            LOG.warn(
-                "{}: Invalid entry in deny list file: '{}'. Skipping. Error: {}",
-                serviceName,
-                line,
-                e.getMessage());
-          }
-        } else {
-          LOG.warn(
-              "{}: Malformed line in deny list file (expected 'address,timestamp'): '{}'",
-              serviceName,
-              line);
-        }
+  /** Cleans up expired entries from the local cache. */
+  private void cleanupExpiredEntries() {
+    int removedCount = 0;
+    for (var entry : localCache.entrySet()) {
+      if (entry.getValue().isExpired()) {
+        localCache.remove(entry.getKey());
+        removedCount++;
       }
+    }
+    if (removedCount > 0) {
+      LOG.debug("{}: Cleaned up {} expired entries from local cache", serviceName, removedCount);
+    }
+  }
 
-      // Atomic update of the cache
-      denyList.clear();
-      denyList.putAll(newDenyListCache);
-
-      LOG.debug(
-          "{}: Deny list loaded successfully from {}. {} active entries",
-          serviceName,
-          denyListFilePath,
-          denyList.size());
-
-      // If we pruned expired entries, save the cleaned list back to file
-      if (entriesPruned) {
-        saveDenyListToFile();
-      }
-
-    } catch (IOException e) {
-      LOG.error(
-          "{}: Error loading deny list from {}: {}",
-          serviceName,
-          denyListFilePath,
-          e.getMessage(),
-          e);
+  /** Schedules a gRPC reconnection attempt. */
+  private void scheduleGrpcReconnect() {
+    if (cacheRefreshScheduler != null && !cacheRefreshScheduler.isShutdown()) {
+      cacheRefreshScheduler.schedule(
+          () -> {
+            LOG.info("{}: Attempting gRPC reconnection...", serviceName);
+            initializeGrpcClient();
+          },
+          30,
+          TimeUnit.SECONDS);
     }
   }
 
   /**
-   * Atomically saves the current deny list state to file.
-   *
-   * <p>Uses atomic file operations (write to temp, then move) to ensure file consistency and
-   * prevent corruption during concurrent access.
-   */
-  private synchronized void saveDenyListToFile() {
-    Map<Address, Instant> denyListSnapshot = new HashMap<>(denyList);
-    List<String> entriesAsString =
-        denyListSnapshot.entrySet().stream()
-            .map(
-                entry ->
-                    entry.getKey().toHexString().toLowerCase() + "," + entry.getValue().toString())
-            .sorted()
-            .collect(Collectors.toList());
-
-    try {
-      // Ensure parent directory exists
-      Files.createDirectories(denyListFilePath.getParent());
-
-      Path tempFilePath =
-          denyListFilePath
-              .getParent()
-              .resolve(denyListFilePath.getFileName().toString() + ".tmp_save");
-
-      Files.write(
-          tempFilePath,
-          entriesAsString,
-          StandardCharsets.UTF_8,
-          StandardOpenOption.CREATE,
-          StandardOpenOption.TRUNCATE_EXISTING);
-
-      Files.move(
-          tempFilePath,
-          denyListFilePath,
-          StandardCopyOption.REPLACE_EXISTING,
-          StandardCopyOption.ATOMIC_MOVE);
-
-      LOG.debug(
-          "{}: Deny list saved to file {} with {} entries",
-          serviceName,
-          denyListFilePath,
-          entriesAsString.size());
-
-    } catch (IOException e) {
-      LOG.error(
-          "{}: Error saving deny list to file {}: {}",
-          serviceName,
-          denyListFilePath,
-          e.getMessage(),
-          e);
-    }
-  }
-
-  /** Checks if a deny list entry has expired based on its timestamp. */
-  private boolean isEntryExpired(Instant entryTimestamp) {
-    return isEntryExpired(entryTimestamp, Instant.now());
-  }
-
-  /** Checks if a deny list entry has expired based on its timestamp and current time. */
-  private boolean isEntryExpired(Instant entryTimestamp, Instant currentTime) {
-    long maxAgeMillis = TimeUnit.MINUTES.toMillis(entryMaxAgeMinutes);
-    return (currentTime.toEpochMilli() - entryTimestamp.toEpochMilli()) >= maxAgeMillis;
-  }
-
-  /**
-   * Closes all resources including scheduled executors.
-   *
-   * <p>Ensures graceful shutdown of all background tasks. This method should be called when the
-   * manager is no longer needed to prevent resource leaks.
+   * Closes all resources including gRPC channel and scheduled executors.
    *
    * @throws IOException if there are issues during resource cleanup
    */
   @Override
   public void close() throws IOException {
-    if (denyListRefreshScheduler != null && !denyListRefreshScheduler.isShutdown()) {
-      LOG.info("{}: Shutting down deny list refresh scheduler", serviceName);
-      denyListRefreshScheduler.shutdown();
+    LOG.info("{}: Shutting down DenyListManager...", serviceName);
+
+    if (cacheRefreshScheduler != null && !cacheRefreshScheduler.isShutdown()) {
+      cacheRefreshScheduler.shutdown();
       try {
-        if (!denyListRefreshScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-          denyListRefreshScheduler.shutdownNow();
+        if (!cacheRefreshScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+          cacheRefreshScheduler.shutdownNow();
         }
       } catch (InterruptedException e) {
-        denyListRefreshScheduler.shutdownNow();
+        cacheRefreshScheduler.shutdownNow();
         Thread.currentThread().interrupt();
       }
     }
+
+    if (channel != null && !channel.isShutdown()) {
+      channel.shutdown();
+      try {
+        if (!channel.awaitTermination(5, TimeUnit.SECONDS)) {
+          channel.shutdownNow();
+        }
+      } catch (InterruptedException e) {
+        channel.shutdownNow();
+        Thread.currentThread().interrupt();
+      }
+    }
+
     LOG.info("{}: DenyListManager closed", serviceName);
   }
 }
