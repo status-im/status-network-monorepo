@@ -320,8 +320,7 @@ class RlnValidationPerformanceTest {
   void testConcurrentNullifierConflicts() throws InterruptedException {
     // Test behavior when many threads try to use the same nullifiers
     int threadCount = 20;
-    String conflictedNullifier =
-        "0xc0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffee00";
+    String conflictedNullifier = "0xc0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffee00";
 
     ExecutorService executor = Executors.newFixedThreadPool(threadCount);
     CountDownLatch latch = new CountDownLatch(threadCount);
