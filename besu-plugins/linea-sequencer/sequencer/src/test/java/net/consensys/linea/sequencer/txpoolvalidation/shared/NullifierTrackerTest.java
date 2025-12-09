@@ -266,10 +266,10 @@ class NullifierTrackerTest {
   void testLegacyConstructor() throws Exception {
     tracker.close(); // Close default tracker
 
-    // Test legacy constructor with file path (should be ignored)
-    tracker = new NullifierTracker("Test", "/tmp/ignored_file.txt", 1L);
+    // Test legacy constructor with default capacity
+    tracker = new NullifierTracker("Test", 1L);
 
-    // Should work normally despite file path
+    // Should work normally with default capacity
     boolean isNew = tracker.checkAndMarkNullifier(TEST_NULLIFIER_1, TEST_EPOCH_1);
     assertThat(isNew).isTrue();
 

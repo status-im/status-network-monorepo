@@ -117,19 +117,22 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
         tree_depth: MERKLE_TREE_HEIGHT,
     };
     let db_url = app_args.db_url.ok_or_else(|| {
-        AppError2::Custom("--db <database_url> is required. Example: --db postgres://user:pass@host:5432/db".to_string())
+        AppError2::Custom(
+            "--db <database_url> is required. Example: --db postgres://user:pass@host:5432/db"
+                .to_string(),
+        )
     })?;
     let db_conn = Database::connect(&db_url)
         .await
         .map_err(UserDb2OpenError::from)?;
-    
+
     // Run database migrations
     info!("Running database migrations...");
     Migrator::up(&db_conn, None)
         .await
         .map_err(|e| AppError2::Custom(format!("Migration failed: {}", e)))?;
     info!("Database migrations complete");
-    
+
     let user_db_service = UserDbService::new(
         db_conn,
         user_db_config,

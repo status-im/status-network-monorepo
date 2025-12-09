@@ -142,15 +142,14 @@ public class NullifierTracker implements Closeable {
   }
 
   /**
-   * Legacy constructor for backward compatibility with file path parameter.
+   * Legacy constructor for backward compatibility.
    *
    * @param serviceName Service name for logging
-   * @param storagePath Ignored - DB storage is handled via gRPC
    * @param nullifierExpiryHours Expiry time in hours
    */
-  public NullifierTracker(String serviceName, String storagePath, long nullifierExpiryHours) {
+  public NullifierTracker(String serviceName, long nullifierExpiryHours) {
     this(serviceName, 1_000_000L, nullifierExpiryHours);
-    LOG.info("{}: Storage path ignored - using PostgreSQL via gRPC", serviceName);
+    LOG.info("{}: Using default capacity (1M) with PostgreSQL via gRPC", serviceName);
   }
 
   private void initializeGrpcClient() {

@@ -10,7 +10,11 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     /// RLN internal nullifier (32 bytes)
     /// Part of composite primary key
-    #[sea_orm(primary_key, auto_increment = false, column_type = "VarBinary(StringLen::None)")]
+    #[sea_orm(
+        primary_key,
+        auto_increment = false,
+        column_type = "VarBinary(StringLen::None)"
+    )]
     pub nullifier: Vec<u8>,
     /// Epoch identifier (block number or timestamp bucket)
     /// Part of composite primary key

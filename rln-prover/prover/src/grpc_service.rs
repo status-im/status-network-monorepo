@@ -40,11 +40,17 @@ pub mod prover_proto {
         tonic::include_file_descriptor_set!("prover_descriptor");
 }
 use crate::user_db_2::{UserDb2, UserTierInfo2};
+use crate::user_db_error::UserTierInfoError2;
 use crate::user_db_types::RateLimit;
 use prover_proto::{
     // Deny list messages
     AddToDenyListReply,
     AddToDenyListRequest,
+    CheckAndRecordNullifierReply,
+    CheckAndRecordNullifierRequest,
+    // Nullifier messages
+    CheckNullifierReply,
+    CheckNullifierRequest,
     DenyListEntry,
     DenyListError,
     GetDenyListEntryReply,
@@ -53,15 +59,10 @@ use prover_proto::{
     GetUserTierInfoRequest,
     IsDeniedReply,
     IsDeniedRequest,
-    RemoveFromDenyListReply,
-    RemoveFromDenyListRequest,
-    // Nullifier messages
-    CheckNullifierReply,
-    CheckNullifierRequest,
     RecordNullifierReply,
     RecordNullifierRequest,
-    CheckAndRecordNullifierReply,
-    CheckAndRecordNullifierRequest,
+    RemoveFromDenyListReply,
+    RemoveFromDenyListRequest,
     // RegisterUserReply,
     // RegisterUserRequest,
     // RegistrationStatus,
@@ -79,7 +80,6 @@ use prover_proto::{
     rln_proof_reply::Resp as GetProofsResp,
     rln_prover_server::{RlnProver, RlnProverServer},
 };
-use crate::user_db_error::UserTierInfoError2;
 
 const PROVER_SERVICE_LIMIT_PER_CONNECTION: usize = 16;
 // Timeout for all handlers of a request (increased to 5 minutes for streaming support)
@@ -515,7 +515,11 @@ where
             return Err(Status::invalid_argument("Nullifier must be 32 bytes"));
         }
 
-        match self.user_db.nullifier_exists(&req.nullifier, req.epoch).await {
+        match self
+            .user_db
+            .nullifier_exists(&req.nullifier, req.epoch)
+            .await
+        {
             Ok(exists) => Ok(Response::new(CheckNullifierReply { exists })),
             Err(e) => {
                 error!("Failed to check nullifier: {:?}", e);
@@ -535,7 +539,11 @@ where
             return Err(Status::invalid_argument("Nullifier must be 32 bytes"));
         }
 
-        match self.user_db.record_nullifier(&req.nullifier, req.epoch).await {
+        match self
+            .user_db
+            .record_nullifier(&req.nullifier, req.epoch)
+            .await
+        {
             Ok(recorded) => Ok(Response::new(RecordNullifierReply { recorded })),
             Err(e) => {
                 error!("Failed to record nullifier: {:?}", e);
@@ -555,7 +563,11 @@ where
             return Err(Status::invalid_argument("Nullifier must be 32 bytes"));
         }
 
-        match self.user_db.check_and_record_nullifier(&req.nullifier, req.epoch).await {
+        match self
+            .user_db
+            .check_and_record_nullifier(&req.nullifier, req.epoch)
+            .await
+        {
             Ok(is_valid) => Ok(Response::new(CheckAndRecordNullifierReply { is_valid })),
             Err(e) => {
                 error!("Failed to check and record nullifier: {:?}", e);

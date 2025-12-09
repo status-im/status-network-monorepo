@@ -26,11 +26,7 @@ impl MigrationTrait for Migration {
                             .not_null(),
                     )
                     // Epoch: time period identifier (block number or timestamp bucket)
-                    .col(
-                        ColumnDef::new(Nullifiers::Epoch)
-                            .big_integer()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(Nullifiers::Epoch).big_integer().not_null())
                     // Composite primary key for O(log n) duplicate detection
                     .primary_key(
                         Index::create()
@@ -58,7 +54,12 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(Table::drop().table(Nullifiers::Table).if_exists().to_owned())
+            .drop_table(
+                Table::drop()
+                    .table(Nullifiers::Table)
+                    .if_exists()
+                    .to_owned(),
+            )
             .await?;
 
         Ok(())
@@ -71,4 +72,3 @@ pub enum Nullifiers {
     Nullifier,
     Epoch,
 }
-

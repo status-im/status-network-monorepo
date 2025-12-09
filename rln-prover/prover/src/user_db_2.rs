@@ -10,8 +10,8 @@ use rln::{hashers::poseidon_hash, protocol::keygen};
 // db
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, DbErr, EntityTrait, ExprTrait, IntoActiveModel, PaginatorTrait,
-    QueryFilter, Set, TransactionTrait,
+    ColumnTrait, DatabaseConnection, DbErr, EntityTrait, ExprTrait, IntoActiveModel,
+    PaginatorTrait, QueryFilter, Set, TransactionTrait,
 };
 // internal
 use crate::epoch_service::{Epoch, EpochSlice};
@@ -307,55 +307,55 @@ impl UserDb2 {
     }
 
     /*
-=======
-            Some(res) => Ok(self.counters_from_key(res)),
-        }
-    }
-
->>>>>>> 1cbd5c6a (Cargo fmt)
-    fn counters_from_key(&self, model: tx_counter::Model) -> (EpochCounter, EpochSliceCounter) {
-        let (epoch, epoch_slice) = *self.epoch_store.read();
-        let cmp = (
-            model.epoch == i64::from(epoch),
-            model.epoch_slice == i64::from(epoch_slice),
-        );
-
-        match cmp {
-            (true, true) => {
-                // EpochCounter stored in DB == epoch store
-                // We query for an epoch / epoch slice and this is what is stored in the Db
-                // Return the counters
-                (
-                    // FIXME: as
-                    (model.epoch_counter as u64).into(),
-                    // FIXME: as
-                    (model.epoch_slice_counter as u64).into(),
-                )
-            }
-            (true, false) => {
-                // EpochCounter.epoch_slice (stored in Db) != epoch_store.epoch_slice
-                // We query for an epoch slice after what is stored in Db
-                // This can happen if no Tx has updated the epoch slice counter (yet)
-                // FIXME: as
-                (
-                    (model.epoch_counter as u64).into(),
-                    EpochSliceCounter::from(0),
-                )
-            }
-            (false, true) => {
-                // EpochCounter.epoch (stored in DB) != epoch_store.epoch
-                // We query for an epoch after what is stored in Db
-                // This can happen if no Tx has updated the epoch counter (yet)
-                (EpochCounter::from(0), EpochSliceCounter::from(0))
-            }
-            (false, false) => {
-                // EpochCounter (stored in DB) != epoch_store
-                // Outdated value (both for epoch & epoch slice)
-                (EpochCounter::from(0), EpochSliceCounter::from(0))
+    =======
+                Some(res) => Ok(self.counters_from_key(res)),
             }
         }
-    }
-    */
+
+    >>>>>>> 1cbd5c6a (Cargo fmt)
+        fn counters_from_key(&self, model: tx_counter::Model) -> (EpochCounter, EpochSliceCounter) {
+            let (epoch, epoch_slice) = *self.epoch_store.read();
+            let cmp = (
+                model.epoch == i64::from(epoch),
+                model.epoch_slice == i64::from(epoch_slice),
+            );
+
+            match cmp {
+                (true, true) => {
+                    // EpochCounter stored in DB == epoch store
+                    // We query for an epoch / epoch slice and this is what is stored in the Db
+                    // Return the counters
+                    (
+                        // FIXME: as
+                        (model.epoch_counter as u64).into(),
+                        // FIXME: as
+                        (model.epoch_slice_counter as u64).into(),
+                    )
+                }
+                (true, false) => {
+                    // EpochCounter.epoch_slice (stored in Db) != epoch_store.epoch_slice
+                    // We query for an epoch slice after what is stored in Db
+                    // This can happen if no Tx has updated the epoch slice counter (yet)
+                    // FIXME: as
+                    (
+                        (model.epoch_counter as u64).into(),
+                        EpochSliceCounter::from(0),
+                    )
+                }
+                (false, true) => {
+                    // EpochCounter.epoch (stored in DB) != epoch_store.epoch
+                    // We query for an epoch after what is stored in Db
+                    // This can happen if no Tx has updated the epoch counter (yet)
+                    (EpochCounter::from(0), EpochSliceCounter::from(0))
+                }
+                (false, false) => {
+                    // EpochCounter (stored in DB) != epoch_store
+                    // Outdated value (both for epoch & epoch slice)
+                    (EpochCounter::from(0), EpochSliceCounter::from(0))
+                }
+            }
+        }
+        */
 
     // user register & delete (with app logic)
 
@@ -782,7 +782,7 @@ impl UserDb2 {
             .await;
 
         match result {
-            Ok(_) => Ok(true),  // Inserted successfully
+            Ok(_) => Ok(true),                          // Inserted successfully
             Err(DbErr::RecordNotInserted) => Ok(false), // Already existed
             Err(e) => Err(e),
         }
