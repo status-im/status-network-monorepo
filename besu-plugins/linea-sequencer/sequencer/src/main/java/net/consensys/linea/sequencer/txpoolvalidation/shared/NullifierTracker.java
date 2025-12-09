@@ -188,8 +188,6 @@ public class NullifierTracker implements Closeable {
    * @return true if nullifier is new (transaction allowed), false if duplicate (reject)
    */
   public boolean checkAndMarkNullifier(String nullifierHex, String epochId) {
-    totalChecks.incrementAndGet();
-
     if (nullifierHex == null || nullifierHex.trim().isEmpty()) {
       LOG.warn("{}: Invalid nullifier: null or empty", serviceName);
       return false;
@@ -200,7 +198,12 @@ public class NullifierTracker implements Closeable {
       return false;
     }
 
-    String cacheKey = nullifierHex.toLowerCase().trim() + ":" + epochId.trim();
+    // Normalize inputs before processing
+    String normalizedNullifier = nullifierHex.toLowerCase().trim();
+    String normalizedEpoch = epochId.trim();
+    String cacheKey = normalizedNullifier + ":" + normalizedEpoch;
+
+    totalChecks.incrementAndGet();
 
     // Hot path: Check local cache first
     Boolean cached = localCache.getIfPresent(cacheKey);
@@ -214,8 +217,8 @@ public class NullifierTracker implements Closeable {
     // Cold path: Check and record in database via gRPC
     if (grpcAvailable.get() && blockingStub != null) {
       try {
-        byte[] nullifierBytes = Bytes.fromHexString(nullifierHex).toArrayUnsafe();
-        long epoch = parseEpoch(epochId);
+        byte[] nullifierBytes = Bytes.fromHexString(normalizedNullifier).toArrayUnsafe();
+        long epoch = parseEpoch(normalizedEpoch);
 
         CheckAndRecordNullifierRequest request =
             CheckAndRecordNullifierRequest.newBuilder()
@@ -250,8 +253,14 @@ public class NullifierTracker implements Closeable {
     }
 
     // Fallback: Cache-only mode when gRPC is unavailable
-    // This is still secure for a single instance but doesn't share state
-    localCache.put(cacheKey, Boolean.TRUE);
+    // Use putIfAbsent for thread-safe atomic insertion
+    Boolean existingValue = localCache.asMap().putIfAbsent(cacheKey, Boolean.TRUE);
+    if (existingValue != null) {
+      // Another thread already added this nullifier
+      duplicatesDetected.incrementAndGet();
+      LOG.debug("{}: Duplicate nullifier detected (concurrent): {}", serviceName, cacheKey);
+      return false;
+    }
     LOG.debug("{}: Nullifier recorded in cache only (gRPC unavailable): {}", serviceName, cacheKey);
     return true;
   }
