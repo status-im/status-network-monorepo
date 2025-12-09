@@ -92,8 +92,8 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     }
 
     /// @notice Modifier to check if sender has slasher role
-    modifier onlySlasher() {
-        _onlySlasher(msg.sender);
+    modifier onlyAdminOrSlasher() {
+        _onlyAdminOrSlasher(msg.sender);
         _;
     }
 
@@ -226,7 +226,7 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
      * @param rewardRecipient Address that will receive the slash reward
      * @return slashedAmount The amount of karma that was slashed
      */
-    function slash(address account, address rewardRecipient) public virtual onlySlasher returns (uint256) {
+    function slash(address account, address rewardRecipient) public virtual onlyAdminOrSlasher returns (uint256) {
         return _slash(account, rewardRecipient);
     }
 
@@ -398,7 +398,7 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
         }
     }
 
-    function _onlySlasher(address sender) internal view {
+    function _onlyAdminOrSlasher(address sender) internal view {
         if (!hasRole(DEFAULT_ADMIN_ROLE, sender) && !hasRole(SLASHER_ROLE, sender)) {
             revert Karma__Unauthorized();
         }
