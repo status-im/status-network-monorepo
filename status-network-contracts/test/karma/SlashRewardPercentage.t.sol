@@ -46,7 +46,7 @@ contract SlashRewardPercentageTest is KarmaTest {
         karma.grantRole(karma.SLASHER_ROLE(), owner);
         vm.stopPrank();
 
-        uint256 slashAmount = karma.calculateSlashAmount(100 ether); // 50 ether (50%)
+        uint256 slashAmount = karma.calculateSlashAmount(alice);
 
         address rewardRecipient = makeAddr("rewardRecipient");
         vm.prank(owner);
