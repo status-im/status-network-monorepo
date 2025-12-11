@@ -22,7 +22,7 @@ contract TransferTest is KarmaTest {
         karma.mint(alice, amount);
         assertEq(karma.balanceOf(alice), amount);
 
-        uint256 slashedAmount = karma.calculateSlashAmount(karma.balanceOf(alice));
+        uint256 slashedAmount = karma.calculateSlashAmount(alice);
 
         karma.grantRole(karma.SLASHER_ROLE(), owner);
         karma.slash(alice, address(0));

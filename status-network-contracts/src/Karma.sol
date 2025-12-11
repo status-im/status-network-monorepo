@@ -230,8 +230,15 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
         return _slash(account, rewardRecipient);
     }
 
-    function calculateSlashAmount(uint256 value) public view returns (uint256) {
-        return _calculateSlashAmount(value);
+    /**
+     * @notice Calculates the amount to slash from a given value based on the current slashing percentage
+     * @param account Account to calculate slash amount for
+     * @return The amount to slash
+     */
+    function calculateSlashAmount(address account) public view returns (uint256) {
+        uint256 currentBalance = _balanceOf(account);
+        uint256 slashAmount = _calculateSlashAmount(currentBalance);
+        return Math.max(slashAmount, Math.min(MIN_SLASH_AMOUNT, currentBalance));
     }
 
     /**
@@ -328,24 +335,22 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
      * @return slashedAmount The amount of karma that was slashed
      */
     function _slash(address account, address rewardRecipient) internal virtual returns (uint256) {
-        uint256 currentBalance = _balanceOf(account);
+        // first, redeem all rewards from reward distributors
+        for (uint256 i = 0; i < rewardDistributors.length(); i++) {
+            address distributor = rewardDistributors.at(i);
+            IRewardDistributor(distributor).redeemRewards(account);
+        }
+
+        uint256 currentBalance = super.balanceOf(account);
         if (currentBalance == 0) {
             revert Karma__CannotSlashZeroBalance();
         }
 
-        // first, calculate the total amount to slash from the actual reward tokens
-        uint256 totalAmountToSlash = _calculateSlashAmount(super.balanceOf(account));
+        // calculate the total amount to slash from the actual reward tokens
+        uint256 totalAmountToSlash = _calculateSlashAmount(currentBalance);
 
-        for (uint256 i = 0; i < rewardDistributors.length(); i++) {
-            address distributor = rewardDistributors.at(i);
-            uint256 currentDistributorAccountBalance = IRewardDistributor(distributor).rewardsBalanceOfAccount(account);
-
-            // then, calculate the amount to slash from each reward distributor
-            totalAmountToSlash += _calculateSlashAmount(currentDistributorAccountBalance);
-
-            // turn virtual Karma into real Karma for slashing
-            IRewardDistributor(distributor).redeemRewards(account);
-        }
+        // ensure minimum slash amount is met
+        totalAmountToSlash = Math.max(totalAmountToSlash, Math.min(MIN_SLASH_AMOUNT, currentBalance));
 
         // Calculate reward from the slashed amount
         // slashRewardPercentage of the slashed amount goes to the reward recipient
@@ -367,17 +372,8 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
      * @notice Calculates the amount to slash from a given balance, falling back to the minimum slash amount if
      * necessary.
      */
-    function _calculateSlashAmount(uint256 balance) internal view returns (uint256) {
-        uint256 amountToSlash = Math.mulDiv(balance, slashPercentage, MAX_SLASH_PERCENTAGE);
-        if (amountToSlash < MIN_SLASH_AMOUNT) {
-            if (balance < MIN_SLASH_AMOUNT) {
-                // Not enough balance for minimum slash, slash entire balance
-                amountToSlash = balance;
-            } else {
-                amountToSlash = MIN_SLASH_AMOUNT;
-            }
-        }
-        return amountToSlash;
+    function _calculateSlashAmount(uint256 balance) internal view returns (uint256 amountToSlash) {
+        amountToSlash = Math.mulDiv(balance, slashPercentage, MAX_SLASH_PERCENTAGE);
     }
 
     function _balanceOf(address account) internal view returns (uint256) {

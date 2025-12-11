@@ -44,6 +44,8 @@ contract KarmaDistributorMock is IRewardDistributor {
         uint256 amount = userKarmaShare[account];
         /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         rewardToken.transfer(account, amount);
+        // Reset the user's karma share after redemption
+        userKarmaShare[account] = 0;
         return amount;
     }
 }

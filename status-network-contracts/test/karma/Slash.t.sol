@@ -56,7 +56,7 @@ contract SlashTest is KarmaTest {
         // ensure rewards
         uint256 currentBalance = 100 ether;
         _mintKarmaToAccount(alice, currentBalance);
-        uint256 slashedAmount = karma.calculateSlashAmount(currentBalance);
+        uint256 slashedAmount = karma.calculateSlashAmount(alice);
 
         // slash the account with no reward recipient
         vm.prank(slasher);
@@ -66,7 +66,7 @@ contract SlashTest is KarmaTest {
         assertEq(karma.balanceOf(alice), currentBalance - slashedAmount);
 
         currentBalance = karma.balanceOf(alice);
-        slashedAmount = karma.calculateSlashAmount(currentBalance);
+        slashedAmount = karma.calculateSlashAmount(alice);
 
         // slash again
         vm.prank(slasher);
@@ -80,12 +80,61 @@ contract SlashTest is KarmaTest {
         vm.assume(rewardsAmount > 0);
         vm.assume(rewardsAmount <= type(uint128).max);
         _mintKarmaToAccount(alice, rewardsAmount);
-        uint256 slashAmount = karma.calculateSlashAmount(rewardsAmount);
+        uint256 slashAmount = karma.calculateSlashAmount(alice);
 
         vm.prank(slasher);
         karma.slash(alice, address(0));
 
         // With address(0) recipient, entire amount is burned (no reward minted back)
         assertEq(karma.balanceOf(alice), rewardsAmount - slashAmount);
+    }
+
+    function test_SlashWithMultipleDistributorsDoesNotOverSlash() public {
+        // This test ensures that slashing doesn't overestimate by rounding
+        // slash amounts per distributor up to the MINIM_SLASH_AMOUNT.
+        // Example:
+        // - Actual balance: 0.9e18
+        // - Distributor 1 virtual balance: 0.8e18
+        // - Distributor 2 virtual balance: 0.7e18
+        // - Total balance: 2.4e18
+        // - Expected slash at 50%: 1.2e18 (not 2.4e18!)
+
+        uint256 actualBalance = 0.9 ether;
+        uint256 distributor1Balance = 0.8 ether;
+        uint256 distributor2Balance = 0.7 ether;
+        uint256 totalBalance = actualBalance + distributor1Balance + distributor2Balance;
+
+        // Set up the balances
+        _mintKarmaToAccount(alice, actualBalance);
+        distributor1.setUserKarmaShare(alice, distributor1Balance);
+        distributor2.setUserKarmaShare(alice, distributor2Balance);
+
+        // Give distributors enough tokens to redeem
+        vm.startPrank(owner);
+        karma.mint(address(distributor1), distributor1Balance);
+        karma.mint(address(distributor2), distributor2Balance);
+        vm.stopPrank();
+
+        // Verify total balance before slash
+        assertEq(karma.balanceOf(alice), totalBalance);
+
+        address rewardRecipient = makeAddr("rewardRecipient");
+
+        // Slash alice
+        vm.prank(slasher);
+        uint256 slashedAmount = karma.slash(alice, rewardRecipient);
+
+        // Expected slash: 50% of 2.4e18 = 1.2e18
+        uint256 expectedSlash = (totalBalance * karma.slashPercentage()) / 10_000;
+        assertEq(slashedAmount, expectedSlash, "Should slash exactly 50% of total balance");
+
+        // Calculate reward (10% of slashed amount)
+        uint256 rewardAmount = (slashedAmount * karma.slashRewardPercentage()) / 10_000;
+
+        // Verify balances after slash
+        assertEq(karma.balanceOf(alice), totalBalance - expectedSlash, "Alice should have 50% of original balance");
+        assertEq(
+            karma.balanceOf(rewardRecipient), rewardAmount, "Reward recipient should receive 10% of slashed amount"
+        );
     }
 }
