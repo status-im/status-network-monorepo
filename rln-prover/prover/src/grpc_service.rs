@@ -142,6 +142,25 @@ where
             return Err(Status::not_found("Sender not registered"));
         };
 
+        // Check deny list BEFORE proof generation to prevent denied users from getting proofs
+        match self.user_db.is_denied(&sender).await {
+            Ok(true) => {
+                info!(
+                    "[gRPC] Rejecting transaction from denied sender: {}",
+                    sender
+                );
+                return Err(Status::permission_denied(
+                    "Sender is on deny list, no proof will be generated",
+                ));
+            }
+            Ok(false) => {} // Not denied, proceed
+            Err(e) => {
+                warn!("[gRPC] Failed to check deny list for {}: {:?}", sender, e);
+                // On error, we allow the transaction to proceed (fail-open)
+                // The sequencer will still check the deny list
+            }
+        }
+
         let tx_counter_incr = if req.estimated_gas_used <= self.tx_gas_quota.get() {
             None
         } else {

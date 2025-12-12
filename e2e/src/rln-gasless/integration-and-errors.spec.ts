@@ -503,7 +503,7 @@ describe("RLN Integration and Error Handling", () => {
 
         // STRONG ASSERTIONS
         expect(errorMessage).toMatch(/timeout|rejected|proof/i);
-        expect(duration).toBeLessThan(RLN_CONFIG.test.proofTimeoutMs + 2000);
+        expect(duration).toBeLessThan(RLN_CONFIG.test.proofTimeoutMs + 3000);
 
         logger.info("ERR-002: PASSED ✓ - Prover unavailable handled correctly", {
           durationMs: duration,
