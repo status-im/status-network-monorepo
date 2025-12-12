@@ -18,6 +18,34 @@ contract ClaimTest is KarmaAirdropTest {
         return a < b ? keccak256(abi.encodePacked(a, b)) : keccak256(abi.encodePacked(b, a));
     }
 
+    function test_RevertWhen_Paused() public {
+        uint256 index = 0;
+        uint256 amount = 100e18;
+
+        bytes32 leaf = keccak256(abi.encodePacked(index, alice, amount));
+        bytes32 merkleRoot = leaf;
+        bytes32[] memory merkleProof = new bytes32[](0);
+
+        rewardToken.mint(address(airdrop), amount);
+
+        vm.prank(owner);
+        airdrop.setMerkleRoot(merkleRoot);
+
+        // Pause the contract
+        vm.prank(owner);
+        airdrop.pause();
+
+        // Generate delegation signature
+        uint256 nonce = 0;
+        uint256 expiry = block.timestamp + 1 hours;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _generateDelegationSignature(alicePrivateKey, defaultDelegatee, nonce, expiry);
+
+        // Attempt to claim while paused should revert
+        vm.expectRevert("Pausable: paused");
+        airdrop.claim(index, alice, amount, merkleProof, nonce, expiry, v, r, s);
+    }
+
     function test_RevertWhen_ClaimBeforeMerkleRootSet() public {
         uint256 index = 0;
         uint256 amount = 100e18;
