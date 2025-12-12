@@ -124,6 +124,7 @@ contract KarmaAirdrop is Ownable2Step, Pausable {
         bytes32 s
     )
         external
+        whenNotPaused
     {
         if (merkleRoot == bytes32(0)) {
             revert KarmaAirdrop__MerkleRootNotSet();
