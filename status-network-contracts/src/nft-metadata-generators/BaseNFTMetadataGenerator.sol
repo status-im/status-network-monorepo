@@ -12,10 +12,6 @@ import { INFTMetadataGenerator } from "../interfaces/INFTMetadataGenerator.sol";
  * @dev Base contract for generating NFT metadata
  */
 abstract contract BaseNFTMetadataGenerator is INFTMetadataGenerator, Ownable {
-    constructor() Ownable() {
-        _transferOwnership(msg.sender);
-    }
-
     /**
      * @notice Generates metadata for the NFT based on the owner's address and balance
      * @param account The address of the NFT owner
