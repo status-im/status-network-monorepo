@@ -448,13 +448,16 @@ where
         };
 
         match self.user_db.remove_from_deny_list(&address).await {
-            Ok(removed) => {
-                if removed {
+            Ok(was_present) => {
+                if was_present {
                     info!("Address {} removed from deny list", address);
                 } else {
                     debug!("Address {} was not on deny list", address);
                 }
-                Ok(Response::new(RemoveFromDenyListReply { removed }))
+                Ok(Response::new(RemoveFromDenyListReply {
+                    success: true,
+                    was_present,
+                }))
             }
             Err(e) => {
                 error!("Failed to remove from deny list: {:?}", e);

@@ -70,8 +70,8 @@ class RlnValidationPerformanceTest {
 
   @BeforeEach
   void setUp() throws IOException {
-    // Use gRPC-based DenyListManager (localhost for testing, falls back to local cache)
-    denyListManager = new DenyListManager("PerformanceTest", "localhost", 50051, false, 600L, 60L);
+    // Use cache-only managers for testing (no gRPC)
+    denyListManager = DenyListManager.createCacheOnly("PerformanceTest", 600L);
     nullifierTracker = new NullifierTracker("PerformanceTest", 100_000L, 1L);
   }
 
@@ -251,11 +251,11 @@ class RlnValidationPerformanceTest {
 
   @Test
   void testCacheEvictionBehavior() throws InterruptedException, IOException {
-    // Create tracker with small size and short TTL for testing eviction
+    // Create tracker with small size for testing
     nullifierTracker.close();
     nullifierTracker = new NullifierTracker("EvictionTest", 100L, 1L); // 100 max size, 1 hour TTL
 
-    // Fill beyond capacity to test size-based behavior
+    // Add entries to test cache behavior
     for (int i = 0; i < 50; i++) {
       String nullifier = String.format("0x%064d", i);
       nullifierTracker.checkAndMarkNullifier(nullifier, "test-epoch");
@@ -266,12 +266,14 @@ class RlnValidationPerformanceTest {
     assertThat(stats.cacheSize()).isGreaterThan(0);
     assertThat(stats.totalChecks()).isEqualTo(50);
 
-    // Wait for TTL expiration
-    Thread.sleep(5000); // Wait for entries to expire
-
-    // Try to add new entry after expiration
-    boolean canAdd = nullifierTracker.checkAndMarkNullifier("0xnew", "test-epoch");
+    // Adding a new unique nullifier should succeed
+    String newNullifier = "0x" + "f".repeat(64); // Unique nullifier
+    boolean canAdd = nullifierTracker.checkAndMarkNullifier(newNullifier, "test-epoch-new");
     assertThat(canAdd).isTrue();
+
+    // Verify cache size increased
+    NullifierStats statsAfter = nullifierTracker.getStats();
+    assertThat(statsAfter.totalChecks()).isEqualTo(51);
   }
 
   @Test

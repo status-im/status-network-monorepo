@@ -71,8 +71,3 @@ codegen-units = 1
 # strip = true
 # incremental = false
 
-# Fast release profile for development - compiles in ~10 min vs 2+ hours
-[profile.release-dev]
-inherits = "release"
-lto = "thin"
-codegen-units = 16

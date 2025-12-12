@@ -45,13 +45,37 @@ export const RLN_CONFIG = {
   // Test configuration
   // Note: Deny list is now stored in the RLN prover's PostgreSQL database
   // and accessed via gRPC - no file path needed
+  //
+  // EPOCH CONFIGURATION:
+  // - Epoch: Duration between quota resets (production: 24h, test: 60s)
+  // - Epoch Slice: Subdivision of epoch for internal tracking (test: 10s)
+  //
+  // The prover is started with:
+  //   --epoch-duration-secs=60  (quotas reset every 60 seconds)
+  //   --epoch-slice-secs=10     (internal slices every 10 seconds)
+  //
+  // The sequencer uses --plugin-linea-rln-epoch-mode=TEST which uses a fixed epoch ID for proofs.
+  // This is separate from quota tracking - proofs always validate, but quotas reset per epoch.
   test: {
     premiumGasThresholdGwei: 10,
     premiumGasMultiplier: 1.5,
-    epochDurationSeconds: getEnvNumber("RLN_EPOCH_DURATION_SECONDS", 60), // 60s epochs in test mode
-    proofTimeoutMs: getEnvNumber("RLN_PROOF_TIMEOUT_MS", 30000),
-    registrationTimeoutMs: getEnvNumber("RLN_REGISTRATION_TIMEOUT_MS", 60000),
-    transactionTimeoutMs: getEnvNumber("RLN_TX_TIMEOUT_MS", 30000),
+    // Epoch duration must match prover's --epoch-duration-secs (30s in production test mode)
+    // Quotas reset every epoch, enabling epoch boundary tests
+    epochDurationSeconds: getEnvNumber("RLN_EPOCH_DURATION_SECONDS", 30),
+    // MEASURED TIMINGS (from benchmarks with fast polling):
+    // - Block production: ~0.1-0.8s (blocks produced on-demand with txs)
+    // - Proof generation: ~380ms
+    // - Polling interval: 250ms
+    // - Expected gasless TX: ~1-2s (proof + block + poll)
+    // - Expected premium TX: ~0.5-1s (block + poll)
+    // - User setup: ~3-4s (fund TX + mint TX + registration)
+    // - Prover DB sync: Can take 1-2s after contract event
+    proofTimeoutMs: getEnvNumber("RLN_PROOF_TIMEOUT_MS", 3000),
+    registrationTimeoutMs: getEnvNumber("RLN_REGISTRATION_TIMEOUT_MS", 10000), // Includes prover sync time
+    transactionTimeoutMs: getEnvNumber("RLN_TX_TIMEOUT_MS", 5000),
+    // Wait times for polling operations
+    denyListPollIntervalMs: 200,
+    maxWaitForDenyListMs: 10000,
   },
 
   // Karma tiers with quotas per epoch

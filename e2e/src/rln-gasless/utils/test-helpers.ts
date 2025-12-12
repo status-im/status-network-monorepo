@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import { createTestLogger } from "../../config/logger";
 import { RLN_CONFIG } from "../config/rln-config";
+import { getAdminNonce } from "./karma-manager";
 
 const logger = createTestLogger();
 
@@ -176,6 +177,7 @@ export async function assertThrows(fn: () => Promise<unknown>, messagePattern?: 
 
 /**
  * Create a funded test wallet
+ * Uses shared nonce manager to prevent collisions when multiple wallets are created concurrently
  */
 export async function createFundedWallet(
   provider: ethers.Provider,
@@ -190,7 +192,8 @@ export async function createFundedWallet(
     fundAmount: fundAmount.toString(),
   });
 
-  const nonce = await provider.getTransactionCount(funderAddress, "latest");
+  // Use shared nonce manager from karma-manager to prevent collisions
+  const nonce = await getAdminNonce(provider, funderAddress);
 
   const tx = await funder.sendTransaction({
     to: wallet.address,
@@ -205,6 +208,7 @@ export async function createFundedWallet(
   logger.debug("Wallet funded", {
     address: wallet.address,
     txHash: tx.hash,
+    nonce,
   });
 
   return wallet;

@@ -6,6 +6,23 @@ import { txBenchmarker } from "./tx-benchmarker";
 
 const logger = createTestLogger();
 
+/**
+ * Default polling interval for providers (in ms).
+ * ethers.js defaults to 4000ms which is too slow for local testing.
+ * We use 250ms to detect block inclusion much faster.
+ */
+const FAST_POLLING_INTERVAL_MS = 250;
+
+/**
+ * Create a JsonRpcProvider with fast polling for local testing.
+ * This reduces transaction confirmation latency from ~4s to <1s.
+ */
+export function createFastProvider(url: string): ethers.JsonRpcProvider {
+  const provider = new ethers.JsonRpcProvider(url);
+  provider.pollingInterval = FAST_POLLING_INTERVAL_MS;
+  return provider;
+}
+
 export interface UserTierInfo {
   currentEpoch: number;
   epochTxCount: number;
@@ -20,10 +37,12 @@ export interface GaslessTransactionOptions {
   value?: bigint;
   data?: string;
   gasLimit?: number;
+  nonce?: number; // Optional: specify nonce for concurrent transactions
 }
 
 export interface PremiumGasTransactionOptions extends GaslessTransactionOptions {
   gasPrice: bigint;
+  nonce?: number; // Optional: specify nonce for concurrent transactions
 }
 
 export interface LineaGasEstimate {
@@ -62,13 +81,14 @@ export class RlnTestClient {
   /**
    * Send a gasless transaction (gasPrice: 0)
    * Uses 'latest' nonce to avoid stale pending transaction issues
+   * Pass options.nonce to specify nonce for concurrent transactions
    */
   async sendGaslessTransaction(
     signer: ethers.Signer,
     options: GaslessTransactionOptions,
   ): Promise<ethers.TransactionReceipt> {
     const from = await signer.getAddress();
-    const nonce = await this._rpcProvider.getTransactionCount(from, "latest");
+    const nonce = options.nonce ?? (await this._rpcProvider.getTransactionCount(from, "latest"));
     const sendTime = Date.now();
 
     this.logger.debug("Sending gasless transaction", {
@@ -89,9 +109,30 @@ export class RlnTestClient {
     this.logger.debug("Gasless transaction sent", { txHash: tx.hash });
 
     // Wait for tx to be mined (just until included in block, no extra confirmations)
-    const receipt = await tx.wait(1, RLN_CONFIG.test.transactionTimeoutMs);
-    if (!receipt) {
-      throw new Error("Transaction receipt is null");
+    // Handle TRANSACTION_REPLACED error which can occur with concurrent transactions
+    let receipt: ethers.TransactionReceipt;
+    try {
+      const result = await tx.wait(1, RLN_CONFIG.test.transactionTimeoutMs);
+      if (!result) {
+        throw new Error("Transaction receipt is null");
+      }
+      receipt = result;
+    } catch (error: unknown) {
+      // Check if this is a replacement error where the replacement succeeded
+      if (error && typeof error === "object" && "code" in error && error.code === "TRANSACTION_REPLACED") {
+        const replacementError = error as { receipt?: ethers.TransactionReceipt };
+        if (replacementError.receipt && replacementError.receipt.status === 1) {
+          this.logger.debug("Transaction replaced but replacement succeeded", {
+            originalHash: tx.hash,
+            replacementHash: replacementError.receipt.hash,
+          });
+          receipt = replacementError.receipt;
+        } else {
+          throw error;
+        }
+      } else {
+        throw error;
+      }
     }
 
     const minedTime = Date.now();
@@ -105,6 +146,42 @@ export class RlnTestClient {
     });
 
     return receipt;
+  }
+
+  /**
+   * Send multiple gasless transactions from the same user concurrently.
+   * Handles nonce management to avoid transaction replacement errors.
+   * Returns receipts in order of the input options.
+   */
+  async sendGaslessTransactionsConcurrent(
+    signer: ethers.Signer,
+    optionsList: Omit<GaslessTransactionOptions, "nonce">[],
+  ): Promise<ethers.TransactionReceipt[]> {
+    const from = await signer.getAddress();
+    const baseNonce = await this._rpcProvider.getTransactionCount(from, "latest");
+
+    this.logger.debug("Sending concurrent gasless transactions", {
+      from,
+      count: optionsList.length,
+      baseNonce,
+    });
+
+    // Send all transactions with incrementing nonces
+    const txPromises = optionsList.map((opts, index) =>
+      this.sendGaslessTransaction(signer, {
+        ...opts,
+        nonce: baseNonce + index,
+      }),
+    );
+
+    return Promise.all(txPromises);
+  }
+
+  /**
+   * Get the current nonce for an address (useful for concurrent transactions)
+   */
+  async getNonce(address: string): Promise<number> {
+    return this._rpcProvider.getTransactionCount(address, "latest");
   }
 
   /**
@@ -159,13 +236,14 @@ export class RlnTestClient {
 
   /**
    * Send a transaction with premium gas
+   * Pass options.nonce to specify nonce for concurrent transactions
    */
   async sendPremiumGasTransaction(
     signer: ethers.Signer,
     options: PremiumGasTransactionOptions,
   ): Promise<ethers.TransactionReceipt> {
     const from = await signer.getAddress();
-    const nonce = await this._rpcProvider.getTransactionCount(from, "latest");
+    const nonce = options.nonce ?? (await this._rpcProvider.getTransactionCount(from, "latest"));
     const sendTime = Date.now();
 
     this.logger.debug("Sending premium gas transaction", {
@@ -187,9 +265,30 @@ export class RlnTestClient {
     this.logger.debug("Premium gas transaction sent", { txHash: tx.hash });
 
     // Wait for tx to be mined (just until included in block, no extra confirmations)
-    const receipt = await tx.wait(1, RLN_CONFIG.test.transactionTimeoutMs);
-    if (!receipt) {
-      throw new Error("Transaction receipt is null");
+    // Handle TRANSACTION_REPLACED error which can occur with concurrent transactions
+    let receipt: ethers.TransactionReceipt;
+    try {
+      const result = await tx.wait(1, RLN_CONFIG.test.transactionTimeoutMs);
+      if (!result) {
+        throw new Error("Transaction receipt is null");
+      }
+      receipt = result;
+    } catch (error: unknown) {
+      // Check if this is a replacement error where the replacement succeeded
+      if (error && typeof error === "object" && "code" in error && error.code === "TRANSACTION_REPLACED") {
+        const replacementError = error as { receipt?: ethers.TransactionReceipt };
+        if (replacementError.receipt && replacementError.receipt.status === 1) {
+          this.logger.debug("Transaction replaced but replacement succeeded", {
+            originalHash: tx.hash,
+            replacementHash: replacementError.receipt.hash,
+          });
+          receipt = replacementError.receipt;
+        } else {
+          throw error;
+        }
+      } else {
+        throw error;
+      }
     }
 
     const minedTime = Date.now();
@@ -296,6 +395,7 @@ export class RlnTestClient {
     this.logger.debug("Waiting for transaction", { txHash, timeout });
 
     const startTime = Date.now();
+    const pollInterval = 500;
 
     while (Date.now() - startTime < timeout) {
       try {
@@ -311,7 +411,7 @@ export class RlnTestClient {
         this.logger.debug("Transaction not yet mined", { txHash });
       }
 
-      await this.sleep(2000);
+      await this.sleep(pollInterval);
     }
 
     throw new Error(`Transaction ${txHash} not mined after ${timeout}ms`);
@@ -331,6 +431,7 @@ export class RlnTestClient {
 
     const startTime = Date.now();
     const normalizedAddress = userAddress.toLowerCase();
+    const pollInterval = 500;
 
     while (Date.now() - startTime < timeout) {
       try {
@@ -376,7 +477,7 @@ export class RlnTestClient {
         });
       }
 
-      await this.sleep(2000);
+      await this.sleep(pollInterval);
     }
 
     throw new Error(`User ${userAddress} not registered after ${timeout}ms`);
@@ -385,10 +486,11 @@ export class RlnTestClient {
   /**
    * Wait for user to appear on deny list
    */
-  async waitForDenyList(address: string, timeout: number = 30000): Promise<void> {
+  async waitForDenyList(address: string, timeout: number = RLN_CONFIG.test.maxWaitForDenyListMs): Promise<void> {
     this.logger.debug("Waiting for user to be denied", { address, timeout });
 
     const startTime = Date.now();
+    const pollInterval = RLN_CONFIG.test.denyListPollIntervalMs;
 
     while (Date.now() - startTime < timeout) {
       if (await this.isUserDenied(address)) {
@@ -396,7 +498,7 @@ export class RlnTestClient {
         return;
       }
 
-      await this.sleep(1000);
+      await this.sleep(pollInterval);
     }
 
     throw new Error(`User ${address} not added to deny list after ${timeout}ms`);
@@ -405,10 +507,11 @@ export class RlnTestClient {
   /**
    * Wait for user to be removed from deny list
    */
-  async waitForDenyListRemoval(address: string, timeout: number = 30000): Promise<void> {
+  async waitForDenyListRemoval(address: string, timeout: number = RLN_CONFIG.test.maxWaitForDenyListMs): Promise<void> {
     this.logger.debug("Waiting for user to be removed from deny list", { address, timeout });
 
     const startTime = Date.now();
+    const pollInterval = RLN_CONFIG.test.denyListPollIntervalMs;
 
     while (Date.now() - startTime < timeout) {
       if (!(await this.isUserDenied(address))) {
@@ -416,7 +519,7 @@ export class RlnTestClient {
         return;
       }
 
-      await this.sleep(1000);
+      await this.sleep(pollInterval);
     }
 
     throw new Error(`User ${address} still on deny list after ${timeout}ms`);

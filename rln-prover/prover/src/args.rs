@@ -52,6 +52,18 @@ const ARGS_DEFAULT_PROVER_MINIMAL_AMOUNT_FOR_REGISTRATION: WrappedU256 =
 /// If 'estimated_gas_used' <= 'tx gas quota', tx counter is increased by (estimated_gas_used / tx gas quota)
 const ARGS_DEFAULT_TX_GAS_QUOTA: NonZeroU64 = NonZeroU64::new(100_000).unwrap();
 
+/// Epoch duration in seconds
+///
+/// Quotas reset every epoch. In production this is 24 hours (86400 seconds).
+/// For testing, use shorter values like 60 seconds to test quota resets.
+const ARGS_DEFAULT_EPOCH_DURATION_SECS: u64 = 86400; // 24 hours
+
+/// Epoch slice duration in seconds
+///
+/// A subdivision of an epoch. Must be less than epoch_duration / 2.
+/// Default is 120 seconds (2 minutes). For testing, use shorter values like 10 seconds.
+const ARGS_DEFAULT_EPOCH_SLICE_SECS: u64 = 120;
+
 #[derive(Debug, Clone, Parser, ClapConfig)]
 #[command(about = "RLN prover service", long_about = None)]
 pub struct AppArgs {
@@ -188,6 +200,22 @@ pub struct AppArgs {
     )]
     pub tx_gas_quota: NonZeroU64,
 
+    #[arg(
+        help_heading = "prover config",
+        long = "epoch-duration-secs",
+        help = "Epoch duration in seconds (quotas reset every epoch). Default: 86400 (24h). For testing use 60-120 seconds.",
+        default_value_t = AppArgs::default_epoch_duration_secs(),
+    )]
+    pub epoch_duration_secs: u64,
+
+    #[arg(
+        help_heading = "prover config",
+        long = "epoch-slice-secs",
+        help = "Epoch slice duration in seconds (subdivision of epoch). Must be < epoch_duration/2. Default: 120 (2min). For testing use 10-30 seconds.",
+        default_value_t = AppArgs::default_epoch_slice_secs(),
+    )]
+    pub epoch_slice_secs: u64,
+
     // Hidden option - expect user set it via a config file
     #[arg(
         long = "broadcast-channel-size",
@@ -246,6 +274,14 @@ impl AppArgs {
 
     pub fn default_tx_gas_quota() -> NonZeroU64 {
         ARGS_DEFAULT_TX_GAS_QUOTA
+    }
+
+    pub fn default_epoch_duration_secs() -> u64 {
+        ARGS_DEFAULT_EPOCH_DURATION_SECS
+    }
+
+    pub fn default_epoch_slice_secs() -> u64 {
+        ARGS_DEFAULT_EPOCH_SLICE_SECS
     }
 }
 

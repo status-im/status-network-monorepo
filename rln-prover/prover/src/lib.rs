@@ -60,8 +60,25 @@ use smart_contract::KarmaTiers::KarmaTiersInstance;
 use smart_contract::{KarmaTiersError, TIER_LIMITS};
 
 pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
-    // Epoch
-    let epoch_service = EpochService::try_from((Duration::from_secs(60 * 2), ARGS_DEFAULT_GENESIS))
+    // Epoch service with configurable epoch and slice duration
+    // Production: epoch_duration = 24h (86400s), epoch_slice = 2min (120s)
+    // Testing: epoch_duration = 60s, epoch_slice = 10s (enables quota reset testing)
+    use crate::epoch_service::EpochServiceConfig;
+    
+    let epoch_duration = Duration::from_secs(app_args.epoch_duration_secs);
+    let epoch_slice_duration = Duration::from_secs(app_args.epoch_slice_secs);
+    
+    info!(
+        "Starting epoch service: epoch_duration={}s, epoch_slice_duration={}s",
+        app_args.epoch_duration_secs, app_args.epoch_slice_secs
+    );
+    
+    let epoch_config = EpochServiceConfig::with_epoch_duration(
+        epoch_duration,
+        epoch_slice_duration,
+        ARGS_DEFAULT_GENESIS,
+    );
+    let epoch_service = EpochService::try_from(epoch_config)
         .expect("Failed to create epoch service");
 
     // Alloy provider (Smart contract provider)
@@ -117,7 +134,7 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
         tree_depth: MERKLE_TREE_HEIGHT,
     };
     let db_url = app_args.db_url.ok_or_else(|| {
-        AppError2::Custom(
+        AppError2::InvalidArgs(
             "--db <database_url> is required. Example: --db postgres://user:pass@host:5432/db"
                 .to_string(),
         )
@@ -130,7 +147,7 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
     info!("Running database migrations...");
     Migrator::up(&db_conn, None)
         .await
-        .map_err(|e| AppError2::Custom(format!("Migration failed: {}", e)))?;
+        .map_err(|e| AppError2::MigrationError(e.to_string()))?;
     info!("Database migrations complete");
 
     let user_db_service = UserDbService::new(

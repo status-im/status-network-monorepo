@@ -639,13 +639,14 @@ impl UserDb2 {
     /// Uses UPSERT for atomicity and performance
     ///
     /// - `address`: The address to deny
+    /// - `reason`: Optional reason for denial (logged but not stored for performance)
     /// - `ttl_seconds`: Optional time-to-live in seconds (None means no expiry)
     ///
     /// Returns true if the address was newly added, false if it was already present
     pub async fn add_to_deny_list(
         &self,
         address: &Address,
-        _reason: Option<String>, // Ignored - not stored for performance
+        reason: Option<String>,
         ttl_seconds: Option<i64>,
     ) -> Result<bool, DbErr> {
         let now = std::time::SystemTime::now()
@@ -655,6 +656,21 @@ impl UserDb2 {
 
         let expires_at = ttl_seconds.map(|ttl| now + ttl);
         let address_str = address.to_string().to_lowercase();
+
+        if let Some(reason) = &reason {
+            tracing::info!(
+                address = %address,
+                reason = %reason,
+                expires_at = ?expires_at,
+                "Adding address to deny list"
+            );
+        } else {
+            tracing::info!(
+                address = %address,
+                expires_at = ?expires_at,
+                "Adding address to deny list"
+            );
+        }
 
         // Use insert with on_conflict for atomic upsert
         let new_entry = deny_list::ActiveModel {
