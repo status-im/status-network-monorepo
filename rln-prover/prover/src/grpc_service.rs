@@ -383,7 +383,7 @@ where
             Ok(is_denied) => Ok(Response::new(IsDeniedReply { is_denied })),
             Err(e) => {
                 error!("Failed to check deny list: {:?}", e);
-                Err(Status::internal(format!("Database error: {}", e)))
+                Err(Status::internal(format!("Database error: {e}")))
             }
         }
     }
@@ -424,7 +424,7 @@ where
             }
             Err(e) => {
                 error!("Failed to add to deny list: {:?}", e);
-                Err(Status::internal(format!("Database error: {}", e)))
+                Err(Status::internal(format!("Database error: {e}")))
             }
         }
     }
@@ -461,7 +461,7 @@ where
             }
             Err(e) => {
                 error!("Failed to remove from deny list: {:?}", e);
-                Err(Status::internal(format!("Database error: {}", e)))
+                Err(Status::internal(format!("Database error: {e}")))
             }
         }
     }
@@ -500,7 +500,7 @@ where
             })),
             Err(e) => {
                 error!("Failed to get deny list entry: {:?}", e);
-                Err(Status::internal(format!("Database error: {}", e)))
+                Err(Status::internal(format!("Database error: {e}")))
             }
         }
     }
@@ -526,7 +526,7 @@ where
             Ok(exists) => Ok(Response::new(CheckNullifierReply { exists })),
             Err(e) => {
                 error!("Failed to check nullifier: {:?}", e);
-                Err(Status::internal(format!("Database error: {}", e)))
+                Err(Status::internal(format!("Database error: {e}")))
             }
         }
     }
@@ -550,7 +550,7 @@ where
             Ok(recorded) => Ok(Response::new(RecordNullifierReply { recorded })),
             Err(e) => {
                 error!("Failed to record nullifier: {:?}", e);
-                Err(Status::internal(format!("Database error: {}", e)))
+                Err(Status::internal(format!("Database error: {e}")))
             }
         }
     }
@@ -574,7 +574,7 @@ where
             Ok(is_valid) => Ok(Response::new(CheckAndRecordNullifierReply { is_valid })),
             Err(e) => {
                 error!("Failed to check and record nullifier: {:?}", e);
-                Err(Status::internal(format!("Database error: {}", e)))
+                Err(Status::internal(format!("Database error: {e}")))
             }
         }
     }

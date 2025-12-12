@@ -225,11 +225,11 @@ impl EpochService {
 #[derive(thiserror::Error, Debug)]
 pub enum EpochServiceInitError {
     #[error("epoch slice duration is too large (cannot fit in i32) or == 0")]
-    InvalidEpochSliceDuration,
+    EpochSliceDuration,
     #[error("epoch duration must be > 0 and >= 2 * epoch_slice_duration")]
-    InvalidEpochDuration,
+    EpochDuration,
     #[error("genesis is in the future")]
-    InvalidGenesis,
+    FutureGenesis,
 }
 
 /// Configuration for EpochService
@@ -272,11 +272,11 @@ impl TryFrom<EpochServiceConfig> for EpochService {
 
     fn try_from(config: EpochServiceConfig) -> Result<Self, Self::Error> {
         if config.genesis >= Utc::now() {
-            return Err(EpochServiceInitError::InvalidGenesis);
+            return Err(EpochServiceInitError::FutureGenesis);
         }
 
         if config.epoch_duration.as_secs() == 0 {
-            return Err(EpochServiceInitError::InvalidEpochDuration);
+            return Err(EpochServiceInitError::EpochDuration);
         }
 
         if config.epoch_slice_duration.as_secs() == 0
@@ -284,7 +284,7 @@ impl TryFrom<EpochServiceConfig> for EpochService {
             || config.epoch_slice_duration < WAIT_UNTIL_MIN_DURATION
             || config.epoch_slice_duration >= (config.epoch_duration / 2)
         {
-            return Err(EpochServiceInitError::InvalidEpochSliceDuration);
+            return Err(EpochServiceInitError::EpochSliceDuration);
         }
 
         Ok(Self {
