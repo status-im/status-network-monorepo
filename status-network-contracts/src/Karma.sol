@@ -50,8 +50,8 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     event SlashRewardPercentageUpdated(uint256 oldPercentage, uint256 newPercentage);
 
     /*//////////////////////////////////////////////////////////////////////////
-                                  CONSTANTS
-    //////////////////////////////////////////////////////////////////////////*/
+                                    CONSTANTS
+      //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Maximum slash percentage (in basis points: 100% = 10000)
     uint256 public constant MAX_SLASH_PERCENTAGE = 10_000;
@@ -59,8 +59,8 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     uint256 public constant MIN_SLASH_AMOUNT = 1 ether;
 
     /*//////////////////////////////////////////////////////////////////////////
-                                  STATE VARIABLES
-    //////////////////////////////////////////////////////////////////////////*/
+                                    STATE VARIABLES
+      //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice The name of the token
     string public constant NAME = "Karma";
@@ -98,8 +98,8 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                                     CONSTRUCTOR
-    //////////////////////////////////////////////////////////////////////////*/
+                                       CONSTRUCTOR
+      //////////////////////////////////////////////////////////////////////////*/
 
     constructor() {
         _disableInitializers();
@@ -114,6 +114,7 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
             revert Karma__InvalidAddress();
         }
         __ERC20_init(NAME, SYMBOL);
+        __ERC20Permit_init(NAME);
         __ERC20Votes_init();
         __UUPSUpgradeable_init();
         __AccessControl_init();
@@ -124,8 +125,8 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                           USER-FACING FUNCTIONS
-    //////////////////////////////////////////////////////////////////////////*/
+                             USER-FACING FUNCTIONS
+      //////////////////////////////////////////////////////////////////////////*/
 
     /**
      * @notice Adds a reward distributor to the set of reward distributors.
@@ -256,8 +257,8 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                           INTERNAL FUNCTIONS
-    //////////////////////////////////////////////////////////////////////////*/
+                             INTERNAL FUNCTIONS
+      //////////////////////////////////////////////////////////////////////////*/
 
     function _beforeTokenTransfer(address from, address to, uint256) internal view override {
         if (from != address(0) && to != address(0)) {
@@ -405,8 +406,8 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                           VIEW FUNCTIONS
-    //////////////////////////////////////////////////////////////////////////*/
+                             VIEW FUNCTIONS
+      //////////////////////////////////////////////////////////////////////////*/
 
     /**
      * @notice Returns the total supply of the token.
