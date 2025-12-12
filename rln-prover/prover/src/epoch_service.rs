@@ -15,7 +15,8 @@ use crate::metrics::{
 };
 
 /// Default duration of an epoch (1 day) - can be overridden for testing
-pub const DEFAULT_EPOCH_DURATION: Duration = Duration::from_secs(TimeDelta::days(1).num_seconds() as u64);
+pub const DEFAULT_EPOCH_DURATION: Duration =
+    Duration::from_secs(TimeDelta::days(1).num_seconds() as u64);
 /// Minimum duration returned by EpochService::compute_wait_until()
 pub(crate) const WAIT_UNTIL_MIN_DURATION: Duration = Duration::from_secs(2);
 /// EpochService::compute_wait_until() can return an error like TooLow (see WAIT_UNTIL_MIN_DURATION)
@@ -112,8 +113,9 @@ impl EpochService {
             wait_until += self.epoch_slice_duration;
 
             current_epoch_slice += 1;
-            if current_epoch_slice == epoch_slice_count {
-                current_epoch_slice = 0;
+            // Use modulo to detect epoch boundary - handles both relative (0,1,2,0,1,2...)
+            // and absolute (4541,4542,4543...) epoch_slice values correctly
+            if current_epoch_slice % epoch_slice_count == 0 {
                 current_epoch += 1;
             }
             *self.current_epoch.write() = (current_epoch.into(), current_epoch_slice.into());
@@ -386,7 +388,7 @@ mod tests {
             let now = || {
                 let mut now_0: NaiveDateTime = date_0.and_hms_opt(0, 0, 0).unwrap();
                 // Set now_0 to be in epoch 1
-                now_0 += EPOCH_DURATION;
+                now_0 += DEFAULT_EPOCH_DURATION;
                 // Set now_0 to be in epoch 1, epoch slice 1
                 now_0 += epoch_slice_duration;
                 // Add 30 secs (but should still wait until epoch slice 2 starts)
@@ -402,7 +404,7 @@ mod tests {
             assert_eq!(
                 wait_until,
                 DateTime::<Utc>::from_naive_utc_and_offset(datetime_0, Utc)
-                    + EPOCH_DURATION
+                    + DEFAULT_EPOCH_DURATION
                     + 2 * epoch_slice_duration
             );
         }

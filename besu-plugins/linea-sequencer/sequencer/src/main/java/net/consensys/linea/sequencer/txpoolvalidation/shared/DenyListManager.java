@@ -120,7 +120,7 @@ public class DenyListManager implements Closeable {
 
     // Initialize gRPC connection only if host is provided
     if (grpcHost != null && !grpcHost.isEmpty()) {
-    initializeGrpcClient();
+      initializeGrpcClient();
     } else {
       this.grpcAvailable.set(false);
     }

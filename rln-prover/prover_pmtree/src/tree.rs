@@ -338,9 +338,9 @@ where
         let left = Key(key.0 + 1, key.1 * 2);
         let right = Key(key.0 + 1, key.1 * 2 + 1);
 
-        println!("get elem (left): {:?}", left);
+        println!("get elem (left): {left:?}");
         let left_val = self.get_elem(left)?;
-        println!("get elem (right): {:?}", right);
+        println!("get elem (right): {right:?}");
         let right_val = self.get_elem(right)?;
 
         subtree.insert(left, left_val);

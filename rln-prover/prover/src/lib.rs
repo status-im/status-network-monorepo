@@ -64,22 +64,22 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
     // Production: epoch_duration = 24h (86400s), epoch_slice = 2min (120s)
     // Testing: epoch_duration = 60s, epoch_slice = 10s (enables quota reset testing)
     use crate::epoch_service::EpochServiceConfig;
-    
+
     let epoch_duration = Duration::from_secs(app_args.epoch_duration_secs);
     let epoch_slice_duration = Duration::from_secs(app_args.epoch_slice_secs);
-    
+
     info!(
         "Starting epoch service: epoch_duration={}s, epoch_slice_duration={}s",
         app_args.epoch_duration_secs, app_args.epoch_slice_secs
     );
-    
+
     let epoch_config = EpochServiceConfig::with_epoch_duration(
         epoch_duration,
         epoch_slice_duration,
         ARGS_DEFAULT_GENESIS,
     );
-    let epoch_service = EpochService::try_from(epoch_config)
-        .expect("Failed to create epoch service");
+    let epoch_service =
+        EpochService::try_from(epoch_config).expect("Failed to create epoch service");
 
     // Alloy provider (Smart contract provider)
     let provider = if app_args.ws_rpc_url.is_some() {
