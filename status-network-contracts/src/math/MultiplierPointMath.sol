@@ -82,7 +82,7 @@ abstract contract MultiplierPointMath is IStakeConstants {
         pure
         returns (uint256 reducedMP)
     {
-        return Math.mulDiv(_mp, _reducedAmount, _balance);
+        return Math.mulDiv(_mp, _reducedAmount, _balance, Math.Rounding.Up);
     }
 
     /**
