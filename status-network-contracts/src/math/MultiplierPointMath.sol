@@ -14,16 +14,14 @@ abstract contract MultiplierPointMath is IStakeConstants {
     uint256 public constant YEAR = 365 days;
     /// @notice Accrued multiplier points maximum multiplier.
     uint256 public constant MAX_MULTIPLIER = 4;
-    /// @notice Multiplier points annual percentage yield.
-    uint256 public constant MP_APY = 100;
-    /// @notice Multiplier points accrued maximum percentage yield.
-    uint256 public constant MP_MPY = MAX_MULTIPLIER * MP_APY;
-    /// @notice Multiplier points absolute maximum percentage yield.
-    uint256 public constant MP_MPY_ABSOLUTE = 100 + (2 * (MAX_MULTIPLIER * MP_APY));
+    /// @notice Maximum multiplier for accrued multiplier points.
+    uint256 public constant MP_MPY = MAX_MULTIPLIER;
+    /// @notice Absolute maximum multiplier for total multiplier points.
+    uint256 public constant MP_MPY_ABSOLUTE = 1 + (2 * MAX_MULTIPLIER);
     /// @notice The accrue rate period of time over which multiplier points are calculated.
     uint256 public constant ACCRUE_RATE = 1 seconds;
     /// @notice Minimal value to generate 1 multiplier point in the accrue rate period (rounded up).
-    uint256 public constant MIN_BALANCE = (((YEAR * 100) - 1) / (MP_APY * ACCRUE_RATE)) + 1;
+    uint256 public constant MIN_BALANCE = ((YEAR - 1) / ACCRUE_RATE) + 1;
     /// @notice Maximum value to not overflow unsigned integer of 256 bits.
     uint256 public constant MAX_BALANCE = type(uint256).max / MP_MPY_ABSOLUTE;
 
@@ -35,7 +33,7 @@ abstract contract MultiplierPointMath is IStakeConstants {
      * @return accruedMP points accrued for given `_balance` and  `_seconds`
      */
     function _accrueMP(uint256 _balance, uint256 _deltaTime) internal pure returns (uint256 accruedMP) {
-        return Math.mulDiv(_balance, _deltaTime * MP_APY, YEAR * 100);
+        return Math.mulDiv(_balance, _deltaTime, YEAR);
     }
 
     /**
@@ -91,7 +89,7 @@ abstract contract MultiplierPointMath is IStakeConstants {
      * @return maxMPAccrued maximum quantity of muliplier points that can be generated for given `_balance`
      */
     function _maxAccrueMP(uint256 _balance) internal pure returns (uint256 maxMPAccrued) {
-        return Math.mulDiv(_balance, MP_MPY, 100);
+        return _balance * MAX_MULTIPLIER;
     }
 
     /**
@@ -102,7 +100,7 @@ abstract contract MultiplierPointMath is IStakeConstants {
      * @return maxMP Maximum Multiplier Points that can be generated for given `_balance` and `_lockTime`
      */
     function _maxTotalMP(uint256 _balance, uint256 _lockTime) internal pure returns (uint256 maxMP) {
-        return _balance + Math.mulDiv(_balance * MP_APY, (MAX_MULTIPLIER * YEAR) + _lockTime, YEAR * 100);
+        return _balance + Math.mulDiv(_balance, (MAX_MULTIPLIER * YEAR) + _lockTime, YEAR);
     }
 
     /**
@@ -113,7 +111,7 @@ abstract contract MultiplierPointMath is IStakeConstants {
      * @return maxMPAbsolute Absolute Maximum Multiplier Points
      */
     function _maxAbsoluteTotalMP(uint256 _balance) internal pure returns (uint256 maxMPAbsolute) {
-        return Math.mulDiv(_balance, MP_MPY_ABSOLUTE, 100);
+        return _balance * MP_MPY_ABSOLUTE;
     }
 
     /**
@@ -134,7 +132,7 @@ abstract contract MultiplierPointMath is IStakeConstants {
      * @return timeToReachMaxMP The time required to reach the specified multiplier points, in seconds.
      */
     function _timeToAccrueMP(uint256 _balance, uint256 _mp) internal pure returns (uint256 timeToReachMaxMP) {
-        return Math.mulDiv(_mp * 100, YEAR, _balance * MP_APY);
+        return Math.mulDiv(_mp, YEAR, _balance);
     }
 
     /**

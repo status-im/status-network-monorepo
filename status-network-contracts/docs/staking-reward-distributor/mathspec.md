@@ -10,20 +10,18 @@
 
 ### Constants
 
-| Symbol                      | Source                                                                  | Value                   | Unit              | Description                                                                                                       |
-| --------------------------- | ----------------------------------------------------------------------- | ----------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
-| $SCALE_{FACTOR}$            |                                                                         | $\pu{1 \times 10^{18}}$ | (1)               | Scaling factor to maintain precision in calculations.                                                             |
-| $M_{MAX}$                   |                                                                         | $\pu{4 \mathrm{(1)}}$   | (1)               | Maximum multiplier of annual percentage yield.                                                                    |
-| $\mathtt{APY}$              |                                                                         | 100                     | percent           | Annual percentage yield for multiplier points.                                                                    |
-| $\mathsf{MPY}$              | $M_{MAX} \times \mathtt{APY}$                                           | 400                     | percent           | Multiplier points accrued maximum percentage yield.                                                               |
-| $\mathsf{MPY}^\mathit{abs}$ | $100 + (2 \times M_{\text{MAX}} \times \mathtt{APY})$                   | 900                     | percent           | Multiplier points absolute maximum percentage yield.                                                              |
-| $T_{RATE}$                  | (minimal blocktime)                                                     | 2 (chain dependent)     | seconds           | The accrue rate period of time over which multiplier points are calculated.                                       |
-| $T_{DAY}$                   |                                                                         | 86400                   | seconds           | One day.                                                                                                          |
-| $T_{YEAR}$                  | $\lfloor365.242190 \times T_{DAY}\rfloor$                               | 31556925                | seconds           | One (mean) tropical year.                                                                                         |
-| $A_{MIN}$                   | $\lceil\tfrac{T_{YEAR} \times 100}{T_{RATE} \times \mathtt{APY}}\rceil$ | 2629744                 | tokens per period | Minimal value to generate 1 multiplier point in the accrue rate period ($T_{RATE}$). ($A_{MIN} \propto T_{RATE}$) |
-| $A_{MAX}$                   | $\frac{2^{256} - 1}{\text{APY} \times T_{\text{RATE}}}$                 |                         | tokens per period | Maximum value to not overflow unsigned integer of 256 bits.                                                       |
-| $T_{MIN}$                   | $90 \times T_{DAY}$                                                     | 7776000                 | seconds           | Minimum lockup period, equivalent to 90 days.                                                                     |
-| $T_{MAX}$                   | $M_{MAX} \times T_{YEAR}$                                               | 126227700               | seconds           | Maximum of lockup period.                                                                                         |
+| Symbol                 | Source                                    | Value                   | Unit              | Description                                                                                                       |
+| ---------------------- | ----------------------------------------- | ----------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
+| $SCALE_{FACTOR}$       |                                           | $\pu{1 \times 10^{18}}$ | (1)               | Scaling factor to maintain precision in calculations.                                                             |
+| $M_{MAX}$              |                                           | $\pu{4 \mathrm{(1)}}$   | (1)               | Maximum multiplier of annual multiplier yield.                                                                    |
+| $M_{MAX}^\mathit{abs}$ | $1 + (2 \times M_{\text{MAX}})$           | 9                       | (1)               | Multiplier points absolute maximum multiplier yield.                                                              |
+| $T_{RATE}$             | (minimal blocktime)                       | 2 (chain dependent)     | seconds           | The accrue rate period of time over which multiplier points are calculated.                                       |
+| $T_{DAY}$              |                                           | 86400                   | seconds           | One day.                                                                                                          |
+| $T_{YEAR}$             | $\lfloor365.242190 \times T_{DAY}\rfloor$ | 31556925                | seconds           | One (mean) tropical year.                                                                                         |
+| $A_{MIN}$              | $\lceil\tfrac{T_{YEAR}}{T_{RATE}}\rceil$  | 2629744                 | tokens per period | Minimal value to generate 1 multiplier point in the accrue rate period ($T_{RATE}$). ($A_{MIN} \propto T_{RATE}$) |
+| $A_{MAX}$              | $\frac{2^{256} - 1}{T_{\text{RATE}}}$     |                         | tokens per period | Maximum value to not overflow unsigned integer of 256 bits.                                                       |
+| $T_{MIN}$              | $90 \times T_{DAY}$                       | 7776000                 | seconds           | Minimum lockup period, equivalent to 90 days.                                                                     |
+| $T_{MAX}$              | $M_{MAX} \times T_{YEAR}$                 | 126227700               | seconds           | Maximum of lockup period.                                                                                         |
 
 ### Variables
 
@@ -114,7 +112,7 @@ The value of $t_{last}$ is updated by all functions that change state:
 
 Maximum value that $mp_\Sigma$ can reach.
 
-Relates as $mp_\mathcal{M} \propto a_{bal} \cdot (t_{lock} + \mathsf{MPY})$.
+Relates as $mp_\mathcal{M} \propto a_{bal} \cdot (t_{lock} + M_{MAX})$.
 
 Altered by functions that change the account state:
 
@@ -322,13 +320,12 @@ Where
 
 #### $\mathcal{f}{mp_\mathcal{A}}(a_{bal}, \Delta t) \longrightarrow$ Accrue Multiplier Points
 
-Calculates the accrued multiplier points over a time period **$\Delta t$**, based on the account balance **$a_{bal}$**
-and the annual percentage yield $\mathtt{APY}$.
+Calculates the accrued multiplier points over a time period **$\Delta t$**, based on the account balance **$a_{bal}$**.
 
 $$
 \boxed{
 	\begin{equation}
-		\mathcal{f}mp_\mathcal{A}(a_{bal}, \Delta t) = \dfrac{a_{bal} \times \Delta t \times \mathtt{APY}}{100 \times T_{YEAR}}
+		\mathcal{f}mp_\mathcal{A}(a_{bal}, \Delta t) = \dfrac{a_{bal} \times \Delta t}{T_{YEAR}}
 	\end{equation}
 }
 $$
@@ -340,8 +337,6 @@ Where
   same time units as the year (typically days or months).
 - **$T_{YEAR}$**: A constant representing the duration of a full year, used to normalize the time difference
   **$\Delta t$**.
-- **$\mathtt{APY}$**: The Annual Percentage Yield (APY) expressed as a percentage, which determines how much the balance
-  grows over a year.
 
 ---
 
@@ -356,7 +351,7 @@ $$
 	&\mathcal{f}mp_\mathcal{B}(\Delta a, t_{lock})  = \mathcal{f}mp_\mathcal{A}(\Delta a, t_{lock}) \\
 	&\boxed{
 		\begin{equation}
-			\mathcal{f}mp_\mathcal{B}(\Delta a, t_{lock})  = \dfrac{\Delta a \times t_{lock} \times \mathtt{APY}}{100 \times T_{YEAR}}
+			\mathcal{f}mp_\mathcal{B}(\Delta a, t_{lock})  = \dfrac{\Delta a \times t_{lock}}{T_{YEAR}}
 		\end{equation}
 	}
 \end{aligned}
@@ -368,8 +363,6 @@ Where:
 - **$t_{lock}$**: The duration for which the balance **$\Delta a$** is locked, measured in units of seconds.
 - **$T_{YEAR}$**: A constant representing the length of a year, used to normalize the lock period **$t_{lock}$** as a
   fraction of a full year.
-- **$\mathtt{APY}$**: The Annual Percentage Yield (APY), expressed as a percentage, which indicates the yearly interest
-  rate applied to the locked balance.
 
 ---
 
@@ -491,7 +484,7 @@ Ensure the New Maximum MPs ($\mathbb{Acc} \cdot mp_\mathcal{M} + \Delta mp_\math
 MPs:
 
 $$
-\mathbb{Acc} \cdot mp_\mathcal{M} + \Delta mp_\mathcal{M} \le \frac{a_{bal} \times \mathsf{MPY}^\mathit{abs}}{100}
+\mathbb{Acc} \cdot mp_\mathcal{M} + \Delta mp_\mathcal{M} \le a_{bal} \times M_{MAX}^\mathit{abs}
 $$
 
 ###### Update account State
@@ -603,7 +596,7 @@ Ensure the New Maximum MPs ($\mathbb{Acc} \cdot mp_\mathcal{M} + \Delta \hat{mp}
 Maximum MPs:
 
 $$
-\mathbb{Acc} \cdot mp_\mathcal{M} + \Delta \hat{mp}^\mathcal{B} \le \frac{a_{bal} \times \mathsf{MPY}^\mathit{abs}}{100}
+\mathbb{Acc} \cdot mp_\mathcal{M} + \Delta \hat{mp}^\mathcal{B} \le a_{bal} \times M_{MAX}^\mathit{abs}
 $$
 
 ###### Update account State
@@ -958,7 +951,7 @@ The maximum total multiplier points that can be generated for a determined amoun
 $$
 \boxed{
 	\begin{equation}
-		\hat{\mathcal{f}}mp_{\mathcal{M}}(a_{bal}, t_{\text{lock}}) = a_{bal} + \frac{a_{bal} \times \mathtt{APY} \times \left( T_{\text{MAX}} + t_{\text{lock}} \right)}{100 \times T_{\text{YEAR}}}
+		\hat{\mathcal{f}}mp_{\mathcal{M}}(a_{bal}, t_{\text{lock}}) = a_{bal} + \frac{a_{bal} \times \left( T_{\text{MAX}} + t_{\text{lock}} \right)}{T_{\text{YEAR}}}
 	\end{equation}
 }
 $$
@@ -972,7 +965,7 @@ $\Delta t = M_{MAX} \times T_{YEAR}$
 $$
 \boxed{
 	\begin{equation}
-		\hat{\mathcal{f}}mp_{A}^{max}(a_{bal}) = \frac{a_{bal} \times \mathsf{MPY}}{100}
+		\hat{\mathcal{f}}mp_{A}^{max}(a_{bal}) = a_{bal} \times M_{MAX}
 	\end{equation}
 }
 $$
@@ -985,7 +978,7 @@ and the maximum accrued multiplier points.
 $$
 \boxed{
 	\begin{equation}
-		\hat{\mathcal{f}}mp_\mathcal{M}^\mathit{abs}(a_{bal}) = \frac{a_{bal} \times \mathsf{MPY}^\mathit{abs}}{100}
+		\hat{\mathcal{f}}mp_\mathcal{M}^\mathit{abs}(a_{bal}) = a_{bal} \times M_{MAX}^\mathit{abs}
 	\end{equation}
 }
 $$
@@ -1021,7 +1014,7 @@ Retrieves how much seconds to a certain $a_{bal}$ would reach a certain $mp$
 $$
 \boxed{
 	\begin{equation}
-		t_{rem}(a_{bal},mp_ {target}) = \frac{mp_{target} \times 100 \times T_{YEAR}}{a_{bal} \times \mathtt{APY}}
+		t_{rem}(a_{bal},mp_ {target}) = \frac{mp_{target} \times T_{YEAR}}{a_{bal}}
 	\end{equation}
 }
 $$
@@ -1037,7 +1030,7 @@ Estimates the time an account set as locked time.
 $$
 \boxed{
 	\begin{equation}
-		\hat{\mathcal{f}}\tilde{t}_ {lock}(mp_{\mathcal{M}}, a_{bal}) \approx \left\lceil \frac{(mp_{\mathcal{M}} - a_{bal}) \times 100 \times T_{YEAR}}{a_{bal} \times \mathtt{APY}}\right\rceil - T_{\text{MAX}}
+		\hat{\mathcal{f}}\tilde{t}_ {lock}(mp_{\mathcal{M}}, a_{bal}) \approx \left\lceil \frac{(mp_{\mathcal{M}} - a_{bal}) \times T_{YEAR}}{a_{bal}}\right\rceil - T_{\text{MAX}}
 	\end{equation}
 }
 $$

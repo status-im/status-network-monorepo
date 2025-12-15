@@ -19,11 +19,6 @@ interface IStakeConstants {
     function MAX_LOCKUP_PERIOD() external view returns (uint256);
 
     /**
-     * @return Multiplier points APY
-     */
-    function MP_APY() external view returns (uint256);
-
-    /**
      * @return Maximum multiplier
      */
     function MAX_MULTIPLIER() external view returns (uint256);
