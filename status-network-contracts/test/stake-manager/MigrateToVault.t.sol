@@ -177,4 +177,26 @@ contract StakeVaultMigrateToVaultTest is StakeManagerTest {
         assertEq(StakeVault(vaults[alice]).depositedBalance(), 0, "old vault deposited balance should be 0");
         assertEq(StakeVault(vaults[alice]).lockUntil(), 0, "old vault lock time should be reset");
     }
+
+    function test_RevertWhen_MigratingToVaultThatHasLeft() public {
+        uint256 stakeAmount = 1000e18;
+        uint256 lockPeriod = 4 * 365 days; // 4 years
+
+        StakeVault lockedVault = StakeVault(vaults[alice]);
+
+        vm.startPrank(alice);
+        stakingToken.approve(address(lockedVault), stakeAmount);
+        lockedVault.stake(stakeAmount, lockPeriod);
+        vm.stopPrank();
+
+        vm.prank(alice);
+        StakeVault emptyVault = vaultFactory.createVault();
+
+        vm.prank(alice);
+        lockedVault.leave(alice);
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(StakeVault.StakeVault__InvalidMigrationTarget.selector));
+        emptyVault.migrateToVault(address(lockedVault));
+    }
 }
