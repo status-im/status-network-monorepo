@@ -175,25 +175,16 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
      */
     function leave(address _destination) external onlyOwner validDestination(_destination) {
         hasLeft = true;
-        // We have to `try/catch` here in case the upgrade was bad and `leave()`
+        // We have to low level call here in case the upgrade was bad and `leave()`
         // either doesn't exist on the new stake manager or reverts for some reason.
         // If it was a good upgrade, it will cause the stake manager to properly update
         // its internal accounting before we move the funds out.
-        try stakeManager.leave() {
-            if (lockUntil <= block.timestamp) {
-                depositedBalance = 0;
-                bool success = STAKING_TOKEN.transfer(_destination, STAKING_TOKEN.balanceOf(address(this)));
-                if (!success) {
-                    revert StakeVault__FailedToLeave();
-                }
-            }
-        } catch {
-            if (lockUntil <= block.timestamp) {
-                depositedBalance = 0;
-                bool success = STAKING_TOKEN.transfer(_destination, STAKING_TOKEN.balanceOf(address(this)));
-                if (!success) {
-                    revert StakeVault__FailedToLeave();
-                }
+        (bool ok,) = address(stakeManager).call(abi.encodeWithSignature("leave()"));
+        if (lockUntil <= block.timestamp) {
+            depositedBalance = 0;
+            bool success = STAKING_TOKEN.transfer(_destination, STAKING_TOKEN.balanceOf(address(this)));
+            if (!success) {
+                revert StakeVault__FailedToLeave();
             }
         }
     }
@@ -444,15 +435,11 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
      */
     function emergencyExit(address _destination) external onlyOwner validDestination(_destination) {
         depositedBalance = 0;
-        try stakeManager.emergencyModeEnabled() returns (bool enabled) {
-            if (!enabled) {
-                revert StakeVault__NotAllowedToExit();
-            }
-            bool success = STAKING_TOKEN.transfer(_destination, STAKING_TOKEN.balanceOf(address(this)));
-            if (!success) {
-                revert StakeVault__FailedToExit();
-            }
-        } catch {
+        (bool ok, bytes memory returndata) =
+            address(stakeManager).call(abi.encodeWithSignature("emergencyModeEnabled()"));
+        if (ok && returndata.length == 32 && returndata[31] != 0x01) {
+            revert StakeVault__NotAllowedToExit();
+        } else {
             bool success = STAKING_TOKEN.transfer(_destination, STAKING_TOKEN.balanceOf(address(this)));
             if (!success) {
                 revert StakeVault__FailedToExit();

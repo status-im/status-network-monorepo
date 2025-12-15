@@ -2,7 +2,9 @@
 pragma solidity ^0.8.26;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
+import { UUPSUpgradeable } from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
+import { MissingLeaveEmergencyExitStakeManager } from "../mocks/MissingLeaveEmergencyExitStakeManager.sol";
+import { DiffReturnLeaveEmergencyExitStakeManager } from "../mocks/DiffReturnLeaveEmergencyExitStakeManager.sol";
 import { StakeVault } from "../../src/StakeVault.sol";
 import { StakeManagerTest } from "./StakeManagerBase.t.sol";
 
@@ -172,6 +174,66 @@ contract LeaveTest is StakeManagerTest {
 
         // Alice gets her staked tokens back
         assertEq(stakingToken.balanceOf(alice), aliceInitialBalance, "Alice should have all her staked tokens back");
+    }
+
+    function test_LeaveMissingLeaveStakeManager() public {
+        uint256 aliceInitialBalance = stakingToken.balanceOf(alice);
+
+        // first change the existing manager's state
+        _stake(alice, 100e18, 0);
+        checkStreamer(
+            CheckStreamerParams({
+                totalStaked: 100e18,
+                totalMPStaked: 100e18,
+                totalMPAccrued: 100e18,
+                totalMaxMP: 500e18,
+                stakingBalance: 100e18,
+                rewardBalance: 0,
+                rewardIndex: 0
+            })
+        );
+
+        // upgrade the manager to a malicious one
+        address newImpl = address(new MissingLeaveEmergencyExitStakeManager());
+        vm.prank(admin);
+        UUPSUpgradeable(address(streamer)).upgradeTo(newImpl);
+
+        assertEq(stakingToken.balanceOf(alice), aliceInitialBalance - 100e18, "Alice should have less tokens before");
+
+        // alice leaves system and is able to get funds out, despite malicious manager
+        _leave(alice);
+
+        assertEq(stakingToken.balanceOf(alice), aliceInitialBalance, "Alice should get her tokens back");
+    }
+
+    function test_LeaveDiffReturnLeaveStakeManager() public {
+        uint256 aliceInitialBalance = stakingToken.balanceOf(alice);
+
+        // first change the existing manager's state
+        _stake(alice, 100e18, 0);
+        checkStreamer(
+            CheckStreamerParams({
+                totalStaked: 100e18,
+                totalMPStaked: 100e18,
+                totalMPAccrued: 100e18,
+                totalMaxMP: 500e18,
+                stakingBalance: 100e18,
+                rewardBalance: 0,
+                rewardIndex: 0
+            })
+        );
+
+        // upgrade the manager to a malicious one
+        address newImpl = address(new DiffReturnLeaveEmergencyExitStakeManager());
+        vm.prank(admin);
+        UUPSUpgradeable(address(streamer)).upgradeTo(newImpl);
+
+        assertEq(stakingToken.balanceOf(alice), aliceInitialBalance - 100e18, "Alice should have less tokens before");
+
+        // alice leaves system and is able to get funds out, despite malicious manager
+        _leave(alice);
+
+        assertEq(stakingToken.balanceOf(alice), aliceInitialBalance, "Alice should get her tokens back");
     }
 }
 

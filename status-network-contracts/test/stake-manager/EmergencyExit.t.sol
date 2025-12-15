@@ -2,6 +2,9 @@
 pragma solidity ^0.8.26;
 
 import { IStakeManager } from "../../src/interfaces/IStakeManager.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
+import { MissingLeaveEmergencyExitStakeManager } from "../mocks/MissingLeaveEmergencyExitStakeManager.sol";
+import { DiffReturnLeaveEmergencyExitStakeManager } from "../mocks/DiffReturnLeaveEmergencyExitStakeManager.sol";
 import { StakeVault } from "../../src/StakeVault.sol";
 import { StakeManagerTest } from "./StakeManagerBase.t.sol";
 
@@ -232,6 +235,68 @@ contract EmergencyExitTest is StakeManagerTest {
             alternateInitialBalance + 10e18,
             "Alternate address should get staked tokens"
         );
+    }
+
+    function test_EmergencyExitMissingEmergencyExitStakeManager() public {
+        uint256 aliceInitialBalance = stakingToken.balanceOf(alice);
+
+        // first change the existing manager's state
+        _stake(alice, 100e18, 0);
+        checkStreamer(
+            CheckStreamerParams({
+                totalStaked: 100e18,
+                totalMPStaked: 100e18,
+                totalMPAccrued: 100e18,
+                totalMaxMP: 500e18,
+                stakingBalance: 100e18,
+                rewardBalance: 0,
+                rewardIndex: 0
+            })
+        );
+
+        // upgrade the manager to a malicious one
+        address newImpl = address(new MissingLeaveEmergencyExitStakeManager());
+        vm.prank(admin);
+        UUPSUpgradeable(address(streamer)).upgradeTo(newImpl);
+
+        assertEq(stakingToken.balanceOf(alice), aliceInitialBalance - 100e18, "Alice should have less tokens before");
+
+        // alice uses _emergencyExit to get funds out, as the new implementation does not have emergencyModeEnabled
+        // implemented
+        _emergencyExit(alice);
+
+        assertEq(stakingToken.balanceOf(alice), aliceInitialBalance, "Alice should get her tokens back after");
+    }
+
+    function test_EmergencyExitDiffReturnStakeManager() public {
+        uint256 aliceInitialBalance = stakingToken.balanceOf(alice);
+
+        // first change the existing manager's state
+        _stake(alice, 100e18, 0);
+        checkStreamer(
+            CheckStreamerParams({
+                totalStaked: 100e18,
+                totalMPStaked: 100e18,
+                totalMPAccrued: 100e18,
+                totalMaxMP: 500e18,
+                stakingBalance: 100e18,
+                rewardBalance: 0,
+                rewardIndex: 0
+            })
+        );
+
+        // upgrade the manager to a malicious one
+        address newImpl = address(new DiffReturnLeaveEmergencyExitStakeManager());
+        vm.prank(admin);
+        UUPSUpgradeable(address(streamer)).upgradeTo(newImpl);
+
+        assertEq(stakingToken.balanceOf(alice), aliceInitialBalance - 100e18, "Alice should have less tokens before");
+
+        // alice uses _emergencyExit to get funds out, as the new implementation returns unexpected data from
+        // emergencyModeEnabled()
+        _emergencyExit(alice);
+
+        assertEq(stakingToken.balanceOf(alice), aliceInitialBalance, "Alice should get her tokens back after");
     }
 }
 
