@@ -57,7 +57,7 @@ contract KarmaNFT is Ownable {
      * @notice Emits transfer event to simulate minting an NFT to the caller's address.
      */
     function mint() external {
-        emit Transfer(msg.sender, msg.sender, uint256(uint160(msg.sender)));
+        emit Transfer(address(0), msg.sender, uint256(uint160(msg.sender)));
     }
 
     /**
