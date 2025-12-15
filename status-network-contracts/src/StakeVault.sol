@@ -206,7 +206,7 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
      * @param migrateTo The address of the new vault.
      */
     function migrateToVault(address migrateTo) external onlyOwner onlyNotLeft {
-        if (migrateTo == address(this)) {
+        if (migrateTo == address(this) || StakeVault(migrateTo).hasLeft()) {
             revert StakeVault__InvalidMigrationTarget();
         }
         if (IStakeVault(migrateTo).owner() != owner()) {
