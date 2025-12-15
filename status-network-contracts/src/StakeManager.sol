@@ -884,4 +884,55 @@ contract StakeManager is
         }
         return accountTotalRewards;
     }
+
+    /**
+     * @notice Estimates the lock time set into this vault.
+     * @param vaultAddress The address of the vault.
+     * @return lockTime The estimated lock time given to the staked balance.
+     */
+    function estimateLockTime(address vaultAddress) external view returns (uint256 lockTime) {
+        VaultData storage vault = vaultData[vaultAddress];
+        return _estimateLockTime(vault.maxMP, vault.stakedBalance);
+    }
+
+    /**
+     * @notice Estimates the lock time available to be increased for this vault.
+     * @param vaultAddress The address of the vault.
+     * @return lockTimeAvailable The estimated available lock time allowed to be increased for the staked balance of
+     * this vault.
+     */
+    function estimateLockTimeAvailable(address vaultAddress) external view returns (uint256 lockTimeAvailable) {
+        VaultData storage vault = vaultData[vaultAddress];
+        return _lockTimeAvailable(vault.stakedBalance, vault.maxMP);
+    }
+
+    /**
+     * @notice Estimates the time required to accrue maximum multiplier points for this vault.
+     * @param vaultAddress The address of the vault.
+     * @return remainingTime The estimated time required to accrue maximum multiplier points.
+     */
+    function estimateTimeToAccrueMaxMP(address vaultAddress) external view returns (uint256 remainingTime) {
+        VaultData storage vault = vaultData[vaultAddress];
+        return _timeToAccrueMP(vault.stakedBalance, vault.maxMP);
+    }
+
+    /**
+     * @notice Retrieves the bonus multiplier points for this vault.
+     * @param vaultAddress The address of the vault.
+     * @return bonusMP The bonus multiplier points for the vault.
+     */
+    function getBonusMP(address vaultAddress) external view returns (uint256 bonusMP) {
+        VaultData storage vault = vaultData[vaultAddress];
+        return _retrieveBonusMP(vault.stakedBalance, vault.maxMP);
+    }
+
+    /**
+     * @notice Retrieves the time accrued multiplier points for this vault. ()
+     * @param vaultAddress The address of the vault.
+     * @return accruedMP The accrued multiplier points for the vault.
+     */
+    function getAccruedMP(address vaultAddress) external view returns (uint256 accruedMP) {
+        VaultData storage vault = vaultData[vaultAddress];
+        return _retrieveAccruedMP(vault.stakedBalance, vault.mpAccrued, vault.maxMP);
+    }
 }
