@@ -913,7 +913,9 @@ contract StakeManager is
      */
     function estimateTimeToAccrueMaxMP(address vaultAddress) external view returns (uint256 remainingTime) {
         VaultData storage vault = vaultData[vaultAddress];
-        return _timeToAccrueMP(vault.stakedBalance, vault.maxMP);
+        uint256 currentMP = vault.mpAccrued;
+        uint256 remainingMP = vault.maxMP > currentMP ? vault.maxMP - currentMP : 0;
+        return _timeToAccrueMP(vault.stakedBalance, remainingMP);
     }
 
     /**
