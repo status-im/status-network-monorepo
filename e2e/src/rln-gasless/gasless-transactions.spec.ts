@@ -209,6 +209,9 @@ describe("RLN Gasless Transactions", () => {
         });
       }
 
+      // Wait for prover to sync quota state
+      await rlnClient.waitForProverSync();
+
       // Attempt one more transaction (should fail)
       // When quota is exceeded, prover doesn't generate proof → TX times out
       const errorMessage = await rlnClient.sendGaslessTransactionExpectFailure(user, {
@@ -246,6 +249,9 @@ describe("RLN Gasless Transactions", () => {
           data: uniqueTxData(`gas003-exhaust-${i}`),
         });
       }
+
+      // Wait for prover to sync quota state
+      await rlnClient.waitForProverSync();
 
       // Attempt to exceed quota (triggers deny list addition)
       await rlnClient.sendGaslessTransactionExpectFailure(user, {
@@ -359,6 +365,9 @@ describe("RLN Gasless Transactions", () => {
         });
       }
 
+      // Wait for prover to sync quota state (longer wait for epoch boundary test)
+      await rlnClient.waitForProverSync(1000);
+
       // Verify quota is exhausted (next tx should fail)
       // Quota exceeded manifests as timeout (no proof generated) or explicit rejection
       const preEpochError = await rlnClient.sendGaslessTransactionExpectFailure(
@@ -434,6 +443,9 @@ describe("RLN Gasless Transactions", () => {
         expect(receipt.status).toBe(1);
       }
 
+      // Wait for prover to sync quota state for all users
+      await rlnClient.waitForProverSync();
+
       // Now all users should have exhausted their quota (2/2 used)
       // Verify each user's 3rd tx fails (isolation verified)
       for (let i = 0; i < users.length; i++) {
@@ -476,6 +488,9 @@ describe("RLN Gasless Transactions", () => {
           data: uniqueTxData(`gas008-entry-${i}`),
         });
       }
+
+      // Wait for prover to sync quota state
+      await rlnClient.waitForProverSync();
 
       // Entry user's 3rd transaction should fail
       // Quota exceeded manifests as timeout (no proof generated) or explicit rejection

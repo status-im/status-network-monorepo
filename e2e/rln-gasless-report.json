@@ -1,15 +1,15 @@
 {
   "summary": {
-    "generated_at": "2025-12-17T14:20:59.263Z",
-    "test_run_start": "2025-12-17T13:36:03.890Z",
-    "test_run_end": "2025-12-17T13:57:45.694Z",
-    "total_duration_ms": 1301804,
+    "generated_at": "2025-12-17T21:11:50.899Z",
+    "test_run_start": "2025-12-17T20:40:44.205Z",
+    "test_run_end": "2025-12-17T21:02:22.167Z",
+    "total_duration_ms": 1297962,
     "total_scenarios": 65,
-    "passed": 64,
-    "failed": 1,
+    "passed": 65,
+    "failed": 0,
     "skipped": 0,
     "not_run": 0,
-    "pass_rate": "98.5%",
+    "pass_rate": "100.0%",
     "categories": [
       {
         "category": "DENY_LIST",
@@ -41,11 +41,11 @@
       {
         "category": "GASLESS",
         "total": 10,
-        "passed": 9,
-        "failed": 1,
+        "passed": 10,
+        "failed": 0,
         "skipped": 0,
         "not_run": 0,
-        "pass_rate": "90.0%"
+        "pass_rate": "100.0%"
       },
       {
         "category": "INTEGRATION",
@@ -100,7 +100,7 @@
       "description": "User exceeding quota is added to deny list",
       "category": "DENY_LIST",
       "status": "passed",
-      "duration_ms": 14295,
+      "duration_ms": 16518,
       "test_file": "deny-list-and-premium-gas"
     },
     {
@@ -108,7 +108,7 @@
       "description": "Denied user cannot send gasless transactions",
       "category": "DENY_LIST",
       "status": "passed",
-      "duration_ms": 62840,
+      "duration_ms": 62787,
       "test_file": "deny-list-and-premium-gas"
     },
     {
@@ -116,7 +116,7 @@
       "description": "Premium gas clears deny status (recovery path)",
       "category": "DENY_LIST",
       "status": "passed",
-      "duration_ms": 34182,
+      "duration_ms": 34825,
       "test_file": "deny-list-and-premium-gas"
     },
     {
@@ -124,7 +124,7 @@
       "description": "Denied user can send premium gas transaction",
       "category": "DENY_LIST",
       "status": "passed",
-      "duration_ms": 33663,
+      "duration_ms": 33808,
       "test_file": "deny-list-and-premium-gas"
     },
     {
@@ -132,7 +132,7 @@
       "description": "Premium gas payment removes user from deny list",
       "category": "DENY_LIST",
       "status": "passed",
-      "duration_ms": 33505,
+      "duration_ms": 35538,
       "test_file": "deny-list-and-premium-gas"
     },
     {
@@ -140,7 +140,7 @@
       "description": "After premium recovery and new epoch, user can send gasless again",
       "category": "DENY_LIST",
       "status": "passed",
-      "duration_ms": 47096,
+      "duration_ms": 23632,
       "test_file": "deny-list-and-premium-gas"
     },
     {
@@ -148,7 +148,7 @@
       "description": "Multiple users can be on deny list simultaneously",
       "category": "DENY_LIST",
       "status": "passed",
-      "duration_ms": 105305,
+      "duration_ms": 101010,
       "test_file": "deny-list-and-premium-gas"
     },
     {
@@ -156,7 +156,7 @@
       "description": "Deny list state is consistent across checks",
       "category": "DENY_LIST",
       "status": "passed",
-      "duration_ms": 33347,
+      "duration_ms": 34019,
       "test_file": "deny-list-and-premium-gas"
     },
     {
@@ -164,7 +164,7 @@
       "description": "Concurrent deny list additions are safe",
       "category": "DENY_LIST",
       "status": "passed",
-      "duration_ms": 37039,
+      "duration_ms": 38682,
       "test_file": "deny-list-and-premium-gas"
     },
     {
@@ -172,7 +172,7 @@
       "description": "Self-transfer gasless transaction allowed",
       "category": "EDGE_CASE",
       "status": "passed",
-      "duration_ms": 963,
+      "duration_ms": 842,
       "test_file": "integration-and-errors"
     },
     {
@@ -180,7 +180,7 @@
       "description": "Empty data gasless transaction allowed",
       "category": "EDGE_CASE",
       "status": "passed",
-      "duration_ms": 979,
+      "duration_ms": 1015,
       "test_file": "integration-and-errors"
     },
     {
@@ -188,7 +188,7 @@
       "description": "Minimum gas limit transaction succeeds",
       "category": "EDGE_CASE",
       "status": "passed",
-      "duration_ms": 973,
+      "duration_ms": 980,
       "test_file": "integration-and-errors"
     },
     {
@@ -196,7 +196,7 @@
       "description": "Rapid user creation and registration without conflicts",
       "category": "EDGE_CASE",
       "status": "passed",
-      "duration_ms": 10600,
+      "duration_ms": 9823,
       "test_file": "integration-and-errors"
     },
     {
@@ -204,7 +204,7 @@
       "description": "Transaction to contract address allowed",
       "category": "EDGE_CASE",
       "status": "passed",
-      "duration_ms": 1409,
+      "duration_ms": 1253,
       "test_file": "integration-and-errors"
     },
     {
@@ -212,7 +212,7 @@
       "description": "Karma service unavailable handled gracefully",
       "category": "ERROR_HANDLING",
       "status": "passed",
-      "duration_ms": 963,
+      "duration_ms": 982,
       "test_file": "integration-and-errors"
     },
     {
@@ -220,7 +220,7 @@
       "description": "RLN prover unavailable timeout handling",
       "category": "ERROR_HANDLING",
       "status": "passed",
-      "duration_ms": 3165,
+      "duration_ms": 3157,
       "test_file": "integration-and-errors"
     },
     {
@@ -228,7 +228,7 @@
       "description": "Transaction with large data payload handled",
       "category": "ERROR_HANDLING",
       "status": "passed",
-      "duration_ms": 1022,
+      "duration_ms": 1055,
       "test_file": "integration-and-errors"
     },
     {
@@ -236,7 +236,7 @@
       "description": "Entry tier user can send exactly 2 gasless transactions",
       "category": "GASLESS",
       "status": "passed",
-      "duration_ms": 2060,
+      "duration_ms": 2539,
       "test_file": "gasless-transactions"
     },
     {
@@ -244,7 +244,7 @@
       "description": "Entry tier user gets rejected on 3rd transaction (quota exceeded)",
       "category": "GASLESS",
       "status": "passed",
-      "duration_ms": 32125,
+      "duration_ms": 33499,
       "test_file": "gasless-transactions"
     },
     {
@@ -252,7 +252,7 @@
       "description": "User exceeding quota is added to deny list",
       "category": "GASLESS",
       "status": "passed",
-      "duration_ms": 33043,
+      "duration_ms": 34123,
       "test_file": "gasless-transactions"
     },
     {
@@ -260,7 +260,7 @@
       "description": "Non-Karma user cannot send gasless transactions",
       "category": "GASLESS",
       "status": "passed",
-      "duration_ms": 3652,
+      "duration_ms": 4006,
       "test_file": "gasless-transactions"
     },
     {
@@ -268,24 +268,23 @@
       "description": "Basic tier user can send 16 gasless transactions",
       "category": "GASLESS",
       "status": "passed",
-      "duration_ms": 18181,
+      "duration_ms": 18714,
       "test_file": "gasless-transactions"
     },
     {
       "scenario_id": "GAS_006",
       "description": "Quota resets after epoch boundary",
       "category": "GASLESS",
-      "status": "failed",
-      "duration_ms": 2976,
-      "test_file": "gasless-transactions",
-      "failure_message": "Error: Expected transaction to fail but it succeeded"
+      "status": "passed",
+      "duration_ms": 23220,
+      "test_file": "gasless-transactions"
     },
     {
       "scenario_id": "GAS_007",
       "description": "Concurrent transactions maintain user quota isolation",
       "category": "GASLESS",
       "status": "passed",
-      "duration_ms": 32383,
+      "duration_ms": 33363,
       "test_file": "gasless-transactions"
     },
     {
@@ -293,7 +292,7 @@
       "description": "Different tiers have different quotas",
       "category": "GASLESS",
       "status": "passed",
-      "duration_ms": 36396,
+      "duration_ms": 39601,
       "test_file": "gasless-transactions"
     },
     {
@@ -301,7 +300,7 @@
       "description": "Transaction without proof times out fast",
       "category": "GASLESS",
       "status": "passed",
-      "duration_ms": 3150,
+      "duration_ms": 3149,
       "test_file": "gasless-transactions"
     },
     {
@@ -309,7 +308,7 @@
       "description": "Nonce management for sequential gasless transactions",
       "category": "GASLESS",
       "status": "passed",
-      "duration_ms": 3026,
+      "duration_ms": 2801,
       "test_file": "gasless-transactions"
     },
     {
@@ -317,7 +316,7 @@
       "description": "Complete lifecycle: Register → Gasless → Exhaust → Deny → Premium → Recovery",
       "category": "INTEGRATION",
       "status": "passed",
-      "duration_ms": 94354,
+      "duration_ms": 79048,
       "test_file": "integration-and-errors"
     },
     {
@@ -325,7 +324,7 @@
       "description": "Multiple users with different tiers operating simultaneously",
       "category": "INTEGRATION",
       "status": "passed",
-      "duration_ms": 9687,
+      "duration_ms": 8754,
       "test_file": "integration-and-errors"
     },
     {
@@ -333,7 +332,7 @@
       "description": "Rapid sequential transactions handled correctly",
       "category": "INTEGRATION",
       "status": "passed",
-      "duration_ms": 6051,
+      "duration_ms": 5190,
       "test_file": "integration-and-errors"
     },
     {
@@ -341,7 +340,7 @@
       "description": "Epoch transition with active users handled gracefully",
       "category": "INTEGRATION",
       "status": "passed",
-      "duration_ms": 12966,
+      "duration_ms": 15249,
       "test_file": "integration-and-errors"
     },
     {
@@ -349,7 +348,7 @@
       "description": "Concurrent transactions don't corrupt state",
       "category": "INTEGRATION",
       "status": "passed",
-      "duration_ms": 5978,
+      "duration_ms": 6632,
       "test_file": "integration-and-errors"
     },
     {
@@ -357,7 +356,7 @@
       "description": "High volume user quota tracking",
       "category": "INTEGRATION",
       "status": "passed",
-      "duration_ms": 11866,
+      "duration_ms": 11964,
       "test_file": "integration-and-errors"
     },
     {
@@ -365,7 +364,7 @@
       "description": "Minting 1 Karma assigns Entry tier",
       "category": "KARMA",
       "status": "passed",
-      "duration_ms": 8362,
+      "duration_ms": 7938,
       "test_file": "karma-tier-system"
     },
     {
@@ -373,7 +372,7 @@
       "description": "Minting 50 Karma assigns Basic tier",
       "category": "KARMA",
       "status": "passed",
-      "duration_ms": 9742,
+      "duration_ms": 10849,
       "test_file": "karma-tier-system"
     },
     {
@@ -381,7 +380,7 @@
       "description": "Karma mint triggers automatic RLN registration",
       "category": "KARMA",
       "status": "passed",
-      "duration_ms": 8745,
+      "duration_ms": 8371,
       "test_file": "karma-tier-system"
     },
     {
@@ -389,7 +388,7 @@
       "description": "Additional Karma mint increases available quota",
       "category": "KARMA",
       "status": "passed",
-      "duration_ms": 10255,
+      "duration_ms": 13707,
       "test_file": "karma-tier-system"
     },
     {
@@ -397,7 +396,7 @@
       "description": "All tier levels have correct quota values",
       "category": "KARMA",
       "status": "passed",
-      "duration_ms": 6,
+      "duration_ms": 8,
       "test_file": "karma-tier-system"
     },
     {
@@ -405,7 +404,7 @@
       "description": "Tier boundary at exact threshold is handled correctly",
       "category": "KARMA",
       "status": "passed",
-      "duration_ms": 17045,
+      "duration_ms": 17169,
       "test_file": "karma-tier-system"
     },
     {
@@ -413,7 +412,7 @@
       "description": "Zero Karma user cannot use gasless",
       "category": "KARMA",
       "status": "passed",
-      "duration_ms": 4438,
+      "duration_ms": 5371,
       "test_file": "karma-tier-system"
     },
     {
@@ -421,7 +420,7 @@
       "description": "Identity commitment is unique per user",
       "category": "KARMA",
       "status": "passed",
-      "duration_ms": 9033,
+      "duration_ms": 8458,
       "test_file": "karma-tier-system"
     },
     {
@@ -429,7 +428,7 @@
       "description": "Each transaction gets unique nullifier",
       "category": "NULLIFIER",
       "status": "passed",
-      "duration_ms": 3033,
+      "duration_ms": 2396,
       "test_file": "nullifier-tracking"
     },
     {
@@ -437,7 +436,7 @@
       "description": "Same user can transact across different epochs",
       "category": "NULLIFIER",
       "status": "passed",
-      "duration_ms": 25872,
+      "duration_ms": 9760,
       "test_file": "nullifier-tracking"
     },
     {
@@ -445,7 +444,7 @@
       "description": "Quota exhaustion triggers security event logging",
       "category": "NULLIFIER",
       "status": "passed",
-      "duration_ms": 12444,
+      "duration_ms": 12490,
       "test_file": "nullifier-tracking"
     },
     {
@@ -453,7 +452,7 @@
       "description": "Replay attack prevention via nonce enforcement",
       "category": "NULLIFIER",
       "status": "passed",
-      "duration_ms": 1668,
+      "duration_ms": 1700,
       "test_file": "nullifier-tracking"
     },
     {
@@ -461,7 +460,7 @@
       "description": "Epoch validation in proofs",
       "category": "NULLIFIER",
       "status": "passed",
-      "duration_ms": 963,
+      "duration_ms": 940,
       "test_file": "nullifier-tracking"
     },
     {
@@ -469,7 +468,7 @@
       "description": "Rapid sequential transactions handled",
       "category": "NULLIFIER",
       "status": "passed",
-      "duration_ms": 6880,
+      "duration_ms": 6793,
       "test_file": "nullifier-tracking"
     },
     {
@@ -477,7 +476,7 @@
       "description": "Concurrent transactions from multiple users without interference",
       "category": "NULLIFIER",
       "status": "passed",
-      "duration_ms": 1156,
+      "duration_ms": 1165,
       "test_file": "nullifier-tracking"
     },
     {
@@ -485,7 +484,7 @@
       "description": "Nullifier database persistence verified",
       "category": "NULLIFIER",
       "status": "passed",
-      "duration_ms": 2249,
+      "duration_ms": 2228,
       "test_file": "nullifier-tracking"
     },
     {
@@ -493,7 +492,7 @@
       "description": "Transaction with gasPrice >= 10 Gwei bypasses RLN",
       "category": "PREMIUM_GAS",
       "status": "passed",
-      "duration_ms": 1505,
+      "duration_ms": 1646,
       "test_file": "deny-list-and-premium-gas"
     },
     {
@@ -501,7 +500,7 @@
       "description": "Transaction with gasPrice < 10 Gwei requires RLN",
       "category": "PREMIUM_GAS",
       "status": "passed",
-      "duration_ms": 3162,
+      "duration_ms": 3322,
       "test_file": "deny-list-and-premium-gas"
     },
     {
@@ -509,7 +508,7 @@
       "description": "Exactly threshold (10 Gwei) bypasses RLN",
       "category": "PREMIUM_GAS",
       "status": "passed",
-      "duration_ms": 949,
+      "duration_ms": 1209,
       "test_file": "deny-list-and-premium-gas"
     },
     {
@@ -517,7 +516,7 @@
       "description": "Premium gas works even without Karma registration",
       "category": "PREMIUM_GAS",
       "status": "passed",
-      "duration_ms": 2907,
+      "duration_ms": 2940,
       "test_file": "deny-list-and-premium-gas"
     },
     {
@@ -525,7 +524,7 @@
       "description": "Premium gas transaction from unfunded wallet fails",
       "category": "PREMIUM_GAS",
       "status": "passed",
-      "duration_ms": 223,
+      "duration_ms": 168,
       "test_file": "deny-list-and-premium-gas"
     },
     {
@@ -533,7 +532,7 @@
       "description": "Gas estimate shows premium multiplier for denied users",
       "category": "PREMIUM_GAS",
       "status": "passed",
-      "duration_ms": 32874,
+      "duration_ms": 33935,
       "test_file": "deny-list-and-premium-gas"
     },
     {
@@ -541,7 +540,7 @@
       "description": "Valid RLN proof is accepted",
       "category": "RLN_PROOF",
       "status": "passed",
-      "duration_ms": 2117,
+      "duration_ms": 1536,
       "test_file": "rln-proof-verification"
     },
     {
@@ -549,7 +548,7 @@
       "description": "Unregistered user gets no proof generated",
       "category": "RLN_PROOF",
       "status": "passed",
-      "duration_ms": 4262,
+      "duration_ms": 4395,
       "test_file": "rln-proof-verification"
     },
     {
@@ -557,7 +556,7 @@
       "description": "Transaction with garbage data still needs valid proof",
       "category": "RLN_PROOF",
       "status": "passed",
-      "duration_ms": 4009,
+      "duration_ms": 3319,
       "test_file": "rln-proof-verification"
     },
     {
@@ -565,7 +564,7 @@
       "description": "Proof arrives before transaction (async handling)",
       "category": "RLN_PROOF",
       "status": "passed",
-      "duration_ms": 1829,
+      "duration_ms": 1048,
       "test_file": "rln-proof-verification"
     },
     {
@@ -573,7 +572,7 @@
       "description": "Transaction times out fast without proof",
       "category": "RLN_PROOF",
       "status": "passed",
-      "duration_ms": 3177,
+      "duration_ms": 3149,
       "test_file": "rln-proof-verification"
     },
     {
@@ -581,7 +580,7 @@
       "description": "Multiple sequential proofs are processed",
       "category": "RLN_PROOF",
       "status": "passed",
-      "duration_ms": 3454,
+      "duration_ms": 2676,
       "test_file": "rln-proof-verification"
     },
     {
@@ -589,7 +588,7 @@
       "description": "gRPC stream resilience maintained across transactions",
       "category": "RLN_PROOF",
       "status": "passed",
-      "duration_ms": 2240,
+      "duration_ms": 4115,
       "test_file": "rln-proof-verification"
     },
     {
@@ -597,7 +596,7 @@
       "description": "Proof rejection events are logged",
       "category": "RLN_PROOF",
       "status": "passed",
-      "duration_ms": 3382,
+      "duration_ms": 3438,
       "test_file": "rln-proof-verification"
     },
     {
@@ -605,7 +604,7 @@
       "description": "Zero-value transactions require proof",
       "category": "RLN_PROOF",
       "status": "passed",
-      "duration_ms": 4453,
+      "duration_ms": 4748,
       "test_file": "rln-proof-verification"
     },
     {
@@ -613,19 +612,9 @@
       "description": "Self-transfer with zero gas requires proof",
       "category": "RLN_PROOF",
       "status": "passed",
-      "duration_ms": 4153,
+      "duration_ms": 3843,
       "test_file": "rln-proof-verification"
     }
   ],
-  "failed_scenarios": [
-    {
-      "scenario_id": "GAS_006",
-      "description": "Quota resets after epoch boundary",
-      "category": "GASLESS",
-      "status": "failed",
-      "duration_ms": 2976,
-      "test_file": "gasless-transactions",
-      "failure_message": "Error: Expected transaction to fail but it succeeded"
-    }
-  ]
+  "failed_scenarios": []
 }

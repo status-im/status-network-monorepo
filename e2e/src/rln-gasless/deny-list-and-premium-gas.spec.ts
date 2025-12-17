@@ -170,6 +170,9 @@ describe("RLN Deny List and Premium Gas", () => {
         });
       }
 
+      // Wait for prover to sync quota state (longer for first test - cold start)
+      await rlnClient.waitForProverSync(3000);
+
       // Attempt to exceed quota
       await rlnClient.sendGaslessTransactionExpectFailure(
         user,
@@ -209,6 +212,9 @@ describe("RLN Deny List and Premium Gas", () => {
           data: uniqueTxData(`deny002-exhaust-${i}`),
         });
       }
+
+      // Wait for prover to sync quota state
+      await rlnClient.waitForProverSync();
 
       // Trigger deny list
       await rlnClient.sendGaslessTransactionExpectFailure(user, {
@@ -251,6 +257,9 @@ describe("RLN Deny List and Premium Gas", () => {
           data: uniqueTxData(`deny003-exhaust-${i}`),
         });
       }
+
+      // Wait for prover to sync quota state
+      await rlnClient.waitForProverSync();
 
       await rlnClient.sendGaslessTransactionExpectFailure(user, {
         to: TEST_RECIPIENT,
@@ -302,6 +311,9 @@ describe("RLN Deny List and Premium Gas", () => {
         });
       }
 
+      // Wait for prover to sync quota state
+      await rlnClient.waitForProverSync();
+
       await rlnClient.sendGaslessTransactionExpectFailure(user, {
         to: TEST_RECIPIENT,
         value: 0n,
@@ -344,6 +356,9 @@ describe("RLN Deny List and Premium Gas", () => {
           data: uniqueTxData(`deny005-exhaust-${i}`),
         });
       }
+
+      // Wait for prover to sync quota state
+      await rlnClient.waitForProverSync();
 
       await rlnClient.sendGaslessTransactionExpectFailure(user, {
         to: TEST_RECIPIENT,
@@ -396,6 +411,9 @@ describe("RLN Deny List and Premium Gas", () => {
           data: uniqueTxData(`deny006-exhaust-${i}`),
         });
       }
+
+      // Wait for prover to sync quota state
+      await rlnClient.waitForProverSync();
 
       await rlnClient.sendGaslessTransactionExpectFailure(
         user,
@@ -460,6 +478,9 @@ describe("RLN Deny List and Premium Gas", () => {
           });
         }
 
+        // Wait for prover to sync quota state for this user
+        await rlnClient.waitForProverSync();
+
         await rlnClient.sendGaslessTransactionExpectFailure(user, {
           to: TEST_RECIPIENT,
           value: 0n,
@@ -499,6 +520,9 @@ describe("RLN Deny List and Premium Gas", () => {
           data: uniqueTxData(`deny008-exhaust-${i}`),
         });
       }
+
+      // Wait for prover to sync quota state
+      await rlnClient.waitForProverSync();
 
       await rlnClient.sendGaslessTransactionExpectFailure(user, {
         to: TEST_RECIPIENT,
@@ -542,6 +566,9 @@ describe("RLN Deny List and Premium Gas", () => {
           });
         }
       }
+
+      // Wait for prover to sync quota state for all users
+      await rlnClient.waitForProverSync();
 
       // Trigger denial concurrently
       const triggerPromises = users.map((user) =>
@@ -746,6 +773,9 @@ describe("RLN Deny List and Premium Gas", () => {
           data: uniqueTxData(`prem006-exhaust-${i}`),
         });
       }
+
+      // Wait for prover to sync quota state
+      await rlnClient.waitForProverSync();
 
       await rlnClient.sendGaslessTransactionExpectFailure(user, {
         to: TEST_RECIPIENT,

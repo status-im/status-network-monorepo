@@ -187,6 +187,9 @@ export class RlnTestClient {
   /**
    * Send a gasless transaction and expect it to fail
    * Returns the error message if it fails, throws if it succeeds
+   *
+   * IMPORTANT: Call waitForProverSync() before this if you just exhausted quota
+   * to ensure the prover has processed recent transactions.
    */
   async sendGaslessTransactionExpectFailure(
     signer: ethers.Signer,
@@ -232,6 +235,18 @@ export class RlnTestClient {
       this.logger.debug("Transaction failed as expected", { error: err.message });
       return err.message;
     }
+  }
+
+  /**
+   * Wait for RLN prover to sync after quota-exhausting transactions.
+   * This ensures the prover has processed recent transactions before checking quota limits.
+   *
+   * Should be called after sending quota-exhausting transactions and before expecting failures.
+   * Default: 800ms provides reliable synchronization. Use 2000ms for first test (cold start).
+   */
+  async waitForProverSync(delayMs: number = 800): Promise<void> {
+    this.logger.debug("Waiting for RLN prover to sync transaction state", { delayMs });
+    await this.sleep(delayMs);
   }
 
   /**
