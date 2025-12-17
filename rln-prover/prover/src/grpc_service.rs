@@ -192,7 +192,7 @@ where
             "[gRPC] Rate limit check: counter={}, effective_limit={}, tier_limit={:?}",
             u64::from(counter),
             u64::from(effective_limit),
-            tier_limit.map(|l| u32::from(l))
+            tier_limit.map(u32::from)
         );
 
         if counter > effective_limit {
@@ -215,10 +215,7 @@ where
                     sender, e
                 );
             } else {
-                info!(
-                    "[gRPC] Added {} to deny list: {}",
-                    sender, deny_reason
-                );
+                info!("[gRPC] Added {} to deny list: {}", sender, deny_reason);
             }
             return Err(Status::resource_exhausted(
                 "Too many transactions sent by this user",
