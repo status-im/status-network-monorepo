@@ -253,14 +253,16 @@ export class RlnTestClient {
       nonce,
     });
 
-    const tx = await signer.sendTransaction({
+    const txRequest: ethers.TransactionRequest = {
       to: options.to,
       value: options.value ?? 0n,
       data: options.data ?? "0x",
       gasLimit: options.gasLimit ?? 25000,
       gasPrice: options.gasPrice,
       nonce,
-    });
+      chainId: (await this._rpcProvider.getNetwork()).chainId,
+    };
+    const tx = await signer.sendTransaction(txRequest);
 
     this.logger.debug("Premium gas transaction sent", { txHash: tx.hash });
 

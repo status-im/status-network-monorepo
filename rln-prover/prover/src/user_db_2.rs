@@ -8,10 +8,10 @@ use tokio::sync::RwLock as TokioRwLock;
 // RLN
 use rln::{hashers::poseidon_hash, protocol::keygen};
 // db
-use sea_orm::sea_query::OnConflict;
+use sea_orm::sea_query::{LockType, OnConflict};
 use sea_orm::{
     ColumnTrait, DatabaseConnection, DbErr, EntityTrait, ExprTrait, IntoActiveModel,
-    PaginatorTrait, QueryFilter, Set, TransactionTrait,
+    PaginatorTrait, QueryFilter, QuerySelect, Set, TransactionTrait,
 };
 // internal
 use crate::epoch_service::{Epoch, EpochSlice};
@@ -215,11 +215,20 @@ impl UserDb2 {
     ) -> Result<EpochCounter, DbErr> {
         let incr_value = incr_value.unwrap_or(1);
         let (epoch, _epoch_slice) = *self.epoch_store.read();
+        tracing::info!(
+            address = %address,
+            incr_value = incr_value,
+            current_epoch = i64::from(epoch),
+            "incr_tx_counter: incrementing counter"
+        );
 
         let txn = self.db.begin().await?;
 
+        // Use SELECT FOR UPDATE to prevent race conditions with concurrent transactions
+        // This locks the row until the transaction commits, ensuring atomic read-modify-write
         let res = tx_counter::Entity::find()
             .filter(tx_counter::Column::Address.eq(address.to_string()))
+            .lock(LockType::Update)
             .one(&txn)
             .await?;
 
@@ -295,12 +304,27 @@ impl UserDb2 {
             true => {
                 // EpochCounter stored in DB == epoch store
                 // We query for an epoch and this is what is stored in the Db
+                tracing::debug!(
+                    address = %model.address,
+                    db_epoch = model.epoch,
+                    current_epoch = i64::from(epoch),
+                    epoch_counter = model.epoch_counter,
+                    "counters_from_key: epochs match, returning actual counter"
+                );
                 (model.epoch_counter as u64).into()
             }
             false => {
                 // EpochCounter.epoch (stored in DB) != epoch_store.epoch
                 // We query for an epoch after what is stored in Db
                 // This can happen if no Tx has updated the epoch counter (yet)
+                tracing::warn!(
+                    address = %model.address,
+                    db_epoch = model.epoch,
+                    current_epoch = i64::from(epoch),
+                    epoch_counter = model.epoch_counter,
+                    "counters_from_key: EPOCH MISMATCH - returning 0 instead of {}",
+                    model.epoch_counter
+                );
                 EpochCounter::from(0)
             }
         }

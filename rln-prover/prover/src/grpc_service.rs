@@ -174,7 +174,52 @@ where
             .await
             .unwrap_or_default();
 
-        if counter > self.rate_limit {
+        // Get user's tier-based quota limit
+        let tier_limit = match self.user_db.user_tier_info(&sender, &self.karma_sc).await {
+            Ok(tier_info) => tier_info.tier_limit,
+            Err(_) => None, // Fall back to global limit on error
+        };
+
+        // Check against tier limit if available, otherwise use global spam limit
+        let effective_limit = tier_limit
+            .map(|l| {
+                let limit: u32 = l.into();
+                RateLimit::new(u64::from(limit))
+            })
+            .unwrap_or(self.rate_limit);
+
+        info!(
+            "[gRPC] Rate limit check: counter={}, effective_limit={}, tier_limit={:?}",
+            u64::from(counter),
+            u64::from(effective_limit),
+            tier_limit.map(|l| u32::from(l))
+        );
+
+        if counter > effective_limit {
+            // Add user to deny list when rate limit is exceeded
+            // This is critical because by the time the sequencer queries getUserTierInfo,
+            // the epoch may have changed, causing get_tx_counter to return 0.
+            // The prover has the accurate counter right now, so we add to deny list here.
+            let deny_reason = format!(
+                "Rate limit exceeded: {} transactions, limit: {}",
+                u64::from(counter),
+                u64::from(effective_limit)
+            );
+            if let Err(e) = self
+                .user_db
+                .add_to_deny_list(&sender, Some(deny_reason.clone()), None)
+                .await
+            {
+                warn!(
+                    "[gRPC] Failed to add {} to deny list after rate limit exceeded: {:?}",
+                    sender, e
+                );
+            } else {
+                info!(
+                    "[gRPC] Added {} to deny list: {}",
+                    sender, deny_reason
+                );
+            }
             return Err(Status::resource_exhausted(
                 "Too many transactions sent by this user",
             ));

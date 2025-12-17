@@ -106,6 +106,7 @@ export const RLN_CONFIG = {
     pro: { min: 100000n, max: 499999n },
     "high-throughput": { min: 500000n, max: 4999999n },
     "s-tier": { min: 5000000n, max: 9999999n },
+    legendary: { min: 10000000n, max: BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff") },
   } as const,
 
   // Test accounts (from genesis file - private keys)

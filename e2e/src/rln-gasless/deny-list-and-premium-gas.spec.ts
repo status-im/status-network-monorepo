@@ -16,11 +16,29 @@ import { RLN_CONFIG } from "./config/rln-config";
 import { loadRlnContracts, RlnContracts } from "./config/contract-loader";
 import { createTestLogger } from "../config/logger";
 import { txBenchmarker } from "./utils/tx-benchmarker";
+import {
+  formatScenario,
+  DENY_001,
+  DENY_002,
+  DENY_003,
+  DENY_004,
+  DENY_005,
+  DENY_006,
+  DENY_007,
+  DENY_008,
+  DENY_009,
+  PREM_001,
+  PREM_002,
+  PREM_003,
+  PREM_004,
+  PREM_005,
+  PREM_006,
+} from "./helpers/scenario";
 
 const logger = createTestLogger();
 
 /**
- * Test Suite: Deny List and Premium Gas (DENY-001 to DENY-009, PREM-001 to PREM-006)
+ * Test Suite: Deny List and Premium Gas (DENY_001 to DENY_009, PREM_001 to PREM_006)
  *
  * Tests deny list functionality and premium gas bypass:
  * - Deny list addition on quota violation
@@ -129,666 +147,635 @@ describe("RLN Deny List and Premium Gas", () => {
   });
 
   // ============================================================================
-  // DENY LIST TESTS (DENY-001 to DENY-009)
+  // DENY LIST TESTS (DENY_001 to DENY_009)
   // ============================================================================
 
-  describe("DENY-001: User Exceeding Quota is Added to Deny List", () => {
-    it(
-      "should add user to deny list when quota is exceeded",
-      async () => {
-        const user = getRegisteredUser(); // Use pre-registered user - no waiting!
-        const quota = RLN_CONFIG.tiers.entry.quota;
+  it(
+    formatScenario(DENY_001),
+    async () => {
+      const user = getRegisteredUser(); // Use pre-registered user - no waiting!
+      const quota = RLN_CONFIG.tiers.entry.quota;
 
-        logger.info("DENY-001: Testing deny list addition", {
-          user: user.address,
-          quota,
+      logger.info(`${DENY_001.id}: Testing deny list addition`, {
+        user: user.address,
+        quota,
+      });
+
+      // Exhaust quota
+      for (let i = 0; i < quota; i++) {
+        await rlnClient.sendGaslessTransaction(user, {
+          to: TEST_RECIPIENT,
+          value: 0n,
+          data: uniqueTxData(`deny001-exhaust-${i}`),
         });
+      }
 
-        // Exhaust quota
+      // Attempt to exceed quota
+      await rlnClient.sendGaslessTransactionExpectFailure(
+        user,
+        {
+          to: TEST_RECIPIENT,
+          value: 0n,
+          data: uniqueTxData("deny001-exceed"),
+        },
+        10000, // 10s timeout for failure expectation
+      );
+
+      // Wait for and verify deny list addition
+      await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
+      const isDenied = await denyListManager.isDenied(user.address);
+
+      //  User MUST be on deny list
+      expect(isDenied).toBe(true);
+
+      logger.info(`${DENY_001.id}: PASSED ✓`);
+    },
+    DENY_TEST_TIMEOUT, // 2 TXs + rejection (~7s) + deny wait (~20s) = ~35s
+  );
+
+  it(
+    formatScenario(DENY_002),
+    async () => {
+      const user = getRegisteredUser();
+      const quota = RLN_CONFIG.tiers.entry.quota;
+
+      logger.info(`${DENY_002.id}: Testing denial rejection`, { user: user.address });
+
+      // Exhaust quota and get denied
+      for (let i = 0; i < quota; i++) {
+        await rlnClient.sendGaslessTransaction(user, {
+          to: TEST_RECIPIENT,
+          value: 0n,
+          data: uniqueTxData(`deny002-exhaust-${i}`),
+        });
+      }
+
+      // Trigger deny list
+      await rlnClient.sendGaslessTransactionExpectFailure(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        data: uniqueTxData("deny002-trigger"),
+      });
+
+      await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
+
+      // Subsequent gasless transactions should fail
+      // Denial manifests as timeout (no proof generated) or explicit rejection
+      const errorMessage = await rlnClient.sendGaslessTransactionExpectFailure(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        data: uniqueTxData("deny002-denied"),
+      });
+
+      //  Must be rejected - either denied (if deny list synced) or resource_exhausted (quota check)
+      expect(errorMessage).toMatch(/denied|reject|quota|timeout|resource.*exhausted/i);
+
+      logger.info(`${DENY_002.id}: PASSED ✓`);
+    },
+    DENY_TEST_TIMEOUT, // 2 TXs + rejection + deny wait + rejection = ~45s
+  );
+
+  it(
+    formatScenario(DENY_003),
+    async () => {
+      const user = getRegisteredUser();
+      const quota = RLN_CONFIG.tiers.entry.quota;
+
+      logger.info(`${DENY_003.id}: Testing premium gas recovery`, { user: user.address });
+
+      // Get denied
+      for (let i = 0; i < quota; i++) {
+        await rlnClient.sendGaslessTransaction(user, {
+          to: TEST_RECIPIENT,
+          value: 0n,
+          data: uniqueTxData(`deny003-exhaust-${i}`),
+        });
+      }
+
+      await rlnClient.sendGaslessTransactionExpectFailure(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        data: uniqueTxData("deny003-trigger"),
+      });
+
+      await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
+
+      //  User IS denied before premium gas
+      expect(await denyListManager.isDenied(user.address)).toBe(true);
+
+      // Pay premium gas to recover
+      const premiumReceipt = await rlnClient.sendPremiumGasTransaction(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        gasPrice: PREMIUM_GAS_PRICE,
+        data: uniqueTxData("deny003-premium"),
+      });
+      expect(premiumReceipt.status).toBe(1);
+
+      // Wait for deny list removal
+      await denyListManager.waitForNotDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
+
+      //  User is NOT denied after premium gas
+      expect(await denyListManager.isDenied(user.address)).toBe(false);
+
+      logger.info(`${DENY_003.id}: PASSED ✓`);
+    },
+    DENY_TEST_TIMEOUT, // 2 gasless + rejection + premium + deny waits = ~45s
+  );
+
+  it(
+    formatScenario(DENY_004),
+    async () => {
+      const user = getRegisteredUser();
+      const quota = RLN_CONFIG.tiers.entry.quota;
+
+      logger.info(`${DENY_004.id}: Testing premium gas for denied user`, {
+        user: user.address,
+      });
+
+      // Get denied
+      for (let i = 0; i < quota; i++) {
+        await rlnClient.sendGaslessTransaction(user, {
+          to: TEST_RECIPIENT,
+          value: 0n,
+          data: uniqueTxData(`deny004-exhaust-${i}`),
+        });
+      }
+
+      await rlnClient.sendGaslessTransactionExpectFailure(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        data: uniqueTxData("deny004-trigger"),
+      });
+
+      await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
+
+      // Premium gas transaction should succeed even while denied
+      const receipt = await rlnClient.sendPremiumGasTransaction(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        gasPrice: PREMIUM_GAS_PRICE,
+        data: uniqueTxData("deny004-premium"),
+      });
+
+      //  Premium gas tx must succeed
+      expect(receipt.status).toBe(1);
+
+      logger.info(`${DENY_004.id}: PASSED ✓`);
+    },
+    DENY_TEST_TIMEOUT, // 2 gasless + rejection + deny wait + premium = ~45s
+  );
+
+  it(
+    formatScenario(DENY_005),
+    async () => {
+      const user = getRegisteredUser();
+      const quota = RLN_CONFIG.tiers.entry.quota;
+
+      logger.info(`${DENY_005.id}: Testing premium gas deny list removal`, {
+        user: user.address,
+      });
+
+      // Get denied
+      for (let i = 0; i < quota; i++) {
+        await rlnClient.sendGaslessTransaction(user, {
+          to: TEST_RECIPIENT,
+          value: 0n,
+          data: uniqueTxData(`deny005-exhaust-${i}`),
+        });
+      }
+
+      await rlnClient.sendGaslessTransactionExpectFailure(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        data: uniqueTxData("deny005-trigger"),
+      });
+
+      await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
+
+      //  User is denied
+      expect(await denyListManager.isDenied(user.address)).toBe(true);
+
+      // Pay premium gas
+      await rlnClient.sendPremiumGasTransaction(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        gasPrice: PREMIUM_GAS_PRICE,
+        data: uniqueTxData("deny005-premium"),
+      });
+
+      // Wait for removal
+      await denyListManager.waitForNotDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
+
+      //  User is removed from deny list
+      const isDenied = await denyListManager.isDenied(user.address);
+      expect(isDenied).toBe(false);
+
+      logger.info(`${DENY_005.id}: PASSED ✓`);
+    },
+    DENY_TEST_TIMEOUT, // 2 gasless + rejection + deny wait + premium + removal wait = ~50s
+  );
+
+  it(
+    formatScenario(DENY_006),
+    async () => {
+      const user = getRegisteredUser();
+      const quota = RLN_CONFIG.tiers.entry.quota;
+      const epochDuration = RLN_CONFIG.test.epochDurationSeconds;
+
+      logger.info(`${DENY_006.id}: Testing post-recovery gasless capability`, {
+        user: user.address,
+        epochDurationSeconds: epochDuration,
+      });
+
+      // Get denied
+      for (let i = 0; i < quota; i++) {
+        await rlnClient.sendGaslessTransaction(user, {
+          to: TEST_RECIPIENT,
+          value: 0n,
+          data: uniqueTxData(`deny006-exhaust-${i}`),
+        });
+      }
+
+      await rlnClient.sendGaslessTransactionExpectFailure(
+        user,
+        {
+          to: TEST_RECIPIENT,
+          value: 0n,
+          data: uniqueTxData("deny006-trigger"),
+        },
+        10000, // 10s timeout for failure expectation
+      );
+
+      await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
+
+      // Pay premium to get removed
+      await rlnClient.sendPremiumGasTransaction(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        gasPrice: PREMIUM_GAS_PRICE,
+        data: uniqueTxData("deny006-premium"),
+      });
+
+      await denyListManager.waitForNotDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
+
+      // Wait for new epoch (quota resets)
+      logger.info(`Waiting for new epoch (max ${epochDuration + 2}s)...`);
+      await rlnClient.waitForNextEpoch((epochDuration + 2) * 1000);
+
+      // Allow prover to sync state after deny list clearance + epoch change
+      await rlnClient.sleep(1000);
+
+      // Should be able to send gasless again
+      const receipt = await rlnClient.sendGaslessTransaction(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        data: uniqueTxData("deny006-gasless-again"),
+      });
+
+      //  Gasless must work after recovery + epoch
+      expect(receipt.status).toBe(1);
+
+      logger.info(`${DENY_006.id}: PASSED ✓`);
+    },
+    EPOCH_TEST_TIMEOUT, // This test waits for epoch boundary (60s)
+  );
+
+  it(
+    formatScenario(DENY_007),
+    async () => {
+      logger.info(`${DENY_007.id}: Testing multiple denied users`);
+
+      // Get 3 pre-registered users from pool
+      const users = [getRegisteredUser(), getRegisteredUser(), getRegisteredUser()];
+      const quota = RLN_CONFIG.tiers.entry.quota;
+
+      // Get all users denied
+      for (const user of users) {
         for (let i = 0; i < quota; i++) {
           await rlnClient.sendGaslessTransaction(user, {
             to: TEST_RECIPIENT,
             value: 0n,
-            data: uniqueTxData(`deny001-exhaust-${i}`),
+            data: uniqueTxData(`deny007-${user.address.slice(-4)}-${i}`),
           });
         }
 
-        // Attempt to exceed quota
-        await rlnClient.sendGaslessTransactionExpectFailure(
-          user,
-          {
-            to: TEST_RECIPIENT,
-            value: 0n,
-            data: uniqueTxData("deny001-exceed"),
-          },
-          10000, // 10s timeout for failure expectation
-        );
+        await rlnClient.sendGaslessTransactionExpectFailure(user, {
+          to: TEST_RECIPIENT,
+          value: 0n,
+          data: uniqueTxData(`deny007-${user.address.slice(-4)}-trigger`),
+        });
+      }
 
-        // Wait for and verify deny list addition
+      // Wait for all to be denied
+      for (const user of users) {
         await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
-        const isDenied = await denyListManager.isDenied(user.address);
+      }
 
-        //  User MUST be on deny list
+      //  All users must be denied
+      for (const user of users) {
+        const isDenied = await denyListManager.isDenied(user.address);
         expect(isDenied).toBe(true);
+      }
 
-        logger.info("DENY-001: PASSED ✓ - User added to deny list after quota violation");
-      },
-      DENY_TEST_TIMEOUT, // 2 TXs + rejection (~7s) + deny wait (~20s) = ~35s
-    );
-  });
+      logger.info(`${DENY_007.id}: PASSED ✓`);
+    },
+    HIGH_VOLUME_TIMEOUT, // 3 users × 3 TXs = 9 TXs = ~36s
+  );
 
-  describe("DENY-002: Denied User Cannot Send Gasless Transactions", () => {
-    it(
-      "should reject gasless transactions from denied users",
-      async () => {
-        const user = getRegisteredUser();
-        const quota = RLN_CONFIG.tiers.entry.quota;
+  it(
+    formatScenario(DENY_008),
+    async () => {
+      const user = getRegisteredUser();
+      const quota = RLN_CONFIG.tiers.entry.quota;
 
-        logger.info("DENY-002: Testing denial rejection", { user: user.address });
+      logger.info(`${DENY_008.id}: Testing deny list consistency`, { user: user.address });
 
-        // Exhaust quota and get denied
-        for (let i = 0; i < quota; i++) {
-          await rlnClient.sendGaslessTransaction(user, {
-            to: TEST_RECIPIENT,
-            value: 0n,
-            data: uniqueTxData(`deny002-exhaust-${i}`),
-          });
-        }
-
-        // Trigger deny list
-        await rlnClient.sendGaslessTransactionExpectFailure(user, {
+      // Get denied
+      for (let i = 0; i < quota; i++) {
+        await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
-          data: uniqueTxData("deny002-trigger"),
+          data: uniqueTxData(`deny008-exhaust-${i}`),
         });
+      }
 
-        await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
+      await rlnClient.sendGaslessTransactionExpectFailure(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        data: uniqueTxData("deny008-trigger"),
+      });
 
-        // Subsequent gasless transactions should fail
-        // Denial manifests as timeout (no proof generated) or explicit rejection
-        const errorMessage = await rlnClient.sendGaslessTransactionExpectFailure(user, {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          data: uniqueTxData("deny002-denied"),
-        });
+      await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
 
-        //  Must be rejected - timeout means proof wasn't generated (denial in effect)
-        expect(errorMessage).toMatch(/denied|reject|quota|timeout/i);
-
-        logger.info("DENY-002: PASSED ✓ - Denied user cannot send gasless transactions");
-      },
-      DENY_TEST_TIMEOUT, // 2 TXs + rejection + deny wait + rejection = ~45s
-    );
-  });
-
-  describe("DENY-003: Premium Gas Clears Deny Status (Recovery Path)", () => {
-    it(
-      "should allow user to recover from deny list via premium gas",
-      async () => {
-        const user = getRegisteredUser();
-        const quota = RLN_CONFIG.tiers.entry.quota;
-
-        logger.info("DENY-003: Testing premium gas recovery", { user: user.address });
-
-        // Get denied
-        for (let i = 0; i < quota; i++) {
-          await rlnClient.sendGaslessTransaction(user, {
-            to: TEST_RECIPIENT,
-            value: 0n,
-            data: uniqueTxData(`deny003-exhaust-${i}`),
-          });
-        }
-
-        await rlnClient.sendGaslessTransactionExpectFailure(user, {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          data: uniqueTxData("deny003-trigger"),
-        });
-
-        await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
-
-        //  User IS denied before premium gas
-        expect(await denyListManager.isDenied(user.address)).toBe(true);
-
-        // Pay premium gas to recover
-        const premiumReceipt = await rlnClient.sendPremiumGasTransaction(user, {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          gasPrice: PREMIUM_GAS_PRICE,
-          data: uniqueTxData("deny003-premium"),
-        });
-        expect(premiumReceipt.status).toBe(1);
-
-        // Wait for deny list removal
-        await denyListManager.waitForNotDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
-
-        //  User is NOT denied after premium gas
-        expect(await denyListManager.isDenied(user.address)).toBe(false);
-
-        logger.info("DENY-003: PASSED ✓ - Premium gas clears deny status");
-      },
-      DENY_TEST_TIMEOUT, // 2 gasless + rejection + premium + deny waits = ~45s
-    );
-  });
-
-  describe("DENY-004: Denied User Can Send Premium Gas Transaction", () => {
-    it(
-      "should allow denied user to transact with premium gas",
-      async () => {
-        const user = getRegisteredUser();
-        const quota = RLN_CONFIG.tiers.entry.quota;
-
-        logger.info("DENY-004: Testing premium gas for denied user", {
-          user: user.address,
-        });
-
-        // Get denied
-        for (let i = 0; i < quota; i++) {
-          await rlnClient.sendGaslessTransaction(user, {
-            to: TEST_RECIPIENT,
-            value: 0n,
-            data: uniqueTxData(`deny004-exhaust-${i}`),
-          });
-        }
-
-        await rlnClient.sendGaslessTransactionExpectFailure(user, {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          data: uniqueTxData("deny004-trigger"),
-        });
-
-        await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
-
-        // Premium gas transaction should succeed even while denied
-        const receipt = await rlnClient.sendPremiumGasTransaction(user, {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          gasPrice: PREMIUM_GAS_PRICE,
-          data: uniqueTxData("deny004-premium"),
-        });
-
-        //  Premium gas tx must succeed
-        expect(receipt.status).toBe(1);
-
-        logger.info("DENY-004: PASSED ✓ - Denied user can send premium gas transaction");
-      },
-      DENY_TEST_TIMEOUT, // 2 gasless + rejection + deny wait + premium = ~45s
-    );
-  });
-
-  describe("DENY-005: Premium Gas Payment Removes User from Deny List", () => {
-    it(
-      "should remove user from deny list after premium gas payment",
-      async () => {
-        const user = getRegisteredUser();
-        const quota = RLN_CONFIG.tiers.entry.quota;
-
-        logger.info("DENY-005: Testing premium gas deny list removal", {
-          user: user.address,
-        });
-
-        // Get denied
-        for (let i = 0; i < quota; i++) {
-          await rlnClient.sendGaslessTransaction(user, {
-            to: TEST_RECIPIENT,
-            value: 0n,
-            data: uniqueTxData(`deny005-exhaust-${i}`),
-          });
-        }
-
-        await rlnClient.sendGaslessTransactionExpectFailure(user, {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          data: uniqueTxData("deny005-trigger"),
-        });
-
-        await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
-
-        //  User is denied
-        expect(await denyListManager.isDenied(user.address)).toBe(true);
-
-        // Pay premium gas
-        await rlnClient.sendPremiumGasTransaction(user, {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          gasPrice: PREMIUM_GAS_PRICE,
-          data: uniqueTxData("deny005-premium"),
-        });
-
-        // Wait for removal
-        await denyListManager.waitForNotDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
-
-        //  User is removed from deny list
+      // Multiple rapid checks should return consistent result
+      const results: boolean[] = [];
+      for (let i = 0; i < 5; i++) {
         const isDenied = await denyListManager.isDenied(user.address);
-        expect(isDenied).toBe(false);
+        results.push(isDenied);
+      }
 
-        logger.info("DENY-005: PASSED ✓ - Premium gas payment removes user from deny list");
-      },
-      DENY_TEST_TIMEOUT, // 2 gasless + rejection + deny wait + premium + removal wait = ~50s
-    );
-  });
+      //  All checks must return true (consistent state)
+      expect(results.every((r) => r === true)).toBe(true);
 
-  describe("DENY-006: After Premium Recovery + New Epoch, User Can Send Gasless Again", () => {
-    // NOW RUNNABLE with short epochs (10s)
-    it(
-      "should allow gasless transactions after recovery and new epoch",
-      async () => {
-        const user = getRegisteredUser();
-        const quota = RLN_CONFIG.tiers.entry.quota;
-        const epochDuration = RLN_CONFIG.test.epochDurationSeconds;
+      logger.info(`${DENY_008.id}: PASSED ✓`);
+    },
+    DENY_TEST_TIMEOUT, // 2 gasless + rejection + deny wait + 5 checks = ~45s
+  );
 
-        logger.info("DENY-006: Testing post-recovery gasless capability", {
-          user: user.address,
-          epochDurationSeconds: epochDuration,
-        });
+  it(
+    formatScenario(DENY_009),
+    async () => {
+      logger.info(`${DENY_009.id}: Testing concurrent deny list additions`);
 
-        // Get denied
+      // Get 3 pre-registered users from pool
+      const users = [getRegisteredUser(), getRegisteredUser(), getRegisteredUser()];
+      const quota = RLN_CONFIG.tiers.entry.quota;
+
+      // Exhaust quotas first
+      for (const user of users) {
         for (let i = 0; i < quota; i++) {
           await rlnClient.sendGaslessTransaction(user, {
             to: TEST_RECIPIENT,
             value: 0n,
-            data: uniqueTxData(`deny006-exhaust-${i}`),
+            data: uniqueTxData(`deny009-${user.address.slice(-4)}-${i}`),
           });
         }
+      }
 
-        await rlnClient.sendGaslessTransactionExpectFailure(
-          user,
-          {
-            to: TEST_RECIPIENT,
-            value: 0n,
-            data: uniqueTxData("deny006-trigger"),
-          },
-          10000, // 10s timeout for failure expectation
-        );
-
-        await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
-
-        // Pay premium to get removed
-        await rlnClient.sendPremiumGasTransaction(user, {
+      // Trigger denial concurrently
+      const triggerPromises = users.map((user) =>
+        rlnClient.sendGaslessTransactionExpectFailure(user, {
           to: TEST_RECIPIENT,
           value: 0n,
-          gasPrice: PREMIUM_GAS_PRICE,
-          data: uniqueTxData("deny006-premium"),
-        });
+          data: uniqueTxData(`deny009-${user.address.slice(-4)}-trigger`),
+        }),
+      );
 
-        await denyListManager.waitForNotDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
+      await Promise.all(triggerPromises);
 
-        // Wait for new epoch (quota resets)
-        logger.info(`Waiting for new epoch (max ${epochDuration + 2}s)...`);
-        await rlnClient.waitForNextEpoch((epochDuration + 2) * 1000);
+      // Wait for all to be denied
+      await Promise.all(
+        users.map((user) => denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs)),
+      );
 
-        // Allow prover to sync state after deny list clearance + epoch change
-        await rlnClient.sleep(1000);
+      //  All users must be denied (no state corruption)
+      for (const user of users) {
+        const isDenied = await denyListManager.isDenied(user.address);
+        expect(isDenied).toBe(true);
+      }
 
-        // Should be able to send gasless again
-        const receipt = await rlnClient.sendGaslessTransaction(user, {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          data: uniqueTxData("deny006-gasless-again"),
-        });
-
-        //  Gasless must work after recovery + epoch
-        expect(receipt.status).toBe(1);
-
-        logger.info("DENY-006: PASSED ✓ - User can send gasless after recovery and new epoch");
-      },
-      EPOCH_TEST_TIMEOUT, // This test waits for epoch boundary (60s)
-    );
-  });
-
-  describe("DENY-007: Multiple Users Can Be on Deny List Simultaneously", () => {
-    it(
-      "should handle multiple denied users correctly",
-      async () => {
-        logger.info("DENY-007: Testing multiple denied users");
-
-        // Get 3 pre-registered users from pool
-        const users = [getRegisteredUser(), getRegisteredUser(), getRegisteredUser()];
-        const quota = RLN_CONFIG.tiers.entry.quota;
-
-        // Get all users denied
-        for (const user of users) {
-          for (let i = 0; i < quota; i++) {
-            await rlnClient.sendGaslessTransaction(user, {
-              to: TEST_RECIPIENT,
-              value: 0n,
-              data: uniqueTxData(`deny007-${user.address.slice(-4)}-${i}`),
-            });
-          }
-
-          await rlnClient.sendGaslessTransactionExpectFailure(user, {
-            to: TEST_RECIPIENT,
-            value: 0n,
-            data: uniqueTxData(`deny007-${user.address.slice(-4)}-trigger`),
-          });
-        }
-
-        // Wait for all to be denied
-        for (const user of users) {
-          await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
-        }
-
-        //  All users must be denied
-        for (const user of users) {
-          const isDenied = await denyListManager.isDenied(user.address);
-          expect(isDenied).toBe(true);
-        }
-
-        logger.info("DENY-007: PASSED ✓ - Multiple users can be on deny list simultaneously");
-      },
-      HIGH_VOLUME_TIMEOUT, // 3 users × 3 TXs = 9 TXs = ~36s
-    );
-  });
-
-  describe("DENY-008: Deny List State is Consistent", () => {
-    it(
-      "should maintain deny list state consistently across checks",
-      async () => {
-        const user = getRegisteredUser();
-        const quota = RLN_CONFIG.tiers.entry.quota;
-
-        logger.info("DENY-008: Testing deny list consistency", { user: user.address });
-
-        // Get denied
-        for (let i = 0; i < quota; i++) {
-          await rlnClient.sendGaslessTransaction(user, {
-            to: TEST_RECIPIENT,
-            value: 0n,
-            data: uniqueTxData(`deny008-exhaust-${i}`),
-          });
-        }
-
-        await rlnClient.sendGaslessTransactionExpectFailure(user, {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          data: uniqueTxData("deny008-trigger"),
-        });
-
-        await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
-
-        // Multiple rapid checks should return consistent result
-        const results: boolean[] = [];
-        for (let i = 0; i < 5; i++) {
-          const isDenied = await denyListManager.isDenied(user.address);
-          results.push(isDenied);
-        }
-
-        //  All checks must return true (consistent state)
-        expect(results.every((r) => r === true)).toBe(true);
-
-        logger.info("DENY-008: PASSED ✓ - Deny list state persists consistently");
-      },
-      DENY_TEST_TIMEOUT, // 2 gasless + rejection + deny wait + 5 checks = ~45s
-    );
-  });
-
-  describe("DENY-009: Concurrent Deny List Additions Are Safe", () => {
-    it(
-      "should handle concurrent deny list additions safely",
-      async () => {
-        logger.info("DENY-009: Testing concurrent deny list additions");
-
-        // Get 3 pre-registered users from pool
-        const users = [getRegisteredUser(), getRegisteredUser(), getRegisteredUser()];
-        const quota = RLN_CONFIG.tiers.entry.quota;
-
-        // Exhaust quotas first
-        for (const user of users) {
-          for (let i = 0; i < quota; i++) {
-            await rlnClient.sendGaslessTransaction(user, {
-              to: TEST_RECIPIENT,
-              value: 0n,
-              data: uniqueTxData(`deny009-${user.address.slice(-4)}-${i}`),
-            });
-          }
-        }
-
-        // Trigger denial concurrently
-        const triggerPromises = users.map((user) =>
-          rlnClient.sendGaslessTransactionExpectFailure(user, {
-            to: TEST_RECIPIENT,
-            value: 0n,
-            data: uniqueTxData(`deny009-${user.address.slice(-4)}-trigger`),
-          }),
-        );
-
-        await Promise.all(triggerPromises);
-
-        // Wait for all to be denied
-        await Promise.all(
-          users.map((user) => denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs)),
-        );
-
-        //  All users must be denied (no state corruption)
-        for (const user of users) {
-          const isDenied = await denyListManager.isDenied(user.address);
-          expect(isDenied).toBe(true);
-        }
-
-        logger.info("DENY-009: PASSED ✓ - Concurrent deny list additions handled safely");
-      },
-      HIGH_VOLUME_TIMEOUT, // 3 users × 3 TXs = 9 TXs = ~36s
-    );
-  });
+      logger.info(`${DENY_009.id}: PASSED ✓`);
+    },
+    HIGH_VOLUME_TIMEOUT, // 3 users × 3 TXs = 9 TXs = ~36s
+  );
 
   // ============================================================================
-  // PREMIUM GAS TESTS (PREM-001 to PREM-006)
+  // PREMIUM GAS TESTS (PREM_001 to PREM_006)
   // ============================================================================
 
-  describe("PREM-001: Transaction with gasPrice >= 10 Gwei Bypasses RLN", () => {
-    it(
-      "should bypass RLN for premium gas transactions",
-      async () => {
-        // Get pre-funded wallet WITHOUT Karma
-        const user = getFundedUser();
+  it(
+    formatScenario(PREM_001),
+    async () => {
+      // Get pre-funded wallet WITHOUT Karma
+      const user = getFundedUser();
 
-        logger.info("PREM-001: Testing premium gas RLN bypass", {
-          user: user.address,
-          gasPrice: formatGwei(PREMIUM_GAS_PRICE),
-        });
+      logger.info(`${PREM_001.id}: Testing premium gas RLN bypass`, {
+        user: user.address,
+        gasPrice: formatGwei(PREMIUM_GAS_PRICE),
+      });
 
-        // User has no Karma but premium gas should work
+      // User has no Karma but premium gas should work
+      const receipt = await rlnClient.sendPremiumGasTransaction(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        gasPrice: PREMIUM_GAS_PRICE,
+        data: uniqueTxData("prem001"),
+      });
+
+      //  Premium gas must succeed without RLN
+      expect(receipt.status).toBe(1);
+
+      logger.info(`${PREM_001.id}: PASSED ✓`);
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    formatScenario(PREM_002),
+    async () => {
+      // Get pre-funded wallet WITHOUT Karma
+      const user = getFundedUser();
+
+      logger.info(`${PREM_002.id}: Testing sub-threshold gas requires RLN`, {
+        user: user.address,
+        gasPrice: formatGwei(SUB_THRESHOLD_GAS_PRICE),
+      });
+
+      // Sub-threshold gas without Karma should fail (no proof)
+      const errorMessage = await rlnClient.sendGaslessTransactionExpectFailure(
+        user,
+        {
+          to: TEST_RECIPIENT,
+          value: 0n,
+          data: uniqueTxData("prem002"),
+        },
+        RLN_CONFIG.test.proofTimeoutMs,
+      );
+
+      //  Must fail for proof/timeout reason
+      expect(errorMessage).toMatch(/timeout|rejected|proof|invalid/i);
+
+      logger.info(`${PREM_002.id}: PASSED ✓`);
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    formatScenario(PREM_003),
+    async () => {
+      const user = getFundedUser();
+
+      logger.info(`${PREM_003.id}: Testing exact threshold`, {
+        user: user.address,
+        gasPrice: formatGwei(THRESHOLD_GAS_PRICE),
+      });
+
+      const receipt = await rlnClient.sendPremiumGasTransaction(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        gasPrice: THRESHOLD_GAS_PRICE,
+        data: uniqueTxData("prem003"),
+      });
+
+      //  Exactly threshold must work
+      expect(receipt.status).toBe(1);
+
+      logger.info(`${PREM_003.id}: PASSED ✓`);
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    formatScenario(PREM_004),
+    async () => {
+      const user = getFundedUser();
+
+      logger.info(`${PREM_004.id}: Testing premium gas without Karma`, {
+        user: user.address,
+      });
+
+      // Verify user has no Karma
+      const karmaBalance = await contracts.karma.balanceOf(user.address);
+      expect(karmaBalance).toBe(0n);
+
+      // Multiple premium transactions should work
+      for (let i = 0; i < 3; i++) {
         const receipt = await rlnClient.sendPremiumGasTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
           gasPrice: PREMIUM_GAS_PRICE,
-          data: uniqueTxData("prem001"),
+          data: uniqueTxData(`prem004-${i}`),
         });
-
-        //  Premium gas must succeed without RLN
         expect(receipt.status).toBe(1);
+      }
 
-        logger.info("PREM-001: PASSED ✓ - Premium gas bypasses RLN");
-      },
-      TEST_TIMEOUT,
-    );
-  });
+      logger.info(`${PREM_004.id}: PASSED ✓`);
+    },
+    MULTI_TX_TIMEOUT, // 3 premium TXs = ~12s
+  );
 
-  describe("PREM-002: Transaction with gasPrice < 10 Gwei Requires RLN", () => {
-    it(
-      "should require RLN for sub-threshold gas price",
-      async () => {
-        // Get pre-funded wallet WITHOUT Karma
-        const user = getFundedUser();
+  it(
+    formatScenario(PREM_005),
+    async () => {
+      const wallet = ethers.Wallet.createRandom().connect(rpcProvider);
 
-        logger.info("PREM-002: Testing sub-threshold gas requires RLN", {
-          user: user.address,
-          gasPrice: formatGwei(SUB_THRESHOLD_GAS_PRICE),
-        });
+      logger.info(`${PREM_005.id}: Testing unfunded wallet failure`, {
+        user: wallet.address,
+      });
 
-        // Sub-threshold gas without Karma should fail (no proof)
-        const errorMessage = await rlnClient.sendGaslessTransactionExpectFailure(
-          user,
-          {
-            to: TEST_RECIPIENT,
-            value: 0n,
-            data: uniqueTxData("prem002"),
-          },
-          RLN_CONFIG.test.proofTimeoutMs,
-        );
+      // Verify wallet has no balance
+      const balance = await rpcProvider.getBalance(wallet.address);
+      expect(balance).toBe(0n);
 
-        //  Must fail for proof/timeout reason
-        expect(errorMessage).toMatch(/timeout|rejected|proof|invalid/i);
-
-        logger.info("PREM-002: PASSED ✓ - Sub-threshold gas requires RLN");
-      },
-      TEST_TIMEOUT,
-    );
-  });
-
-  describe("PREM-003: Exactly Threshold (10 Gwei) Bypasses RLN", () => {
-    it(
-      "should bypass RLN at exactly threshold gas price",
-      async () => {
-        const user = getFundedUser();
-
-        logger.info("PREM-003: Testing exact threshold", {
-          user: user.address,
-          gasPrice: formatGwei(THRESHOLD_GAS_PRICE),
-        });
-
-        const receipt = await rlnClient.sendPremiumGasTransaction(user, {
+      try {
+        await rlnClient.sendPremiumGasTransaction(wallet, {
           to: TEST_RECIPIENT,
           value: 0n,
-          gasPrice: THRESHOLD_GAS_PRICE,
-          data: uniqueTxData("prem003"),
+          gasPrice: PREMIUM_GAS_PRICE,
+          data: uniqueTxData("prem005"),
         });
+        throw new Error("Expected transaction to fail");
+      } catch (error: unknown) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        //  Must fail for insufficient funds
+        expect(err.message).toMatch(/insufficient|funds|balance/i);
+        logger.info(`${PREM_005.id}: Failed as expected`, { error: err.message });
+      }
 
-        //  Exactly threshold must work
-        expect(receipt.status).toBe(1);
+      logger.info(`${PREM_005.id}: PASSED ✓`);
+    },
+    TEST_TIMEOUT,
+  );
 
-        logger.info("PREM-003: PASSED ✓ - Exactly threshold gas bypasses RLN");
-      },
-      TEST_TIMEOUT,
-    );
-  });
+  it(
+    formatScenario(PREM_006),
+    async () => {
+      const user = getRegisteredUser();
+      const quota = RLN_CONFIG.tiers.entry.quota;
 
-  describe("PREM-004: Premium Gas Works Even Without Karma", () => {
-    it(
-      "should allow premium gas transactions without Karma registration",
-      async () => {
-        const user = getFundedUser();
+      logger.info(`${PREM_006.id}: Testing gas estimate premium multiplier`, {
+        user: user.address,
+      });
 
-        logger.info("PREM-004: Testing premium gas without Karma", {
-          user: user.address,
-        });
+      // Get baseline estimate before denial (user is NOT denied)
+      const baselineEstimate = await rlnClient.lineaEstimateGas({
+        from: user.address,
+        to: TEST_RECIPIENT,
+        value: "0x0",
+      });
 
-        // Verify user has no Karma
-        const karmaBalance = await contracts.karma.balanceOf(user.address);
-        expect(karmaBalance).toBe(0n);
+      const baselineGasLimit = BigInt(baselineEstimate.gasLimit);
+      logger.info("Baseline gas estimate", { gasLimit: baselineGasLimit.toString() });
 
-        // Multiple premium transactions should work
-        for (let i = 0; i < 3; i++) {
-          const receipt = await rlnClient.sendPremiumGasTransaction(user, {
-            to: TEST_RECIPIENT,
-            value: 0n,
-            gasPrice: PREMIUM_GAS_PRICE,
-            data: uniqueTxData(`prem004-${i}`),
-          });
-          expect(receipt.status).toBe(1);
-        }
-
-        logger.info("PREM-004: PASSED ✓ - Premium gas works without Karma");
-      },
-      MULTI_TX_TIMEOUT, // 3 premium TXs = ~12s
-    );
-  });
-
-  describe("PREM-005: Premium Gas Transaction from Unfunded Wallet Fails", () => {
-    it(
-      "should fail premium gas transaction without funds",
-      async () => {
-        const wallet = ethers.Wallet.createRandom().connect(rpcProvider);
-
-        logger.info("PREM-005: Testing unfunded wallet failure", {
-          user: wallet.address,
-        });
-
-        // Verify wallet has no balance
-        const balance = await rpcProvider.getBalance(wallet.address);
-        expect(balance).toBe(0n);
-
-        try {
-          await rlnClient.sendPremiumGasTransaction(wallet, {
-            to: TEST_RECIPIENT,
-            value: 0n,
-            gasPrice: PREMIUM_GAS_PRICE,
-            data: uniqueTxData("prem005"),
-          });
-          throw new Error("Expected transaction to fail");
-        } catch (error: unknown) {
-          const err = error instanceof Error ? error : new Error(String(error));
-          //  Must fail for insufficient funds
-          expect(err.message).toMatch(/insufficient|funds|balance/i);
-          logger.info("PREM-005: Failed as expected", { error: err.message });
-        }
-
-        logger.info("PREM-005: PASSED ✓ - Unfunded wallet premium gas fails");
-      },
-      TEST_TIMEOUT,
-    );
-  });
-
-  describe("PREM-006: Gas Estimate Shows Premium Multiplier for Denied Users", () => {
-    it(
-      "should return inflated gas estimate for denied users",
-      async () => {
-        const user = getRegisteredUser();
-        const quota = RLN_CONFIG.tiers.entry.quota;
-
-        logger.info("PREM-006: Testing gas estimate premium multiplier", {
-          user: user.address,
-        });
-
-        // Get baseline estimate before denial (user is NOT denied)
-        const baselineEstimate = await rlnClient.lineaEstimateGas({
-          from: user.address,
-          to: TEST_RECIPIENT,
-          value: "0x0",
-        });
-
-        const baselineGasLimit = BigInt(baselineEstimate.gasLimit);
-        logger.info("Baseline gas estimate", { gasLimit: baselineGasLimit.toString() });
-
-        // Get denied
-        for (let i = 0; i < quota; i++) {
-          await rlnClient.sendGaslessTransaction(user, {
-            to: TEST_RECIPIENT,
-            value: 0n,
-            data: uniqueTxData(`prem006-exhaust-${i}`),
-          });
-        }
-
-        await rlnClient.sendGaslessTransactionExpectFailure(user, {
+      // Get denied
+      for (let i = 0; i < quota; i++) {
+        await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
-          data: uniqueTxData("prem006-trigger"),
+          data: uniqueTxData(`prem006-exhaust-${i}`),
         });
+      }
 
-        await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
+      await rlnClient.sendGaslessTransactionExpectFailure(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        data: uniqueTxData("prem006-trigger"),
+      });
 
-        // Get estimate while denied
-        const deniedEstimate = await rlnClient.lineaEstimateGas({
-          from: user.address,
-          to: TEST_RECIPIENT,
-          value: "0x0",
-        });
+      await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
 
-        const deniedGasLimit = BigInt(deniedEstimate.gasLimit);
-        logger.info("Denied gas estimate", { gasLimit: deniedGasLimit.toString() });
+      // Get estimate while denied
+      const deniedEstimate = await rlnClient.lineaEstimateGas({
+        from: user.address,
+        to: TEST_RECIPIENT,
+        value: "0x0",
+      });
 
-        //  Denied estimate should be significantly higher (premium multiplier)
-        // Premium multiplier is 1.5x, so denied should be at least 1.3x baseline
-        const minimumExpected = (baselineGasLimit * 130n) / 100n;
-        expect(deniedGasLimit).toBeGreaterThanOrEqual(minimumExpected);
+      const deniedGasLimit = BigInt(deniedEstimate.gasLimit);
+      logger.info("Denied gas estimate", { gasLimit: deniedGasLimit.toString() });
 
-        logger.info("PREM-006: PASSED ✓ - Gas estimate shows premium multiplier for denied users", {
-          baseline: baselineGasLimit.toString(),
-          denied: deniedGasLimit.toString(),
-          ratio: (Number(deniedGasLimit) / Number(baselineGasLimit)).toFixed(2),
-        });
-      },
-      DENY_TEST_TIMEOUT, // 2 gasless + rejection + deny wait + estimates = ~45s
-    );
-  });
+      //  Denied estimate should be significantly higher (premium multiplier)
+      // Premium multiplier is 1.5x, so denied should be at least 1.3x baseline
+      const minimumExpected = (baselineGasLimit * 130n) / 100n;
+      expect(deniedGasLimit).toBeGreaterThanOrEqual(minimumExpected);
+
+      logger.info(`${PREM_006.id}: PASSED ✓`, {
+        baseline: baselineGasLimit.toString(),
+        denied: deniedGasLimit.toString(),
+        ratio: (Number(deniedGasLimit) / Number(baselineGasLimit)).toFixed(2),
+      });
+    },
+    DENY_TEST_TIMEOUT, // 2 gasless + rejection + deny wait + estimates = ~45s
+  );
 });

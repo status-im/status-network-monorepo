@@ -142,10 +142,32 @@ export class KarmaTestManager {
   /**
    * Mint Karma to a user to achieve a specific tier
    * Returns the amount minted
+   *
+   * IMPORTANT: For Entry tier, we ALWAYS mint exactly 1 karma to ensure the user
+   * stays in Entry tier. This prevents issues where users might accumulate karma
+   * from multiple sources and get bumped to Newbie tier.
    */
   async mintKarmaToTier(userAddress: string, tierName: TierName): Promise<bigint> {
     const currentBalance = await this.getKarmaBalance(userAddress);
     const targetAmount = this.getTierKarmaAmount(tierName);
+    const tierBoundary = RLN_CONFIG.tierBoundaries[tierName];
+
+    // For Entry tier, verify the user doesn't already have karma that would
+    // put them in a different tier. Entry tier is very sensitive - even 2 karma
+    // bumps them to Newbie tier.
+    if (tierName === "entry" && currentBalance > 0n) {
+      if (currentBalance > tierBoundary.max) {
+        throw new Error(
+          `Cannot setup Entry tier user ${userAddress}: already has ${currentBalance} karma (max for entry is ${tierBoundary.max})`,
+        );
+      }
+      // User already has karma in Entry tier range, no need to mint more
+      logger.debug("User already has Entry tier karma", {
+        user: userAddress,
+        currentBalance: currentBalance.toString(),
+      });
+      return 0n;
+    }
 
     if (currentBalance >= targetAmount) {
       logger.debug("User already has sufficient Karma for tier", {
@@ -421,10 +443,29 @@ export class KarmaTestManager {
     // Wait for RLN registration
     await this.waitForRlnRegistration(wallet.address);
 
+    // Verify karma balance matches expected tier
+    const actualKarma = await this.getKarmaBalance(wallet.address);
+    const expectedKarma = this.getTierKarmaAmount(tierName);
+    const tierBoundary = RLN_CONFIG.tierBoundaries[tierName];
+
+    if (actualKarma < tierBoundary.min || actualKarma > tierBoundary.max) {
+      logger.error("User karma out of tier bounds!", {
+        address: wallet.address,
+        tier: tierName,
+        actualKarma: actualKarma.toString(),
+        expectedKarma: expectedKarma.toString(),
+        tierMin: tierBoundary.min.toString(),
+        tierMax: tierBoundary.max.toString(),
+      });
+      throw new Error(
+        `User ${wallet.address} has karma ${actualKarma} which is outside ${tierName} tier bounds [${tierBoundary.min}, ${tierBoundary.max}]`,
+      );
+    }
+
     logger.info("User setup complete", {
       address: wallet.address,
       tier: tierName,
-      karma: (await this.getKarmaBalance(wallet.address)).toString(),
+      karma: actualKarma.toString(),
     });
 
     return wallet;
