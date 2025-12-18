@@ -8,10 +8,10 @@ use tokio::sync::RwLock as TokioRwLock;
 // RLN
 use rln::{hashers::poseidon_hash, protocol::keygen};
 // db
-use sea_orm::sea_query::OnConflict;
+use sea_orm::sea_query::{LockType, OnConflict};
 use sea_orm::{
     ColumnTrait, DatabaseConnection, DbErr, EntityTrait, ExprTrait, IntoActiveModel,
-    PaginatorTrait, QueryFilter, Set, TransactionTrait,
+    PaginatorTrait, QueryFilter, QuerySelect, Set, TransactionTrait,
 };
 // internal
 use crate::epoch_service::{Epoch, EpochSlice};
@@ -215,11 +215,20 @@ impl UserDb2 {
     ) -> Result<EpochCounter, DbErr> {
         let incr_value = incr_value.unwrap_or(1);
         let (epoch, _epoch_slice) = *self.epoch_store.read();
+        tracing::info!(
+            address = %address,
+            incr_value = incr_value,
+            current_epoch = i64::from(epoch),
+            "incr_tx_counter: incrementing counter"
+        );
 
         let txn = self.db.begin().await?;
 
+        // Use SELECT FOR UPDATE to prevent race conditions with concurrent transactions
+        // This locks the row until the transaction commits, ensuring atomic read-modify-write
         let res = tx_counter::Entity::find()
             .filter(tx_counter::Column::Address.eq(address.to_string()))
+            .lock(LockType::Update)
             .one(&txn)
             .await?;
 
@@ -295,12 +304,27 @@ impl UserDb2 {
             true => {
                 // EpochCounter stored in DB == epoch store
                 // We query for an epoch and this is what is stored in the Db
+                tracing::debug!(
+                    address = %model.address,
+                    db_epoch = model.epoch,
+                    current_epoch = i64::from(epoch),
+                    epoch_counter = model.epoch_counter,
+                    "counters_from_key: epochs match, returning actual counter"
+                );
                 (model.epoch_counter as u64).into()
             }
             false => {
                 // EpochCounter.epoch (stored in DB) != epoch_store.epoch
                 // We query for an epoch after what is stored in Db
                 // This can happen if no Tx has updated the epoch counter (yet)
+                tracing::warn!(
+                    address = %model.address,
+                    db_epoch = model.epoch,
+                    current_epoch = i64::from(epoch),
+                    epoch_counter = model.epoch_counter,
+                    "counters_from_key: EPOCH MISMATCH - returning 0 instead of {}",
+                    model.epoch_counter
+                );
                 EpochCounter::from(0)
             }
         }
@@ -639,13 +663,14 @@ impl UserDb2 {
     /// Uses UPSERT for atomicity and performance
     ///
     /// - `address`: The address to deny
+    /// - `reason`: Optional reason for denial (logged but not stored for performance)
     /// - `ttl_seconds`: Optional time-to-live in seconds (None means no expiry)
     ///
     /// Returns true if the address was newly added, false if it was already present
     pub async fn add_to_deny_list(
         &self,
         address: &Address,
-        _reason: Option<String>, // Ignored - not stored for performance
+        reason: Option<String>,
         ttl_seconds: Option<i64>,
     ) -> Result<bool, DbErr> {
         let now = std::time::SystemTime::now()
@@ -655,6 +680,21 @@ impl UserDb2 {
 
         let expires_at = ttl_seconds.map(|ttl| now + ttl);
         let address_str = address.to_string().to_lowercase();
+
+        if let Some(reason) = &reason {
+            tracing::info!(
+                address = %address,
+                reason = %reason,
+                expires_at = ?expires_at,
+                "Adding address to deny list"
+            );
+        } else {
+            tracing::info!(
+                address = %address,
+                expires_at = ?expires_at,
+                "Adding address to deny list"
+            );
+        }
 
         // Use insert with on_conflict for atomic upsert
         let new_entry = deny_list::ActiveModel {

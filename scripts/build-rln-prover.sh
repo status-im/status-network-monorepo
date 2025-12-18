@@ -82,7 +82,7 @@ fi
 echo -e "${YELLOW}🔨 Building image (this may take several minutes for Rust compilation)...${NC}"
 cd "$RLN_PROVER_DIR"
 
-if docker build --platform linux/amd64 -t "$FULL_IMAGE" .; then
+if docker build --no-cache --platform linux/amd64 -t "$FULL_IMAGE" .; then
     echo -e "${GREEN}✅ Successfully built: ${FULL_IMAGE}${NC}"
 else
     echo -e "${RED}❌ Docker build failed${NC}"

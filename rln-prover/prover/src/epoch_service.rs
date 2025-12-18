@@ -14,8 +14,9 @@ use crate::metrics::{
     EPOCH_SERVICE_CURRENT_EPOCH, EPOCH_SERVICE_CURRENT_EPOCH_SLICE, EPOCH_SERVICE_DRIFT_MILLIS,
 };
 
-/// Duration of an epoch (1 day)
-const EPOCH_DURATION: Duration = Duration::from_secs(TimeDelta::days(1).num_seconds() as u64);
+/// Default duration of an epoch (1 day) - can be overridden for testing
+pub const DEFAULT_EPOCH_DURATION: Duration =
+    Duration::from_secs(TimeDelta::days(1).num_seconds() as u64);
 /// Minimum duration returned by EpochService::compute_wait_until()
 pub(crate) const WAIT_UNTIL_MIN_DURATION: Duration = Duration::from_secs(2);
 /// EpochService::compute_wait_until() can return an error like TooLow (see WAIT_UNTIL_MIN_DURATION)
@@ -24,12 +25,18 @@ const WAIT_UNTIL_MAX_COMPUTE_ERROR: usize = 10;
 
 /// An Epoch tracking service
 ///
-/// The service keeps track of the current epoch (duration: 1 day) and the current epoch slice
-/// (duration: configurable, < 1 day, usually in minutes)
+/// The service keeps track of the current epoch and the current epoch slice.
+/// - Epoch duration: configurable (default: 1 day). Quotas reset every epoch.
+/// - Epoch slice duration: configurable (< epoch duration). Finer-grained subdivision.
+///
+/// For production: epoch_duration = 24 hours, epoch_slice_duration = 2 minutes
+/// For testing: epoch_duration = 60 seconds, epoch_slice_duration = 10 seconds
 ///
 /// Use TryFrom impl to initialize an EpochService. Note that initial epoch & epoch slice is
 /// initialized to Default values. Calling listen_for_new_epoch will initialize these fields.
 pub struct EpochService {
+    /// Duration of an epoch (quotas reset every epoch)
+    epoch_duration: Duration,
     /// A subdivision of an epoch (in minutes or seconds)
     epoch_slice_duration: Duration,
     /// Current epoch and epoch slice
@@ -46,7 +53,7 @@ impl EpochService {
     // #[instrument(skip(self), fields(self.epoch_slice_duration, self.genesis, self.current_epoch))]
     pub(crate) async fn listen_for_new_epoch(&self) -> Result<(), AppError2> {
         let epoch_slice_count =
-            Self::compute_epoch_slice_count(EPOCH_DURATION, self.epoch_slice_duration);
+            Self::compute_epoch_slice_count(self.epoch_duration, self.epoch_slice_duration);
         debug!("epoch slice in an epoch: {}", epoch_slice_count);
 
         let mut retry_counter = 0;
@@ -106,8 +113,9 @@ impl EpochService {
             wait_until += self.epoch_slice_duration;
 
             current_epoch_slice += 1;
-            if current_epoch_slice == epoch_slice_count {
-                current_epoch_slice = 0;
+            // Use modulo to detect epoch boundary - handles both relative (0,1,2,0,1,2...)
+            // and absolute (4541,4542,4543...) epoch_slice values correctly
+            if current_epoch_slice % epoch_slice_count == 0 {
                 current_epoch += 1;
             }
             *self.current_epoch.write() = (current_epoch.into(), current_epoch_slice.into());
@@ -217,37 +225,86 @@ impl EpochService {
 #[derive(thiserror::Error, Debug)]
 pub enum EpochServiceInitError {
     #[error("epoch slice duration is too large (cannot fit in i32) or == 0")]
-    InvalidEpochSliceDuration,
+    EpochSliceDuration,
+    #[error("epoch duration must be > 0 and >= 2 * epoch_slice_duration")]
+    EpochDuration,
     #[error("genesis is in the future")]
-    InvalidGenesis,
+    FutureGenesis,
 }
 
+/// Configuration for EpochService
+/// (epoch_duration, epoch_slice_duration, genesis)
+pub struct EpochServiceConfig {
+    /// Duration of an epoch (quotas reset every epoch). Default: 24 hours.
+    pub epoch_duration: Duration,
+    /// Duration of an epoch slice (subdivision). Must be < epoch_duration / 2.
+    pub epoch_slice_duration: Duration,
+    /// Genesis timestamp
+    pub genesis: DateTime<Utc>,
+}
+
+impl EpochServiceConfig {
+    /// Create config with default epoch duration (24 hours)
+    pub fn new(epoch_slice_duration: Duration, genesis: DateTime<Utc>) -> Self {
+        Self {
+            epoch_duration: DEFAULT_EPOCH_DURATION,
+            epoch_slice_duration,
+            genesis,
+        }
+    }
+
+    /// Create config with custom epoch duration (for testing)
+    pub fn with_epoch_duration(
+        epoch_duration: Duration,
+        epoch_slice_duration: Duration,
+        genesis: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            epoch_duration,
+            epoch_slice_duration,
+            genesis,
+        }
+    }
+}
+
+impl TryFrom<EpochServiceConfig> for EpochService {
+    type Error = EpochServiceInitError;
+
+    fn try_from(config: EpochServiceConfig) -> Result<Self, Self::Error> {
+        if config.genesis >= Utc::now() {
+            return Err(EpochServiceInitError::FutureGenesis);
+        }
+
+        if config.epoch_duration.as_secs() == 0 {
+            return Err(EpochServiceInitError::EpochDuration);
+        }
+
+        if config.epoch_slice_duration.as_secs() == 0
+            || i32::try_from(config.epoch_slice_duration.as_secs()).is_err()
+            || config.epoch_slice_duration < WAIT_UNTIL_MIN_DURATION
+            || config.epoch_slice_duration >= (config.epoch_duration / 2)
+        {
+            return Err(EpochServiceInitError::EpochSliceDuration);
+        }
+
+        Ok(Self {
+            epoch_duration: config.epoch_duration,
+            epoch_slice_duration: config.epoch_slice_duration,
+            current_epoch: Arc::new(Default::default()),
+            genesis: config.genesis,
+            epoch_changes: Arc::new(Default::default()),
+        })
+    }
+}
+
+// Keep backward compatibility with old API (epoch_slice_duration, genesis)
 impl TryFrom<(Duration, DateTime<Utc>)> for EpochService {
     type Error = EpochServiceInitError;
 
     fn try_from(
         (epoch_slice_duration, genesis): (Duration, DateTime<Utc>),
     ) -> Result<Self, Self::Error> {
-        if genesis >= Utc::now() {
-            return Err(EpochServiceInitError::InvalidGenesis);
-        }
-
-        if epoch_slice_duration.as_secs() == 0
-            || i32::try_from(epoch_slice_duration.as_secs()).is_err()
-            || epoch_slice_duration < WAIT_UNTIL_MIN_DURATION
-            || epoch_slice_duration >= (EPOCH_DURATION / 2)
-        {
-            return Err(EpochServiceInitError::InvalidEpochSliceDuration);
-        }
-
-        // TODO: should we check the division: epoch_duration / epoch_slice_duration ?
-
-        Ok(Self {
-            epoch_slice_duration,
-            current_epoch: Arc::new(Default::default()),
-            genesis,
-            epoch_changes: Arc::new(Default::default()),
-        })
+        EpochService::try_from(EpochServiceConfig::new(epoch_slice_duration, genesis))
     }
 }
 
@@ -331,7 +388,7 @@ mod tests {
             let now = || {
                 let mut now_0: NaiveDateTime = date_0.and_hms_opt(0, 0, 0).unwrap();
                 // Set now_0 to be in epoch 1
-                now_0 += EPOCH_DURATION;
+                now_0 += DEFAULT_EPOCH_DURATION;
                 // Set now_0 to be in epoch 1, epoch slice 1
                 now_0 += epoch_slice_duration;
                 // Add 30 secs (but should still wait until epoch slice 2 starts)
@@ -347,7 +404,7 @@ mod tests {
             assert_eq!(
                 wait_until,
                 DateTime::<Utc>::from_naive_utc_and_offset(datetime_0, Utc)
-                    + EPOCH_DURATION
+                    + DEFAULT_EPOCH_DURATION
                     + 2 * epoch_slice_duration
             );
         }

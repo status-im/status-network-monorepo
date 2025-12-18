@@ -13,6 +13,62 @@ export interface TierConfig {
 }
 
 /**
+ * Global nonce tracker for the admin wallet to prevent nonce collisions
+ * when multiple tests setup users concurrently.
+ */
+class NonceManager {
+  private nonce: number = -1;
+  private lock: Promise<void> = Promise.resolve();
+
+  async getNextNonce(provider: ethers.Provider, address: string): Promise<number> {
+    // Serialize nonce access
+    const unlock = this.lock;
+    let resolve: () => void;
+    this.lock = new Promise((r) => (resolve = r));
+
+    await unlock;
+
+    try {
+      if (this.nonce === -1) {
+        // Use "pending" to include in-flight TXs
+        // On a healthy devnet, TXs confirm in ~1s so pending count ≈ latest count
+        this.nonce = await provider.getTransactionCount(address, "pending");
+      }
+      const nextNonce = this.nonce;
+      this.nonce++;
+      return nextNonce;
+    } finally {
+      resolve!();
+    }
+  }
+
+  reset(): void {
+    this.nonce = -1;
+    this.lock = Promise.resolve();
+  }
+}
+
+// Global nonce manager for admin transactions
+const adminNonceManager = new NonceManager();
+
+/**
+ * Reset the admin nonce manager (call at start of test suite)
+ * This ensures fresh nonce tracking for each test run.
+ */
+export function resetAdminNonceManager(): void {
+  adminNonceManager.reset();
+}
+
+/**
+ * Get the next nonce for admin transactions.
+ * Use this function for any transaction sent from the admin wallet
+ * to prevent nonce collisions across the test suite.
+ */
+export async function getAdminNonce(provider: ethers.Provider, adminAddress: string): Promise<number> {
+  return adminNonceManager.getNextNonce(provider, adminAddress);
+}
+
+/**
  * Karma Manager for testing Karma-related functionality
  * Handles Karma minting, tier assignment, and quota management
  */
@@ -41,34 +97,43 @@ export class KarmaTestManager {
 
   /**
    * Mint a specific amount of Karma to a user
-   * NOTE: After minting, waits 3 seconds for the RLN prover to process
-   * the Transfer event and register the user
    */
   async mintKarma(userAddress: string, amount: bigint): Promise<ethers.TransactionReceipt> {
+    const t0 = Date.now();
     logger.debug("Minting Karma", {
       user: userAddress,
       amount: amount.toString(),
     });
 
-    const tx = await (this.karmaContract as ethers.Contract).connect(this.admin).mint(userAddress, amount, {
+    const adminAddress = await this.admin.getAddress();
+    const provider = this.admin.provider;
+    if (!provider) {
+      throw new Error("Admin signer has no provider");
+    }
+
+    // Use nonce manager to avoid collisions with concurrent operations
+    const nonce = await adminNonceManager.getNextNonce(provider, adminAddress);
+    logger.debug("Mint: got nonce", { nonce, elapsed: Date.now() - t0 });
+
+    const t1 = Date.now();
+    const connectedContract = this.karmaContract.connect(this.admin) as ethers.Contract;
+    const tx = await connectedContract.getFunction("mint")(userAddress, amount, {
       gasLimit: 200000,
       gasPrice: ethers.parseUnits("15", "gwei"), // Premium gas to bypass RLN
+      nonce: nonce,
     });
+    logger.debug("Mint TX sent", { hash: tx.hash, elapsed: Date.now() - t1 });
 
+    const t2 = Date.now();
     const receipt = await tx.wait(1, RLN_CONFIG.test.transactionTimeoutMs);
+    logger.debug("Mint TX confirmed", { elapsed: Date.now() - t2 });
 
-    logger.debug("Karma minted - waiting for prover to process event", {
-      user: userAddress,
-      txHash: tx.hash,
-      amount: amount.toString(),
-    });
-
-    // Give the prover time to see the Transfer event and register the user
-    // Reduced from 10s since prover now uses its own private key (no nonce conflicts)
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    // Prover processes karma events immediately via WebSocket subscription
+    // No artificial delay needed - just verify registration worked
 
     logger.debug("Karma mint complete", {
       user: userAddress,
+      totalElapsed: Date.now() - t0,
     });
 
     return receipt;
@@ -77,10 +142,32 @@ export class KarmaTestManager {
   /**
    * Mint Karma to a user to achieve a specific tier
    * Returns the amount minted
+   *
+   * IMPORTANT: For Entry tier, we ALWAYS mint exactly 1 karma to ensure the user
+   * stays in Entry tier. This prevents issues where users might accumulate karma
+   * from multiple sources and get bumped to Newbie tier.
    */
   async mintKarmaToTier(userAddress: string, tierName: TierName): Promise<bigint> {
     const currentBalance = await this.getKarmaBalance(userAddress);
     const targetAmount = this.getTierKarmaAmount(tierName);
+    const tierBoundary = RLN_CONFIG.tierBoundaries[tierName];
+
+    // For Entry tier, verify the user doesn't already have karma that would
+    // put them in a different tier. Entry tier is very sensitive - even 2 karma
+    // bumps them to Newbie tier.
+    if (tierName === "entry" && currentBalance > 0n) {
+      if (currentBalance > tierBoundary.max) {
+        throw new Error(
+          `Cannot setup Entry tier user ${userAddress}: already has ${currentBalance} karma (max for entry is ${tierBoundary.max})`,
+        );
+      }
+      // User already has karma in Entry tier range, no need to mint more
+      logger.debug("User already has Entry tier karma", {
+        user: userAddress,
+        currentBalance: currentBalance.toString(),
+      });
+      return 0n;
+    }
 
     if (currentBalance >= targetAmount) {
       logger.debug("User already has sufficient Karma for tier", {
@@ -209,7 +296,11 @@ export class KarmaTestManager {
   }
 
   /**
-   * Wait for user to be registered to RLN after Karma mint
+   * Wait for user to be registered to RLN after Karma mint.
+   *
+   * The RLN prover subscribes to blockchain events and updates its internal database
+   * asynchronously. After seeing the MemberRegistered event on-chain, we add a small
+   * delay to allow the prover to sync before attempting gasless transactions.
    */
   async waitForRlnRegistration(
     userAddress: string,
@@ -220,7 +311,14 @@ export class KarmaTestManager {
       timeout,
     });
 
+    // Wait for the smart contract MemberRegistered event
     await this.rlnClient.waitForRegistration(this.rlnContract, userAddress, timeout);
+
+    // Add delay for prover to sync from blockchain events to its internal DB
+    // The prover subscribes to events via WebSocket and processes them asynchronously
+    const proverSyncDelayMs = 1000;
+    logger.debug("Waiting for prover DB sync", { delayMs: proverSyncDelayMs });
+    await new Promise((resolve) => setTimeout(resolve, proverSyncDelayMs));
 
     logger.debug("User registered to RLN", { user: userAddress });
   }
@@ -245,10 +343,12 @@ export class KarmaTestManager {
       const events = await this.rlnContract.queryFilter(filter);
 
       for (const event of events) {
-        if (event.args) {
+        // Only EventLog has args, not Log
+        if ("args" in event && event.args) {
           const commitment = event.args[0];
           try {
-            const result = await this.rlnContract.members(commitment);
+            const rlnContractWithMembers = this.rlnContract as ethers.Contract;
+            const result = await rlnContractWithMembers.getFunction("members")(commitment);
             const memberAddress = result[0] || result.userAddress;
             if (memberAddress && memberAddress.toLowerCase() === normalizedAddress) {
               return true;
@@ -276,10 +376,12 @@ export class KarmaTestManager {
       const events = await this.rlnContract.queryFilter(filter);
 
       for (const event of events) {
-        if (event.args) {
+        // Only EventLog has args, not Log
+        if ("args" in event && event.args) {
           const commitment = event.args[0];
           try {
-            const result = await this.rlnContract.members(commitment);
+            const rlnContractWithMembers = this.rlnContract as ethers.Contract;
+            const result = await rlnContractWithMembers.getFunction("members")(commitment);
             const memberAddress = result[0] || result.userAddress;
             if (memberAddress && memberAddress.toLowerCase() === normalizedAddress) {
               return commitment.toString();
@@ -308,24 +410,32 @@ export class KarmaTestManager {
   ): Promise<ethers.HDNodeWallet> {
     // Create funded wallet
     const wallet = ethers.Wallet.createRandom().connect(provider);
+    const adminAddress = await this.admin.getAddress();
 
     logger.info("Setting up user for gasless transactions", {
       address: wallet.address,
       tier: tierName,
     });
 
-    // Fund the wallet
-    const adminNonce = await provider.getTransactionCount(await this.admin.getAddress(), "latest");
+    // Fund the wallet - use nonce manager to avoid collisions
+    // Admin uses premium gas to bypass RLN (this is an admin operation, not a user gasless tx)
+    const t0 = Date.now();
+    const fundNonce = await adminNonceManager.getNextNonce(provider, adminAddress);
+    logger.debug("Got nonce", { nonce: fundNonce, elapsed: Date.now() - t0 });
+
+    const t1 = Date.now();
     const fundTx = await this.admin.sendTransaction({
       to: wallet.address,
       value: fundAmount,
       gasLimit: 21000,
-      gasPrice: ethers.parseUnits("15", "gwei"),
-      nonce: adminNonce,
+      gasPrice: ethers.parseUnits("15", "gwei"), // Premium gas - admin op
+      nonce: fundNonce,
     });
-    await fundTx.wait(1, RLN_CONFIG.test.transactionTimeoutMs);
+    logger.debug("TX sent", { hash: fundTx.hash, elapsed: Date.now() - t1 });
 
-    logger.debug("Wallet funded", { address: wallet.address });
+    const t2 = Date.now();
+    await fundTx.wait(1, RLN_CONFIG.test.transactionTimeoutMs);
+    logger.debug("Wallet funded", { address: wallet.address, nonce: fundNonce, waitElapsed: Date.now() - t2 });
 
     // Mint Karma
     await this.mintKarmaToTier(wallet.address, tierName);
@@ -333,10 +443,29 @@ export class KarmaTestManager {
     // Wait for RLN registration
     await this.waitForRlnRegistration(wallet.address);
 
+    // Verify karma balance matches expected tier
+    const actualKarma = await this.getKarmaBalance(wallet.address);
+    const expectedKarma = this.getTierKarmaAmount(tierName);
+    const tierBoundary = RLN_CONFIG.tierBoundaries[tierName];
+
+    if (actualKarma < tierBoundary.min || actualKarma > tierBoundary.max) {
+      logger.error("User karma out of tier bounds!", {
+        address: wallet.address,
+        tier: tierName,
+        actualKarma: actualKarma.toString(),
+        expectedKarma: expectedKarma.toString(),
+        tierMin: tierBoundary.min.toString(),
+        tierMax: tierBoundary.max.toString(),
+      });
+      throw new Error(
+        `User ${wallet.address} has karma ${actualKarma} which is outside ${tierName} tier bounds [${tierBoundary.min}, ${tierBoundary.max}]`,
+      );
+    }
+
     logger.info("User setup complete", {
       address: wallet.address,
       tier: tierName,
-      karma: (await this.getKarmaBalance(wallet.address)).toString(),
+      karma: actualKarma.toString(),
     });
 
     return wallet;

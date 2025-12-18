@@ -40,8 +40,8 @@ class DenyListManagerTest {
 
   @BeforeEach
   void setUp() {
-    // Create manager with localhost gRPC (won't connect in tests, falls back to local cache)
-    denyListManager = new DenyListManager("Test", "localhost", 50051, false, 600L, 60L);
+    // Create cache-only manager for testing (no gRPC)
+    denyListManager = DenyListManager.createCacheOnly("Test", 600L);
   }
 
   @AfterEach

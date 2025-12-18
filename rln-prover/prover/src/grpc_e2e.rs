@@ -289,6 +289,8 @@ mod tests {
             spam_limit: AppArgs::default_spam_limit(),
             no_grpc_reflection: true,
             tx_gas_quota: AppArgs::default_tx_gas_quota(),
+            epoch_duration_secs: AppArgs::default_epoch_duration_secs(),
+            epoch_slice_secs: AppArgs::default_epoch_slice_secs(),
         };
 
         info!("Starting prover with args: {:?}", app_args);
@@ -433,6 +435,8 @@ mod tests {
             spam_limit: 3,
             no_grpc_reflection: true,
             tx_gas_quota: NonZeroU64::new(1_000).unwrap(),
+            epoch_duration_secs: AppArgs::default_epoch_duration_secs(),
+            epoch_slice_secs: AppArgs::default_epoch_slice_secs(),
         };
 
         info!("Starting prover with args: {:?}", app_args);
@@ -530,6 +534,8 @@ mod tests {
             spam_limit: AppArgs::default_spam_limit(),
             no_grpc_reflection: true,
             tx_gas_quota,
+            epoch_duration_secs: AppArgs::default_epoch_duration_secs(),
+            epoch_slice_secs: AppArgs::default_epoch_slice_secs(),
         };
 
         info!("Starting prover with args: {:?}", app_args);

@@ -60,7 +60,7 @@ async fn main() -> Result<()> {
         let config_path = app_args.get_one::<PathBuf>("config_path").unwrap();
         debug!("Reading config path: {:?}...", config_path);
         let config_str = std::fs::read_to_string(config_path)
-            .context(format!("Failed to read config file: {:?}", config_path))?;
+            .context(format!("Failed to read config file: {config_path:?}"))?;
         let config: AppArgsConfig = toml::from_str(config_str.as_str())?;
         debug!("Config: {:?}", config);
         config

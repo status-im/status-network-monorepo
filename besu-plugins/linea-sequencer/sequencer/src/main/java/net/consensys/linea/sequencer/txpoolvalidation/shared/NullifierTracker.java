@@ -122,23 +122,33 @@ public class NullifierTracker implements Closeable {
   }
 
   /**
-   * Legacy constructor for backward compatibility.
+   * Legacy constructor for backward compatibility. Creates a cache-only tracker without gRPC.
    *
    * @param serviceName Service name for logging
-   * @param maxSize Maximum cache size (ignored, uses default)
+   * @param maxSize Maximum cache size
    * @param nullifierExpiryHours Expiry time in hours
    */
   public NullifierTracker(String serviceName, long maxSize, long nullifierExpiryHours) {
-    this(
+    this.serviceName = serviceName;
+    this.grpcHost = null;
+    this.grpcPort = 0;
+    this.useTls = false;
+
+    // Initialize local cache for cache-only operation
+    this.localCache =
+        Caffeine.newBuilder()
+            .maximumSize(maxSize)
+            .expireAfterWrite(Duration.ofHours(nullifierExpiryHours))
+            .build();
+
+    // No gRPC in legacy mode
+    this.grpcAvailable.set(false);
+
+    LOG.info(
+        "{}: NullifierTracker initialized in cache-only mode (legacy constructor), max size: {}, TTL: {} hours",
         serviceName,
-        "localhost",
-        50051,
-        false,
         maxSize,
-        nullifierExpiryHours * 60); // Convert hours to minutes
-    LOG.warn(
-        "{}: Using legacy constructor - gRPC connection will use defaults (localhost:50051)",
-        serviceName);
+        nullifierExpiryHours);
   }
 
   /**

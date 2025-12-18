@@ -128,7 +128,8 @@ start-env-with-rln-production:
 		--ws-rpc-url ws://sequencer:8546 \
 		--ksc $$KARMA_ADDR --rlnsc $$RLN_ADDR --tsc $$TIERS_ADDR \
 		--registration-min 1 \
-		--db postgres://postgres:postgres@postgres:5432/prover_db && \
+		--db postgres://postgres:postgres@postgres:5432/prover_db \
+		--epoch-duration-secs 30 --epoch-slice-secs 10 && \
 	echo "✅ RLN environment running in PRODUCTION mode!" && \
 	echo "   - RLN Prover connected to real smart contracts" && \
 	echo "   - Karma tiers initialized" && \

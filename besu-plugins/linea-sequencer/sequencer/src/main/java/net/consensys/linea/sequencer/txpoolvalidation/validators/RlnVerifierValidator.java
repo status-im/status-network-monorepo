@@ -1000,6 +1000,24 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
           transaction.getGasPrice().map(Object::toString).orElse("-"),
           transaction.getMaxFeePerGas().map(Object::toString).orElse("-"),
           transaction.getMaxPriorityFeePerGas().map(Object::toString).orElse("-"));
+
+      // Check if user exceeded quota (prover may have rejected due to RESOURCE_EXHAUSTED)
+      // If so, add to deny list even though no proof was generated
+      Optional<KarmaInfo> karmaInfoOpt = fetchKarmaInfoFromService(sender);
+      if (karmaInfoOpt.isPresent()) {
+        KarmaInfo karmaInfo = karmaInfoOpt.get();
+        if (karmaInfo.epochTxCount() > karmaInfo.dailyQuota()) {
+          LOG.warn(
+              "User {} exceeded quota (count={}, quota={}) - adding to deny list. Tx: {}",
+              sender.toHexString(),
+              karmaInfo.epochTxCount(),
+              karmaInfo.dailyQuota(),
+              txHashString);
+          addToDenyList(sender);
+          return Optional.of("User transaction quota exceeded. Added to deny list.");
+        }
+      }
+
       return Optional.of("RLN proof not found in cache after timeout.");
     }
     LOG.debug("RLN proof found in cache for txHash: {}", txHashString);

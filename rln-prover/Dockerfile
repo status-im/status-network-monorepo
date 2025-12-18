@@ -27,13 +27,13 @@ COPY prover_pmtree_db_impl ./prover_pmtree_db_impl
 COPY rln_proof ./rln_proof
 COPY smart_contract ./smart_contract
 
-# Build with cargo cache mount for faster rebuilds
-# Uses release-dev profile (thin LTO) - much faster than full release
+# Build only prover_cli (and its dependencies) with full release optimizations
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
-    cargo build --profile release-dev && \
-    cp /app/target/release-dev/prover_cli /tmp/prover_cli
+    cargo build --release -p prover_cli && \
+    # Copy binary outside cache mount since cache mounts don't persist in image layers
+    cp /app/target/release/prover_cli /tmp/prover_cli
 
 # Stage 2: Run Prover
 FROM ubuntu:25.10

@@ -15,6 +15,10 @@ impl MigrationTrait for Migration {
         // 2. No auto-increment ID - saves write overhead
         // 3. Nullifier as BYTEA(32) - compact storage, fast comparison
         // 4. Epoch as BIGINT - supports timestamps or block numbers
+        //
+        // NOTE: PostgreSQL BYTEA does not enforce length constraints.
+        // The 32-byte nullifier length MUST be validated in application code
+        // before inserting (see UserDb2::record_nullifier).
         manager
             .create_table(
                 Table::create()

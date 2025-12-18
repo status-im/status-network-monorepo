@@ -26,18 +26,19 @@ export interface DenyListEntry {
  */
 export class DenyListTestManager {
   private provider: ethers.JsonRpcProvider;
-  private premiumGasThreshold: bigint;
   private rlnProverUrl: string;
 
   constructor(rlnProverUrl: string = RLN_CONFIG.services.rlnProverUrl, rpcUrl: string = RLN_CONFIG.services.rpcUrl) {
     this.rlnProverUrl = rlnProverUrl;
     this.provider = new ethers.JsonRpcProvider(rpcUrl);
-    this.premiumGasThreshold = ethers.parseUnits(String(RLN_CONFIG.test.premiumGasThresholdGwei), "gwei");
   }
 
   /**
    * Check if an address is on the deny list by comparing gas estimates.
-   * Denied users receive inflated gas estimates with premium multiplier.
+   * Denied users receive inflated gas estimates with premium multiplier (1.5x).
+   *
+   * For a simple transfer, normal gasLimit is 21000.
+   * Denied users get ~31500 (21000 * 1.5).
    *
    * This is the most reliable method since it tests actual system behavior.
    */
@@ -53,17 +54,20 @@ export class DenyListTestManager {
         },
       ]);
 
-      // Check if the baseFeePerGas or priorityFeePerGas indicates premium
-      // Denied users will have higher gas price requirements
-      if (estimate.baseFeePerGas) {
-        const baseFee = BigInt(estimate.baseFeePerGas);
-        // If base fee is significantly higher than threshold, user is likely denied
-        // The premium multiplier is typically 1.5x
-        if (baseFee >= this.premiumGasThreshold) {
-          logger.debug("User appears to be denied (high gas estimate)", {
+      // Check if gasLimit is inflated (premium multiplier applied)
+      // Normal simple transfer: 21000
+      // Denied user (1.5x multiplier): ~31500
+      if (estimate.gasLimit) {
+        const gasLimit = BigInt(estimate.gasLimit);
+        const normalGasLimit = 21000n;
+        const premiumThreshold = 28000n; // > 1.3x normal indicates premium
+
+        if (gasLimit >= premiumThreshold) {
+          logger.debug("User appears to be denied (inflated gas limit)", {
             address,
-            baseFee: baseFee.toString(),
-            threshold: this.premiumGasThreshold.toString(),
+            gasLimit: gasLimit.toString(),
+            normalGasLimit: normalGasLimit.toString(),
+            threshold: premiumThreshold.toString(),
           });
           return true;
         }
@@ -161,11 +165,11 @@ export class DenyListTestManager {
   /**
    * Wait for an address to be added to the deny list.
    */
-  async waitForDenied(address: string, timeout: number = 30000): Promise<void> {
+  async waitForDenied(address: string, timeout: number = RLN_CONFIG.test.maxWaitForDenyListMs): Promise<void> {
     logger.debug("Waiting for address to be denied", { address, timeout });
 
     const startTime = Date.now();
-    const pollInterval = 1000; // 1 second
+    const pollInterval = RLN_CONFIG.test.denyListPollIntervalMs;
 
     while (Date.now() - startTime < timeout) {
       if (await this.isDenied(address)) {
@@ -182,14 +186,14 @@ export class DenyListTestManager {
   /**
    * Wait for an address to be removed from the deny list.
    */
-  async waitForNotDenied(address: string, timeout: number = 30000): Promise<void> {
+  async waitForNotDenied(address: string, timeout: number = RLN_CONFIG.test.maxWaitForDenyListMs): Promise<void> {
     logger.debug("Waiting for address to be removed from deny list", {
       address,
       timeout,
     });
 
     const startTime = Date.now();
-    const pollInterval = 1000; // 1 second
+    const pollInterval = RLN_CONFIG.test.denyListPollIntervalMs;
 
     while (Date.now() - startTime < timeout) {
       if (!(await this.isDenied(address))) {

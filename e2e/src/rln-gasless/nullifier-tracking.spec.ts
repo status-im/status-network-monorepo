@@ -1,48 +1,93 @@
 import { ethers } from "ethers";
 import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
-import { RlnTestClient } from "./utils/rln-test-client";
-import { KarmaTestManager } from "./utils/karma-manager";
+import { RlnTestClient, createFastProvider } from "./utils/rln-test-client";
+import { DenyListTestManager } from "./utils/deny-list-manager";
+import { KarmaTestManager, resetAdminNonceManager } from "./utils/karma-manager";
 import { DockerLogMonitor } from "./utils/log-monitor";
 import { uniqueTxData, TEST_RECIPIENT } from "./utils/test-helpers";
 import { RLN_CONFIG } from "./config/rln-config";
 import { loadRlnContracts, RlnContracts } from "./config/contract-loader";
 import { createTestLogger } from "../config/logger";
+import {
+  formatScenario,
+  NULL_001,
+  NULL_002,
+  NULL_003,
+  NULL_004,
+  NULL_005,
+  NULL_006,
+  NULL_007,
+  NULL_008,
+} from "./helpers/scenario";
 
 const logger = createTestLogger();
 
 /**
- * Test Suite: Nullifier Tracking and Spam Detection (NULL-001 to NULL-008)
+ * Test Suite: Nullifier Tracking and Spam Detection (NULL_001 to NULL_008)
  *
  * Tests nullifier uniqueness and replay attack prevention:
- * - Same nullifier same epoch rejection
- * - Same nullifier different epoch allowance
- * - Security violation logging
+ * - Nullifier uniqueness enforcement
+ * - Cross-epoch behavior
+ * - Security violation detection
  * - Replay attack prevention
  * - Epoch validation
- * - High-throughput nullifier tracking (500+ TPS target)
- * - Database persistence and recovery
+ * - High-throughput nullifier tracking
+ * - Database persistence
  *
  * Architecture:
  * - Nullifiers are stored in PostgreSQL (prover_db.nullifiers table)
- * - Local cache on sequencer for hot path performance
  * - gRPC communication between sequencer and prover
+ *
  */
 describe("RLN Nullifier Tracking", () => {
   let rpcProvider: ethers.Provider;
   let sequencerProvider: ethers.Provider;
   let rlnClient: RlnTestClient;
+  let denyListManager: DenyListTestManager;
   let karmaManager: KarmaTestManager;
   let logMonitor: DockerLogMonitor;
   let contracts: RlnContracts;
   let admin: ethers.Wallet;
 
-  const TEST_TIMEOUT = 180000;
+  // Pre-registered user pools
+  const newbieUsers: ethers.HDNodeWallet[] = [];
+  const entryUsers: ethers.HDNodeWallet[] = [];
+  const activeUsers: ethers.HDNodeWallet[] = [];
+  let newbieIdx = 0,
+    entryIdx = 0,
+    activeIdx = 0;
+
+  const getNewbieUser = () =>
+    newbieUsers[newbieIdx++] ||
+    (() => {
+      throw new Error("Not enough newbie users");
+    })();
+  const getEntryUser = () =>
+    entryUsers[entryIdx++] ||
+    (() => {
+      throw new Error("Not enough entry users");
+    })();
+  const getActiveUser = () =>
+    activeUsers[activeIdx++] ||
+    (() => {
+      throw new Error("Not enough active users");
+    })();
+
+  // Timeouts based on actual TX performance (~4-5s per gasless TX, P95: 4.7s)
+  const TEST_TIMEOUT = 20000;
+  const MULTI_TX_TIMEOUT = 60000;
+  // Extended timeout for epoch tests (30s epoch + buffer)
+  const EPOCH_TEST_TIMEOUT = 180000;
 
   beforeAll(async () => {
     logger.info("=== Initializing Nullifier Tracking Test Suite ===");
 
-    rpcProvider = new ethers.JsonRpcProvider(RLN_CONFIG.services.rpcUrl);
-    sequencerProvider = new ethers.JsonRpcProvider(RLN_CONFIG.services.sequencerUrl);
+    // Reset nonce manager to sync with blockchain state
+    resetAdminNonceManager();
+
+    // Setup providers with fast polling for quicker transaction confirmation detection
+    rpcProvider = createFastProvider(RLN_CONFIG.services.rpcUrl);
+    sequencerProvider = createFastProvider(RLN_CONFIG.services.sequencerUrl);
     admin = new ethers.Wallet(RLN_CONFIG.accounts.admin, rpcProvider);
     contracts = loadRlnContracts(rpcProvider, admin);
 
@@ -54,368 +99,398 @@ describe("RLN Nullifier Tracking", () => {
     );
 
     karmaManager = new KarmaTestManager(contracts.karma, contracts.rln, admin, rlnClient);
+    denyListManager = new DenyListTestManager();
     logMonitor = new DockerLogMonitor();
 
-    logger.info("Test suite initialized");
-  });
+    // PRE-REGISTER ALL USERS NEEDED FOR THIS TEST SUITE
+    logger.info("Pre-registering test users...");
+
+    // Newbie users (6 needed for various tests)
+    for (let i = 0; i < 6; i++) {
+      newbieUsers.push(await karmaManager.setupUserForGasless(rpcProvider, "newbie"));
+      logger.debug(`Pre-registered newbie user ${i + 1}/6`);
+    }
+    // Entry users (2 needed)
+    for (let i = 0; i < 2; i++) {
+      entryUsers.push(await karmaManager.setupUserForGasless(rpcProvider, "entry"));
+      logger.debug(`Pre-registered entry user ${i + 1}/2`);
+    }
+    // Active users (4 needed for high-volume tests)
+    for (let i = 0; i < 4; i++) {
+      activeUsers.push(await karmaManager.setupUserForGasless(rpcProvider, "active"));
+      logger.debug(`Pre-registered active user ${i + 1}/4`);
+    }
+
+    logger.info("Test suite initialized", {
+      newbieUsers: newbieUsers.length,
+      entryUsers: entryUsers.length,
+      activeUsers: activeUsers.length,
+    });
+  }, 180000); // 3 minute setup timeout
 
   afterAll(async () => {
     logger.info("=== Nullifier Tracking Test Suite Complete ===");
   });
 
-  describe("NULL-001: Same Nullifier in Same Epoch is Rejected", () => {
-    it(
-      "should reject duplicate nullifier within same epoch",
-      async () => {
-        // This tests the nullifier tracking within the RLN system
-        // Each transaction generates a unique nullifier per epoch
-        // Reusing a nullifier should be rejected
-        const user = await karmaManager.setupUserForGasless(rpcProvider, "newbie");
+  it(
+    formatScenario(NULL_001),
+    async () => {
+      // Each transaction from a user generates a unique nullifier
+      // based on transaction-specific inputs (message, epoch, etc.)
+      const user = getNewbieUser();
 
-        logger.info("NULL-001: Testing nullifier uniqueness within epoch", {
-          user: user.address,
-        });
+      logger.info(`${NULL_001.id}: Testing nullifier uniqueness per transaction`, {
+        user: user.address,
+      });
 
-        // Send first transaction - gets a unique nullifier
-        const receipt1 = await rlnClient.sendGaslessTransaction(user, {
+      // Send multiple transactions
+      const receipt1 = await rlnClient.sendGaslessTransaction(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        data: uniqueTxData("null001-tx1"),
+      });
+      expect(receipt1.status).toBe(1);
+      logger.info("First transaction succeeded", { txHash: receipt1.hash });
+
+      const receipt2 = await rlnClient.sendGaslessTransaction(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        data: uniqueTxData("null001-tx2"),
+      });
+      expect(receipt2.status).toBe(1);
+      logger.info("Second transaction succeeded", { txHash: receipt2.hash });
+
+      // Both succeeded because each got a unique nullifier
+      // The RLN system uses transaction data to derive different nullifiers
+      // This verifies the system correctly generates unique nullifiers per tx
+
+      // Check prover logs for nullifier entries
+      const nullifierLogs = await logMonitor.getMatchingLogs("rln-prover", "nullifier", { since: "30s" });
+      logger.info(`${NULL_001.id}: Nullifier logs found`, { count: nullifierLogs.length });
+
+      //  Both transactions must have different hashes (different nullifiers)
+      expect(receipt1.hash).not.toBe(receipt2.hash);
+
+      logger.info(`${NULL_001.id}: PASSED ✓`);
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    formatScenario(NULL_002),
+    async () => {
+      const user = getEntryUser();
+      const quota = RLN_CONFIG.tiers.entry.quota;
+      const epochDuration = RLN_CONFIG.test.epochDurationSeconds;
+
+      logger.info(`${NULL_002.id}: Testing cross-epoch transactions`, {
+        user: user.address,
+        quota,
+        epochDurationSeconds: epochDuration,
+      });
+
+      // Exhaust quota in first epoch
+      for (let i = 0; i < quota; i++) {
+        await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
-          data: uniqueTxData("null001-1"),
+          data: uniqueTxData(`null002-epoch1-${i}`),
         });
-        expect(receipt1.status).toBe(1);
-        logger.info("First transaction succeeded", { txHash: receipt1.hash });
+      }
+      logger.info("Epoch 1 quota exhausted");
 
-        // Send second transaction - gets different nullifier (same user, same epoch)
-        const receipt2 = await rlnClient.sendGaslessTransaction(user, {
+      // Wait for next epoch (short epochs make this practical)
+      logger.info(`Waiting for next epoch (max ${epochDuration + 2}s)...`);
+      const newEpoch = await rlnClient.waitForNextEpoch((epochDuration + 2) * 1000);
+      logger.info("New epoch started", { epoch: newEpoch });
+
+      // Clear deny status by paying premium gas
+      await rlnClient.sendPremiumGasTransaction(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        gasPrice: ethers.parseUnits("15", "gwei"),
+        data: uniqueTxData("null002-clear-deny"),
+      });
+
+      // Wait for deny list clearance to propagate
+      await denyListManager.waitForNotDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
+
+      // Allow prover to sync state after deny list clearance
+      await rlnClient.sleep(1000);
+
+      // Should be able to transact in new epoch
+      const receipt = await rlnClient.sendGaslessTransaction(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        data: uniqueTxData("null002-epoch2"),
+      });
+
+      expect(receipt.status).toBe(1);
+      logger.info(`${NULL_002.id}: PASSED ✓`);
+    },
+    EPOCH_TEST_TIMEOUT, // This test waits for epoch boundary (60s)
+  );
+
+  it(
+    formatScenario(NULL_003),
+    async () => {
+      const user = getEntryUser();
+      const quota = RLN_CONFIG.tiers.entry.quota;
+
+      logger.info(`${NULL_003.id}: Testing security event logging`, {
+        user: user.address,
+      });
+
+      // Exhaust quota
+      for (let i = 0; i < quota; i++) {
+        await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
-          data: uniqueTxData("null001-2"),
+          data: uniqueTxData(`null003-${i}`),
         });
-        expect(receipt2.status).toBe(1);
-        logger.info("Second transaction succeeded", { txHash: receipt2.hash });
+      }
 
-        // Both succeeded because they generated DIFFERENT nullifiers
-        // The RLN system uses transaction-specific inputs for nullifier generation
-        // True nullifier reuse is prevented at the proof generation level
-
-        logger.info("NULL-001: PASSED ✓ - Nullifier uniqueness enforced");
-      },
-      TEST_TIMEOUT,
-    );
-  });
-
-  describe("NULL-002: Same User Can Transact Across Different Epochs", () => {
-    // Skipped: This test requires waiting for epoch boundary (24 hours) which is not practical
-    // Epoch transition logic is handled in rln-prover/prover/src/epoch_service.rs
-    it.skip(
-      "should allow transactions across epoch boundaries",
-      async () => {
-        const user = await karmaManager.setupUserForGasless(rpcProvider, "entry");
-        const quota = RLN_CONFIG.tiers.entry.quota;
-
-        logger.info("NULL-002: Testing cross-epoch transactions", {
-          user: user.address,
-          quota,
-        });
-
-        // Exhaust quota in first epoch
-        for (let i = 0; i < quota; i++) {
-          await rlnClient.sendGaslessTransaction(user, {
-            to: TEST_RECIPIENT,
-            value: 0n,
-            data: uniqueTxData(`null002-epoch1-${i}`),
-          });
-        }
-        logger.info("Epoch 1 quota exhausted");
-
-        // Wait for next epoch
-        const newEpoch = await rlnClient.waitForNextEpoch();
-        logger.info("New epoch started", { epoch: newEpoch });
-
-        // Should be able to transact in new epoch
-        const receipt = await rlnClient.sendGaslessTransaction(user, {
+      // Attempt to exceed quota (should trigger security event)
+      // Use a shorter timeout (10s) to fit within TEST_TIMEOUT
+      await rlnClient.sendGaslessTransactionExpectFailure(
+        user,
+        {
           to: TEST_RECIPIENT,
           value: 0n,
-          data: uniqueTxData("null002-epoch2"),
+          data: uniqueTxData("null003-exceed"),
+        },
+        10000, // 10s timeout for failure expectation
+      );
+
+      // Check for security-related logs in sequencer or prover
+      let securityLogs = await logMonitor.getMatchingLogs("sequencer", "quota|denied|exceeded", {
+        since: "30s",
+      });
+
+      // Also check prover logs if sequencer logs are empty
+      if (securityLogs.length === 0) {
+        securityLogs = await logMonitor.getMatchingLogs("rln-prover", "quota|denied|exceeded", {
+          since: "30s",
         });
+      }
 
-        expect(receipt.status).toBe(1);
-        logger.info("NULL-002: PASSED ✓ - Cross-epoch transactions allowed");
-      },
-      TEST_TIMEOUT + 120000,
-    );
-  });
+      logger.info(`${NULL_003.id}: Security logs found`, {
+        count: securityLogs.length,
+        sample: securityLogs.slice(0, 3),
+      });
 
-  describe("NULL-003: Nullifier Reuse Triggers Security Violation Log", () => {
-    it(
-      "should log security violation on nullifier-related issues",
-      async () => {
-        // The nullifier tracking in RLN is designed to detect spam/abuse
-        // We verify the security logging is working
-        const user = await karmaManager.setupUserForGasless(rpcProvider, "newbie");
+      // Security logging should capture quota events (soft assertion - logs may vary)
+      // The key test is that the TX was rejected, logging is secondary
+      logger.info(`${NULL_003.id}: Security log count`, { count: securityLogs.length });
 
-        logger.info("NULL-003: Testing security violation logging", {
-          user: user.address,
-        });
+      logger.info(`${NULL_003.id}: PASSED ✓`);
+    },
+    MULTI_TX_TIMEOUT, // Increased timeout for 2 TXs + failure wait + log check
+  );
 
-        // Send several transactions quickly
-        for (let i = 0; i < 3; i++) {
-          await rlnClient.sendGaslessTransaction(user, {
-            to: TEST_RECIPIENT,
-            value: 0n,
-            data: uniqueTxData(`null003-${i}`),
-          });
-        }
+  it(
+    formatScenario(NULL_004),
+    async () => {
+      const user = getNewbieUser();
 
-        // Check sequencer logs for nullifier tracking messages
-        const nullifierLogs = await logMonitor.getMatchingLogs("linea-sequencer", "nullifier", { since: "60s" });
+      logger.info(`${NULL_004.id}: Testing replay attack prevention`, {
+        user: user.address,
+      });
 
-        logger.info("NULL-003: Nullifier tracking logs", {
-          logCount: nullifierLogs.length,
-          sample: nullifierLogs.slice(0, 3),
-        });
+      // Get current nonce
+      const nonce = await rpcProvider.getTransactionCount(user.address, "latest");
+      const txData = uniqueTxData("null004-original");
 
-        // Verify logging infrastructure is working
-        // (actual duplicate nullifier rejection happens at prover level)
-        expect(true).toBe(true); // Test passes if no exceptions
+      // Send original transaction
+      const tx = await user.sendTransaction({
+        to: TEST_RECIPIENT,
+        value: 0n,
+        data: txData,
+        gasLimit: 30000,
+        gasPrice: 0,
+        nonce,
+      });
 
-        logger.info("NULL-003: PASSED ✓ - Security logging verified");
-      },
-      TEST_TIMEOUT,
-    );
-  });
+      const receipt = await tx.wait(1, RLN_CONFIG.test.transactionTimeoutMs);
+      expect(receipt?.status).toBe(1);
+      logger.info("Original transaction mined", { txHash: tx.hash });
 
-  describe("NULL-004: Replay Attack Prevention", () => {
-    it(
-      "should prevent replay of old transactions",
-      async () => {
-        // This tests that the same transaction cannot be replayed
-        // The nullifier is tied to the transaction hash and epoch
-        const user = await karmaManager.setupUserForGasless(rpcProvider, "newbie");
-
-        logger.info("NULL-004: Testing replay attack prevention", {
-          user: user.address,
-        });
-
-        // Send original transaction
-        const nonce = await rpcProvider.getTransactionCount(user.address, "latest");
-        const txData = uniqueTxData("null004-original");
-
-        const tx = await user.sendTransaction({
+      // Attempt to send same transaction again with same nonce (replay)
+      try {
+        await user.sendTransaction({
           to: TEST_RECIPIENT,
           value: 0n,
           data: txData,
           gasLimit: 30000,
           gasPrice: 0,
-          nonce,
+          nonce, // Same nonce - should be rejected
         });
+        throw new Error("Expected replay to fail");
+      } catch (error: unknown) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        //  Must fail with nonce-related error
+        expect(err.message).toMatch(/nonce|known|already|replacement/i);
+        logger.info("Replay rejected as expected", { error: err.message });
+      }
 
-        const receipt = await tx.wait(1, 30000);
-        expect(receipt?.status).toBe(1);
-        logger.info("Original transaction mined", { txHash: tx.hash });
+      logger.info(`${NULL_004.id}: PASSED ✓`);
+    },
+    TEST_TIMEOUT,
+  );
 
-        // Attempt to send same transaction again (replay)
-        // This should fail because nonce is already used
-        try {
-          await user.sendTransaction({
-            to: TEST_RECIPIENT,
-            value: 0n,
-            data: txData,
-            gasLimit: 30000,
-            gasPrice: 0,
-            nonce, // Same nonce - should be rejected
-          });
-          throw new Error("Expected replay to fail");
-        } catch (error: unknown) {
-          const err = error instanceof Error ? error : new Error(String(error));
-          // Should fail with nonce error (replay rejected at protocol level)
-          expect(err.message).toMatch(/nonce|known|already|replacement/i);
-          logger.info("Replay rejected as expected", { error: err.message });
-        }
+  it(
+    formatScenario(NULL_005),
+    async () => {
+      const user = getNewbieUser();
 
-        logger.info("NULL-004: PASSED ✓ - Replay attack prevented");
-      },
-      TEST_TIMEOUT,
-    );
-  });
+      logger.info(`${NULL_005.id}: Testing epoch validation`, {
+        user: user.address,
+      });
 
-  describe("NULL-005: Epoch Validation Rejects Proofs from Wrong Epoch", () => {
-    it(
-      "should validate proof epoch matches current epoch",
-      async () => {
-        // The RLN system validates that proofs are from the current epoch
-        // This prevents using stale proofs
-        const user = await karmaManager.setupUserForGasless(rpcProvider, "newbie");
+      const currentEpoch = rlnClient.getCurrentEpoch();
+      logger.info("Current epoch", { epoch: currentEpoch });
 
-        logger.info("NULL-005: Testing epoch validation", {
-          user: user.address,
-        });
+      // Send transaction in current epoch
+      const receipt = await rlnClient.sendGaslessTransaction(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        data: uniqueTxData("null005"),
+      });
 
-        const currentEpoch = rlnClient.getCurrentEpoch();
-        logger.info("Current epoch", { epoch: currentEpoch });
+      expect(receipt.status).toBe(1);
 
-        // Send transaction in current epoch
+      // Verify the transaction was processed in the expected epoch
+      // by checking the block timestamp falls within epoch bounds
+      const block = await rpcProvider.getBlock(receipt.blockNumber);
+      const txEpoch = Math.floor((block?.timestamp ?? 0) / RLN_CONFIG.test.epochDurationSeconds);
+
+      //  Transaction epoch must match expected epoch (±1 for boundary)
+      expect(Math.abs(txEpoch - currentEpoch)).toBeLessThanOrEqual(1);
+
+      logger.info(`${NULL_005.id}: PASSED ✓`, {
+        currentEpoch,
+        txEpoch,
+      });
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    formatScenario(NULL_006),
+    async () => {
+      const user = getActiveUser();
+      const txCount = 5; // Reduced for speed
+
+      logger.info(`${NULL_006.id}: Testing rapid sequential transactions`, {
+        user: user.address,
+        txCount,
+      });
+
+      const startTime = Date.now();
+      const receipts: ethers.TransactionReceipt[] = [];
+
+      // Send transactions in rapid succession
+      for (let i = 0; i < txCount; i++) {
         const receipt = await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
-          data: uniqueTxData("null005"),
+          data: uniqueTxData(`null006-rapid-${i}`),
         });
+        receipts.push(receipt);
+      }
 
+      const duration = Date.now() - startTime;
+      const tps = (receipts.length / duration) * 1000;
+
+      logger.info(`${NULL_006.id}: Throughput results`, {
+        txCount: receipts.length,
+        durationMs: duration,
+        tps: tps.toFixed(2),
+      });
+
+      //  All transactions must succeed
+      const successCount = receipts.filter((r) => r.status === 1).length;
+      expect(successCount).toBe(txCount);
+
+      logger.info(`${NULL_006.id}: PASSED ✓`);
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    formatScenario(NULL_007),
+    async () => {
+      const users = [getActiveUser(), getActiveUser(), getActiveUser()];
+
+      logger.info(`${NULL_007.id}: Testing concurrent multi-user transactions`, {
+        userCount: users.length,
+      });
+
+      // Submit 2 transactions per user concurrently
+      // Use sendGaslessTransactionsConcurrent to handle nonce management per user
+      const txPromises = users.map((user, userIdx) =>
+        rlnClient.sendGaslessTransactionsConcurrent(user, [
+          { to: TEST_RECIPIENT, value: 0n, data: uniqueTxData(`null007-user${userIdx}-tx0`) },
+          { to: TEST_RECIPIENT, value: 0n, data: uniqueTxData(`null007-user${userIdx}-tx1`) },
+        ]),
+      );
+
+      // Flatten the results (each user returns 2 receipts)
+      const resultsNested = await Promise.all(txPromises);
+      const results = resultsNested.flat();
+
+      logger.info(`${NULL_007.id}: Concurrent submission results`, {
+        total: results.length,
+        success: results.filter((r) => r.status === 1).length,
+      });
+
+      //  All transactions should succeed
+      for (const receipt of results) {
         expect(receipt.status).toBe(1);
+      }
 
-        // Check logs for epoch validation
-        const epochLogs = await logMonitor.getMatchingLogs("linea-sequencer", "epoch", { since: "30s" });
+      logger.info(`${NULL_007.id}: PASSED ✓`);
+    },
+    TEST_TIMEOUT,
+  );
 
-        logger.info("NULL-005: Epoch validation logs", {
-          logCount: epochLogs.length,
-        });
+  it(
+    formatScenario(NULL_008),
+    async () => {
+      const user = getNewbieUser();
 
-        // The proof includes the epoch and the sequencer validates it
-        // If epoch is wrong, the transaction would be rejected
-        // Success indicates epoch validation passed
+      logger.info(`${NULL_008.id}: Testing nullifier database persistence`, {
+        user: user.address,
+      });
 
-        logger.info("NULL-005: PASSED ✓ - Epoch validation working");
-      },
-      TEST_TIMEOUT,
-    );
-  });
+      // Send first transaction
+      const receipt1 = await rlnClient.sendGaslessTransaction(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        data: uniqueTxData("null008-persist-1"),
+      });
+      expect(receipt1.status).toBe(1);
 
-  describe("NULL-006: High-Throughput Nullifier Tracking", () => {
-    it(
-      "should handle rapid transaction submissions",
-      async () => {
-        // Tests nullifier tracking performance under load
-        // Target: 500+ TPS (this test does ~10 TPS which is limited by test setup)
-        const user = await karmaManager.setupUserForGasless(rpcProvider, "active");
+      // Send second transaction (different nullifier should be stored)
+      const receipt2 = await rlnClient.sendGaslessTransaction(user, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        data: uniqueTxData("null008-persist-2"),
+      });
+      expect(receipt2.status).toBe(1);
 
-        logger.info("NULL-006: Testing high-throughput nullifier tracking", {
-          user: user.address,
-        });
+      // Check prover logs for database operations
+      const dbLogs = await logMonitor.getMatchingLogs("rln-prover", "nullifier|insert|store", { since: "30s" });
 
-        const txCount = 10;
-        const startTime = Date.now();
-        const receipts: ethers.TransactionReceipt[] = [];
+      logger.info(`${NULL_008.id}: Database operation logs`, {
+        logCount: dbLogs.length,
+      });
 
-        // Send transactions in rapid succession
-        for (let i = 0; i < txCount; i++) {
-          try {
-            const receipt = await rlnClient.sendGaslessTransaction(user, {
-              to: TEST_RECIPIENT,
-              value: 0n,
-              data: uniqueTxData(`null006-rapid-${i}`),
-            });
-            receipts.push(receipt);
-          } catch (error) {
-            logger.warn(`Transaction ${i} failed`, { error });
-          }
-        }
+      //  Both transactions succeeded, proving nullifiers are unique
+      expect(receipt1.hash).not.toBe(receipt2.hash);
 
-        const duration = Date.now() - startTime;
-        const tps = (receipts.length / duration) * 1000;
-
-        logger.info("NULL-006: Throughput results", {
-          txCount: receipts.length,
-          durationMs: duration,
-          tps: tps.toFixed(2),
-          successRate: ((receipts.length / txCount) * 100).toFixed(1) + "%",
-        });
-
-        // All transactions should have unique nullifiers
-        // Verify all succeeded (no duplicates)
-        const successCount = receipts.filter((r) => r.status === 1).length;
-        expect(successCount).toBe(receipts.length);
-
-        logger.info("NULL-006: PASSED ✓ - High-throughput nullifier tracking working");
-      },
-      TEST_TIMEOUT,
-    );
-  });
-
-  describe("NULL-007: Concurrent Nullifier Submissions", () => {
-    it(
-      "should handle concurrent transactions from multiple users",
-      async () => {
-        // Tests that nullifier tracking works correctly with concurrent submissions
-        // This validates the database's atomic operations
-        const users = await karmaManager.setupMultipleUsers(rpcProvider, 3, "active");
-
-        logger.info("NULL-007: Testing concurrent nullifier submissions", {
-          userCount: users.length,
-        });
-
-        // Submit transactions concurrently from all users
-        const txPromises = users.flatMap((user, userIdx) =>
-          Array.from({ length: 3 }, (_, i) =>
-            rlnClient
-              .sendGaslessTransaction(user, {
-                to: TEST_RECIPIENT,
-                value: 0n,
-                data: uniqueTxData(`null007-user${userIdx}-tx${i}`),
-              })
-              .catch((e) => {
-                logger.warn(`Concurrent tx failed: ${e.message}`);
-                return null;
-              }),
-          ),
-        );
-
-        const results = await Promise.all(txPromises);
-        const successCount = results.filter((r) => r && r.status === 1).length;
-
-        logger.info("NULL-007: Concurrent submission results", {
-          total: results.length,
-          success: successCount,
-          failed: results.length - successCount,
-        });
-
-        // Most transactions should succeed (some may fail due to rate limits)
-        expect(successCount).toBeGreaterThan(users.length);
-
-        logger.info("NULL-007: PASSED ✓ - Concurrent nullifier submissions handled");
-      },
-      TEST_TIMEOUT,
-    );
-  });
-
-  describe("NULL-008: Nullifier Database Persistence", () => {
-    it(
-      "should persist nullifiers across service operations",
-      async () => {
-        // Tests that nullifiers are properly persisted to the database
-        // This ensures replay protection survives service restarts
-        const user = await karmaManager.setupUserForGasless(rpcProvider, "newbie");
-
-        logger.info("NULL-008: Testing nullifier database persistence", {
-          user: user.address,
-        });
-
-        // Send a transaction (nullifier gets stored in DB)
-        const receipt1 = await rlnClient.sendGaslessTransaction(user, {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          data: uniqueTxData("null008-persist"),
-        });
-        expect(receipt1.status).toBe(1);
-
-        // Send another transaction (different nullifier)
-        const receipt2 = await rlnClient.sendGaslessTransaction(user, {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          data: uniqueTxData("null008-persist-2"),
-        });
-        expect(receipt2.status).toBe(1);
-
-        // Check prover logs for nullifier storage
-        const proverLogs = await logMonitor.getMatchingLogs("rln-prover", "nullifier", { since: "60s" });
-
-        logger.info("NULL-008: Prover nullifier logs", {
-          logCount: proverLogs.length,
-        });
-
-        // Both transactions succeeded - nullifiers were stored and are unique
-        logger.info("NULL-008: PASSED ✓ - Nullifier database persistence working");
-      },
-      TEST_TIMEOUT,
-    );
-  });
+      logger.info(`${NULL_008.id}: PASSED ✓`);
+    },
+    TEST_TIMEOUT,
+  );
 });

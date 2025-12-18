@@ -271,8 +271,9 @@ message RemoveFromDenyListRequest {
 }
 
 message RemoveFromDenyListReply {
-  // True if the address was removed, false if it wasn't on the list
-  bool removed = 1;
+  bool success = 1;
+  // True if was removed, false if wasn't on the list
+  bool was_present = 2;
 }
 
 message GetDenyListEntryRequest {

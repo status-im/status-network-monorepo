@@ -19,7 +19,7 @@ services:
   rln-prover:
     hostname: rln-prover
     container_name: rln-prover
-    image: status-rln-prover:20251128235527
+    image: status-rln-prover:20251217152830
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo", "rln" ]
     ports:
       - "50051:50051"  # RLN proof service
@@ -28,8 +28,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # Default: Mock mode. For production, override command via docker-compose or use rln-prover-production service
-    command: ["--no-config", "--ip", "0.0.0.0", "--port", "50051", "--mock-sc", "true", "--mock-user", "/app/mock_users.json", "--db", "postgres://postgres:postgres@postgres:5432/prover_db"]
+    # Default: Mock mode with TEST epochs for fast testing
+    # --epoch-duration-secs=30: Quotas reset every 30 seconds (instead of 24 hours)
+    # --epoch-slice-secs=10: Epoch slices every 10 seconds (subdivision of epoch)
+    # This enables testing epoch boundary behavior (quota resets) without waiting 24 hours
+    # Note: When using start-env-with-rln-production, the prover is restarted with production args
+    command: ["--no-config", "--ip", "0.0.0.0", "--port", "50051", "--mock-sc", "true", "--mock-user", "/app/mock_users.json", "--db", "postgres://postgres:postgres@postgres:5432/prover_db", "--epoch-duration-secs", "30", "--epoch-slice-secs", "10"]
     environment:
       RUST_LOG: "${RUST_LOG:-debug}"
       DATABASE_URL: "postgres://postgres:postgres@postgres:5432/prover_db"
@@ -50,7 +54,7 @@ services:
   sequencer:
     hostname: sequencer
     container_name: sequencer
-    image: linea-besu-minimal-rln:20251129095155
+    image: linea-besu-minimal-rln:20251217032531
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     ports:
       - "8545:8545"
@@ -95,8 +99,8 @@ services:
           --plugin-linea-rln-nullifier-storage-path=/data/nullifiers.txt \
           --plugin-linea-rln-use-tls=false \
           --plugin-linea-rln-premium-gas-threshold-gwei=10 \
-          --plugin-linea-rln-timeouts-ms=30000 \
-          --plugin-linea-rln-proof-wait-timeout-ms=30000 \
+          --plugin-linea-rln-timeouts-ms=2000 \
+          --plugin-linea-rln-proof-wait-timeout-ms=1500 \
           --plugin-linea-rln-epoch-mode=TEST \
           --plugin-linea-min-margin=0 \
           --plugin-linea-tx-pool-min-margin=0 \
@@ -159,7 +163,7 @@ services:
   l2-node-besu:
     hostname: l2-node-besu
     container_name: l2-node-besu
-    image: linea-besu-minimal-rln:20251129095155
+    image: linea-besu-minimal-rln:20251217032531
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     depends_on:
       sequencer:
@@ -200,7 +204,7 @@ services:
           --plugin-linea-rln-enabled=false \
           --plugin-linea-rln-proof-service=rln-prover:50051 \
           --plugin-linea-rln-karma-service=rln-prover:50051 \
-          --plugin-linea-rln-timeouts-ms=30000 \
+          --plugin-linea-rln-timeouts-ms=5000 \
           --plugin-linea-rln-epoch-mode=TEST \
           --plugin-linea-rpc-gasless-enabled=true \
           --plugin-linea-rpc-rln-prover-forwarder-enabled=true \
@@ -213,7 +217,8 @@ services:
           --plugin-linea-variable-gas-cost-wei=0 \
           --plugin-linea-fixed-gas-cost-wei=0 \
           --plugin-linea-estimate-gas-compatibility-mode-enabled=true \
-          --plugin-linea-estimate-gas-compatibility-mode-multiplier=1.2
+          --plugin-linea-estimate-gas-compatibility-mode-multiplier=1.2 \
+          --sync-min-peers=1
     volumes:
       - ./config/l2-node-besu/l2-node-besu-config.toml:/var/lib/besu/l2-node-besu.config.toml:ro
       - ./config/linea-besu-sequencer/deny-list.txt:/var/lib/besu/deny-list.txt:rw

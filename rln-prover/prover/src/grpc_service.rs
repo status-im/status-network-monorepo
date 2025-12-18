@@ -142,6 +142,25 @@ where
             return Err(Status::not_found("Sender not registered"));
         };
 
+        // Check deny list BEFORE proof generation to prevent denied users from getting proofs
+        match self.user_db.is_denied(&sender).await {
+            Ok(true) => {
+                info!(
+                    "[gRPC] Rejecting transaction from denied sender: {}",
+                    sender
+                );
+                return Err(Status::permission_denied(
+                    "Sender is on deny list, no proof will be generated",
+                ));
+            }
+            Ok(false) => {} // Not denied, proceed
+            Err(e) => {
+                warn!("[gRPC] Failed to check deny list for {}: {:?}", sender, e);
+                // On error, we allow the transaction to proceed (fail-open)
+                // The sequencer will still check the deny list
+            }
+        }
+
         let tx_counter_incr = if req.estimated_gas_used <= self.tx_gas_quota.get() {
             None
         } else {
@@ -155,7 +174,49 @@ where
             .await
             .unwrap_or_default();
 
-        if counter > self.rate_limit {
+        // Get user's tier-based quota limit
+        let tier_limit = match self.user_db.user_tier_info(&sender, &self.karma_sc).await {
+            Ok(tier_info) => tier_info.tier_limit,
+            Err(_) => None, // Fall back to global limit on error
+        };
+
+        // Check against tier limit if available, otherwise use global spam limit
+        let effective_limit = tier_limit
+            .map(|l| {
+                let limit: u32 = l.into();
+                RateLimit::new(u64::from(limit))
+            })
+            .unwrap_or(self.rate_limit);
+
+        info!(
+            "[gRPC] Rate limit check: counter={}, effective_limit={}, tier_limit={:?}",
+            u64::from(counter),
+            u64::from(effective_limit),
+            tier_limit.map(u32::from)
+        );
+
+        if counter > effective_limit {
+            // Add user to deny list when rate limit is exceeded
+            // This is critical because by the time the sequencer queries getUserTierInfo,
+            // the epoch may have changed, causing get_tx_counter to return 0.
+            // The prover has the accurate counter right now, so we add to deny list here.
+            let deny_reason = format!(
+                "Rate limit exceeded: {} transactions, limit: {}",
+                u64::from(counter),
+                u64::from(effective_limit)
+            );
+            if let Err(e) = self
+                .user_db
+                .add_to_deny_list(&sender, Some(deny_reason.clone()), None)
+                .await
+            {
+                warn!(
+                    "[gRPC] Failed to add {} to deny list after rate limit exceeded: {:?}",
+                    sender, e
+                );
+            } else {
+                info!("[gRPC] Added {} to deny list: {}", sender, deny_reason);
+            }
             return Err(Status::resource_exhausted(
                 "Too many transactions sent by this user",
             ));
@@ -383,7 +444,7 @@ where
             Ok(is_denied) => Ok(Response::new(IsDeniedReply { is_denied })),
             Err(e) => {
                 error!("Failed to check deny list: {:?}", e);
-                Err(Status::internal(format!("Database error: {}", e)))
+                Err(Status::internal(format!("Database error: {e}")))
             }
         }
     }
@@ -424,7 +485,7 @@ where
             }
             Err(e) => {
                 error!("Failed to add to deny list: {:?}", e);
-                Err(Status::internal(format!("Database error: {}", e)))
+                Err(Status::internal(format!("Database error: {e}")))
             }
         }
     }
@@ -448,17 +509,20 @@ where
         };
 
         match self.user_db.remove_from_deny_list(&address).await {
-            Ok(removed) => {
-                if removed {
+            Ok(was_present) => {
+                if was_present {
                     info!("Address {} removed from deny list", address);
                 } else {
                     debug!("Address {} was not on deny list", address);
                 }
-                Ok(Response::new(RemoveFromDenyListReply { removed }))
+                Ok(Response::new(RemoveFromDenyListReply {
+                    success: true,
+                    was_present,
+                }))
             }
             Err(e) => {
                 error!("Failed to remove from deny list: {:?}", e);
-                Err(Status::internal(format!("Database error: {}", e)))
+                Err(Status::internal(format!("Database error: {e}")))
             }
         }
     }
@@ -497,7 +561,7 @@ where
             })),
             Err(e) => {
                 error!("Failed to get deny list entry: {:?}", e);
-                Err(Status::internal(format!("Database error: {}", e)))
+                Err(Status::internal(format!("Database error: {e}")))
             }
         }
     }
@@ -523,7 +587,7 @@ where
             Ok(exists) => Ok(Response::new(CheckNullifierReply { exists })),
             Err(e) => {
                 error!("Failed to check nullifier: {:?}", e);
-                Err(Status::internal(format!("Database error: {}", e)))
+                Err(Status::internal(format!("Database error: {e}")))
             }
         }
     }
@@ -547,7 +611,7 @@ where
             Ok(recorded) => Ok(Response::new(RecordNullifierReply { recorded })),
             Err(e) => {
                 error!("Failed to record nullifier: {:?}", e);
-                Err(Status::internal(format!("Database error: {}", e)))
+                Err(Status::internal(format!("Database error: {e}")))
             }
         }
     }
@@ -571,7 +635,7 @@ where
             Ok(is_valid) => Ok(Response::new(CheckAndRecordNullifierReply { is_valid })),
             Err(e) => {
                 error!("Failed to check and record nullifier: {:?}", e);
-                Err(Status::internal(format!("Database error: {}", e)))
+                Err(Status::internal(format!("Database error: {e}")))
             }
         }
     }

@@ -237,7 +237,7 @@ message SetTierLimitsReply {
 // ============ Deny List Messages ============
 
 message IsDeniedRequest {
-  string address = 1;
+  Address address = 1;
 }
 
 message IsDeniedReply {
@@ -245,11 +245,11 @@ message IsDeniedReply {
 }
 
 message AddToDenyListRequest {
-  string address = 1;
-  // Optional TTL in seconds (0 or unset means no expiry)
-  int64 ttl_seconds = 2;
-  // Optional reason (not stored, for logging only)
-  optional string reason = 3;
+  Address address = 1;
+  // Optional reason for denial
+  optional string reason = 2;
+  // Optional TTL in seconds (if not set, entry never expires)
+  optional int64 ttl_seconds = 3;
 }
 
 message AddToDenyListReply {
@@ -259,7 +259,7 @@ message AddToDenyListReply {
 }
 
 message RemoveFromDenyListRequest {
-  string address = 1;
+  Address address = 1;
 }
 
 message RemoveFromDenyListReply {
@@ -269,7 +269,7 @@ message RemoveFromDenyListReply {
 }
 
 message GetDenyListEntryRequest {
-  string address = 1;
+  Address address = 1;
 }
 
 message GetDenyListEntryReply {
