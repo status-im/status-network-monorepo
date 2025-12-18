@@ -199,4 +199,48 @@ contract StakeVaultMigrateToVaultTest is StakeManagerTest {
         vm.expectRevert(abi.encodeWithSelector(StakeVault.StakeVault__InvalidMigrationTarget.selector));
         emptyVault.migrateToVault(address(lockedVault));
     }
+
+    function test_RevertWhenMigrationTargetHasRewardsAccrued() public {
+        uint256 stakeAmount = 100e18;
+
+        // Alice stakes in her original vault
+        _stake(alice, stakeAmount, 0);
+
+        // Alice creates a new target vault
+        vm.prank(alice);
+        StakeVault targetVault = vaultFactory.createVault();
+
+        // Alice stakes in the target vault to make it eligible for rewards
+        vm.startPrank(alice);
+        stakingToken.approve(address(targetVault), stakeAmount);
+        targetVault.stake(stakeAmount, 0);
+        vm.stopPrank();
+
+        // Set up rewards
+        uint256 rewardAmount = 1000e18;
+        uint256 rewardDuration = 10 days;
+        _setRewards(rewardAmount, rewardDuration);
+
+        // Warp time forward to accrue rewards
+        vm.warp(vm.getBlockTimestamp() + 5 days);
+
+        // Update the target vault to accrue rewards (this will make rewardsAccrued > 0)
+        streamer.updateVault(address(targetVault));
+
+        // Verify target vault has rewards accrued
+        assertGt(streamer.getVault(address(targetVault)).rewardsAccrued, 0, "Target vault should have rewards accrued");
+
+        // Alice unstakes from target vault to make stakedBalance 0 (but rewardsAccrued remains > 0)
+        vm.prank(alice);
+        targetVault.unstake(stakeAmount);
+
+        // Verify target vault has 0 staked balance but still has rewards accrued
+        assertEq(streamer.getVault(address(targetVault)).stakedBalance, 0, "Target vault should have 0 staked balance");
+        assertGt(streamer.getVault(address(targetVault)).rewardsAccrued, 0, "Target vault should have rewards accrued");
+
+        // Try to migrate to target vault - should revert because target has rewardsAccrued > 0
+        vm.prank(alice);
+        vm.expectRevert(IStakeManager.StakeManager__MigrationTargetHasFunds.selector);
+        StakeVault(vaults[alice]).migrateToVault(address(targetVault));
+    }
 }

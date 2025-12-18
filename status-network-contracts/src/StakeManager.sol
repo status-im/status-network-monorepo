@@ -514,7 +514,7 @@ contract StakeManager is
             revert StakeManager__InvalidVault();
         }
 
-        if (vaultData[migrateTo].stakedBalance > 0) {
+        if (vaultData[migrateTo].stakedBalance > 0 || vaultData[migrateTo].rewardsAccrued > 0) {
             revert StakeManager__MigrationTargetHasFunds();
         }
 
