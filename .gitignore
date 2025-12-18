@@ -77,6 +77,7 @@ build/
 cache_forge/
 coverage/
 dist/
+ipfs-cache/
 node_modules/
 out/
 playwright-report/
@@ -89,6 +90,7 @@ __pycache__/
 /besu-plugins/linea-sequencer/**/site
 
 /bridge-ui/.env*.local
+!/bridge-ui/.env.test
 /bridge-ui/cache
 /bridge-ui/out
 /bridge-ui/test-results
@@ -105,7 +107,9 @@ __pycache__/
 /jvm-libs/**/darwin-x86-64
 
 /prover/**/*.csv
-/prover/**/testdata/
+# Exclude files in testdata directories, but not the directories themselves to allow
+# add exceptions (gitignore doesn't permit exceptions when root dir is excluded)
+/prover/**/testdata/*
 # Testdata, otherwise that's 400MB of data downloaded
 /prover/**/integration-testing/testdata/prover-requests/
 /prover/**/vendor/
@@ -131,6 +135,9 @@ __pycache__/
 /ts-libs/**/lib/**/*.so
 /ts-libs/**/lib/**/*.dylib
 
+/docker/config/l2-genesis-initialization/*.json
+/docker/config/l2-genesis-initialization/*.toml
+
 !.gitkeep
 !operations/bin/
 # Authorize the kzg srs folder
@@ -149,3 +156,5 @@ custom-besu-package
 lib/forge-std
 lib/openzeppelin-contracts
 lib/openzeppelin-contracts-upgradeable
+# Allow BLS glue testdata generators
+!prover/zkevm/prover/bls/testdata/*.go

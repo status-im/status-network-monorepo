@@ -9,10 +9,8 @@
 
 package linea.plugin.acc.test;
 
-import static net.consensys.linea.metrics.LineaMetricCategory.PRICING_CONF;
-import static net.consensys.linea.metrics.LineaMetricCategory.SEQUENCER_PROFITABILITY;
-import static net.consensys.linea.metrics.LineaMetricCategory.TX_POOL_PROFITABILITY;
-import static org.assertj.core.api.Assertions.*;
+import static net.consensys.linea.metrics.LineaMetricCategory.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,27 +21,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
-import linea.plugin.acc.test.tests.web3j.generated.AcceptanceTestToken;
-import linea.plugin.acc.test.tests.web3j.generated.DummyAdder;
-import linea.plugin.acc.test.tests.web3j.generated.EcAdd;
-import linea.plugin.acc.test.tests.web3j.generated.EcMul;
-import linea.plugin.acc.test.tests.web3j.generated.EcPairing;
-import linea.plugin.acc.test.tests.web3j.generated.EcRecover;
-import linea.plugin.acc.test.tests.web3j.generated.ExcludedPrecompiles;
-import linea.plugin.acc.test.tests.web3j.generated.ModExp;
-import linea.plugin.acc.test.tests.web3j.generated.MulmodExecutor;
-import linea.plugin.acc.test.tests.web3j.generated.RevertExample;
-import linea.plugin.acc.test.tests.web3j.generated.SimpleStorage;
+import linea.plugin.acc.test.tests.web3j.generated.*;
 import linea.plugin.acc.test.utils.MemoryAppender;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomStringUtils;
@@ -52,6 +32,7 @@ import org.apache.tuweni.bytes.Bytes32;
 import org.apache.tuweni.units.bigints.UInt32;
 import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.datatypes.Hash;
+import org.hyperledger.besu.ethereum.core.ImmutableMiningConfiguration;
 import org.hyperledger.besu.ethereum.eth.transactions.ImmutableTransactionPoolConfiguration;
 import org.hyperledger.besu.ethereum.eth.transactions.TransactionPoolConfiguration;
 import org.hyperledger.besu.metrics.prometheus.MetricsConfiguration;
@@ -67,6 +48,7 @@ import org.hyperledger.besu.tests.acceptance.dsl.node.configuration.NodeConfigur
 import org.hyperledger.besu.tests.acceptance.dsl.node.configuration.genesis.GenesisConfigurationFactory;
 import org.hyperledger.besu.tests.acceptance.dsl.node.configuration.genesis.GenesisConfigurationFactory.CliqueOptions;
 import org.hyperledger.besu.tests.acceptance.dsl.transaction.txpool.TxPoolTransactions;
+import org.hyperledger.besu.util.number.PositiveNumber;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.web3j.crypto.Credentials;
@@ -103,7 +85,6 @@ public abstract class LineaPluginTestBase extends AcceptanceTestBase {
           "LineaTransactionValidatorPlugin");
 
   protected static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
-  protected BesuNode minerNode;
 
   @BeforeEach
   public void setup() throws Exception {
@@ -112,7 +93,7 @@ public abstract class LineaPluginTestBase extends AcceptanceTestBase {
             "miner1",
             getCliqueOptions(),
             getTestCliOptions(),
-            Set.of("LINEA", "MINER"),
+            Set.of("LINEA", "MINER", "PLUGINS"),
             false,
             DEFAULT_REQUESTED_PLUGINS);
     minerNode.setTransactionPoolConfiguration(
@@ -155,7 +136,19 @@ public abstract class LineaPluginTestBase extends AcceptanceTestBase {
     final var nodeConfBuilder =
         new BesuNodeConfigurationBuilder()
             .name(name)
-            .miningEnabled()
+            .miningConfiguration(
+                // enable mining
+                // allow for a single iteration to take all the slot time
+                // set plugin max selection time to 5% of slot time
+                ImmutableMiningConfiguration.builder()
+                    .poaBlockTxsSelectionMaxTime(
+                        PositiveNumber.fromInt(BLOCK_PERIOD_SECONDS * 1000))
+                    .pluginBlockTxsSelectionMaxTime(PositiveNumber.fromInt(5))
+                    .mutableInitValues(
+                        ImmutableMiningConfiguration.MutableInitValues.builder()
+                            .isMiningEnabled(true)
+                            .build())
+                    .build())
             .jsonRpcConfiguration(node.createJsonRpcWithCliqueEnabledConfig(extraRpcApis))
             .webSocketConfiguration(node.createWebSocketEnabledConfig())
             .inProcessRpcConfiguration(node.createInProcessRpcConfiguration(extraRpcApis))
@@ -170,7 +163,11 @@ public abstract class LineaPluginTestBase extends AcceptanceTestBase {
                     .enabled(true)
                     .port(0)
                     .metricCategories(
-                        Set.of(PRICING_CONF, SEQUENCER_PROFITABILITY, TX_POOL_PROFITABILITY))
+                        Set.of(
+                            PRICING_CONF,
+                            SEQUENCER_PROFITABILITY,
+                            TX_POOL_PROFITABILITY,
+                            SEQUENCER_LIVENESS))
                     .build())
             .requestedPlugins(requestedPlugins);
 
@@ -262,6 +259,17 @@ public abstract class LineaPluginTestBase extends AcceptanceTestBase {
     assertThat(txMap).containsValue(maxTxs);
   }
 
+  protected LogEmitter deployLogEmitter() throws Exception {
+    final Web3j web3j = minerNode.nodeRequests().eth();
+    final Credentials credentials = Credentials.create(Accounts.GENESIS_ACCOUNT_ONE_PRIVATE_KEY);
+    TransactionManager txManager =
+        new RawTransactionManager(web3j, credentials, CHAIN_ID, createReceiptProcessor(web3j));
+
+    final RemoteCall<LogEmitter> deploy =
+        LogEmitter.deploy(web3j, txManager, new DefaultGasProvider());
+    return deploy.send();
+  }
+
   protected SimpleStorage deploySimpleStorage() throws Exception {
     final Web3j web3j = minerNode.nodeRequests().eth();
     final Credentials credentials = Credentials.create(Accounts.GENESIS_ACCOUNT_ONE_PRIVATE_KEY);
@@ -302,6 +310,17 @@ public abstract class LineaPluginTestBase extends AcceptanceTestBase {
         new RawTransactionManager(web3j, credentials, CHAIN_ID, createReceiptProcessor(web3j));
 
     final RemoteCall<ModExp> deploy = ModExp.deploy(web3j, txManager, new DefaultGasProvider());
+    return deploy.send();
+  }
+
+  protected BLS12_MAP_FP_TO_G1 deployBLS12_MAP_FP_TO_G1() throws Exception {
+    final Web3j web3j = minerNode.nodeRequests().eth();
+    final Credentials credentials = Credentials.create(Accounts.GENESIS_ACCOUNT_ONE_PRIVATE_KEY);
+    TransactionManager txManager =
+        new RawTransactionManager(web3j, credentials, CHAIN_ID, createReceiptProcessor(web3j));
+
+    final RemoteCall<BLS12_MAP_FP_TO_G1> deploy =
+        BLS12_MAP_FP_TO_G1.deploy(web3j, txManager, new DefaultGasProvider());
     return deploy.send();
   }
 

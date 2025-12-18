@@ -9,16 +9,20 @@
 
 package net.consensys.linea.rpc.methods;
 
+import static net.consensys.linea.bl.TransactionProfitabilityCalculator.getCompressedTxSize;
 import static net.consensys.linea.sequencer.modulelimit.ModuleLineCountValidator.ModuleLineCountResult.MODULE_NOT_DEFINED;
 import static net.consensys.linea.sequencer.modulelimit.ModuleLineCountValidator.ModuleLineCountResult.TX_MODULE_LINE_COUNT_OVERFLOW;
-import static net.consensys.linea.zktracer.Fork.LONDON;
+import static net.consensys.linea.zktracer.Fork.fromMainnetHardforkIdToTracerFork;
 import static org.hyperledger.besu.ethereum.api.jsonrpc.internal.results.Quantity.create;
+import static org.hyperledger.besu.plugin.services.TransactionSimulationService.SimulationParameters.ALLOW_FUTURE_NONCE;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.annotations.VisibleForTesting;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
+import java.time.Instant;
+import java.util.EnumSet;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +38,7 @@ import net.consensys.linea.sequencer.modulelimit.ModuleLineCountValidator;
 import net.consensys.linea.sequencer.txpoolvalidation.shared.DenyListManager;
 import net.consensys.linea.sequencer.txpoolvalidation.shared.KarmaServiceClient;
 import net.consensys.linea.sequencer.txpoolvalidation.shared.KarmaServiceClient.KarmaInfo;
+import net.consensys.linea.zktracer.Fork;
 import net.consensys.linea.zktracer.LineCountingTracer;
 import net.consensys.linea.zktracer.ZkCounter;
 import net.consensys.linea.zktracer.ZkTracer;
@@ -43,6 +48,7 @@ import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.crypto.params.ECDomainParameters;
 import org.hyperledger.besu.crypto.SECPSignature;
 import org.hyperledger.besu.datatypes.Address;
+import org.hyperledger.besu.datatypes.HardforkId;
 import org.hyperledger.besu.datatypes.StateOverrideMap;
 import org.hyperledger.besu.datatypes.Wei;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.exception.InvalidJsonRpcParameters;
@@ -52,11 +58,13 @@ import org.hyperledger.besu.ethereum.api.jsonrpc.internal.response.JsonRpcError;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.response.RpcErrorType;
 import org.hyperledger.besu.ethereum.core.Transaction;
 import org.hyperledger.besu.ethereum.transaction.CallParameter;
+import org.hyperledger.besu.ethereum.transaction.ImmutableCallParameter;
 import org.hyperledger.besu.plugin.data.ProcessableBlockHeader;
 import org.hyperledger.besu.plugin.services.BesuConfiguration;
 import org.hyperledger.besu.plugin.services.BlockchainService;
 import org.hyperledger.besu.plugin.services.RpcEndpointService;
 import org.hyperledger.besu.plugin.services.TransactionSimulationService;
+import org.hyperledger.besu.plugin.services.WorldStateService;
 import org.hyperledger.besu.plugin.services.exception.PluginRpcEndpointException;
 import org.hyperledger.besu.plugin.services.rpc.PluginRpcRequest;
 import org.hyperledger.besu.plugin.services.rpc.RpcMethodError;
@@ -87,6 +95,7 @@ public class LineaEstimateGas {
   private final TransactionSimulationService transactionSimulationService;
   private final BlockchainService blockchainService;
   private final RpcEndpointService rpcEndpointService;
+  private WorldStateService worldStateService;
   private LineaRpcConfiguration rpcConfiguration;
   private LineaTransactionPoolValidatorConfiguration txValidatorConf;
   private LineaProfitabilityConfiguration profitabilityConf;
@@ -119,13 +128,15 @@ public class LineaEstimateGas {
       final LineaTransactionPoolValidatorConfiguration transactionValidatorConfiguration,
       final LineaProfitabilityConfiguration profitabilityConf,
       final LineaL1L2BridgeSharedConfiguration l1L2BridgeConfiguration,
-      final LineaTracerConfiguration tracerConfiguration) {
+      final LineaTracerConfiguration tracerConfiguration,
+      final WorldStateService worldStateService) {
     init(
         rpcConfiguration,
         transactionValidatorConfiguration,
         profitabilityConf,
         l1L2BridgeConfiguration,
         tracerConfiguration,
+        worldStateService,
         null,
         null);
   }
@@ -136,6 +147,7 @@ public class LineaEstimateGas {
       final LineaProfitabilityConfiguration profitabilityConf,
       final LineaL1L2BridgeSharedConfiguration l1L2BridgeConfiguration,
       final LineaTracerConfiguration tracerConfiguration,
+      final WorldStateService worldStateService,
       final DenyListManager denyListManager,
       final KarmaServiceClient karmaServiceClient) {
     this.rpcConfiguration = rpcConfiguration;
@@ -146,6 +158,7 @@ public class LineaEstimateGas {
     this.tracerConfiguration = tracerConfiguration;
     this.moduleLineCountValidator =
         new ModuleLineCountValidator(tracerConfiguration.moduleLimitsMap());
+    this.worldStateService = worldStateService;
 
     // Initialize gasless config fields
     this.gaslessTransactionsEnabled = rpcConfiguration.gaslessTransactionsEnabled();
@@ -305,17 +318,32 @@ public class LineaEstimateGas {
 
       log.debug("[{}] Parsed call parameters: {}", logId, callParameters);
       final long gasEstimation = getGasEstimation(callParameters, maybeStateOverrides, logId);
-
-      final var transaction =
-          createTransactionForSimulation(callParameters, gasEstimation, baseFee, logId);
       log.atDebug()
-          .setMessage("[{}] Transaction: {}; Gas estimation {}")
+          .setMessage("[{}] Gas estimation {}")
           .addArgument(logId)
-          .addArgument(transaction::toTraceLog)
           .addArgument(gasEstimation)
           .log();
 
-      validateLineCounts(maybeStateOverrides, transaction, logId);
+      final var updatedCallParameters =
+          ImmutableCallParameter.builder().from(callParameters).gas(gasEstimation);
+
+      if (callParameters.getMaxFeePerBlobGas().isEmpty()) {
+        if (callParameters.getGasPrice().isEmpty()) {
+          updatedCallParameters.gasPrice(baseFee);
+          updatedCallParameters.maxFeePerGas(baseFee);
+        }
+      }
+
+      validateLineCounts(maybeStateOverrides, updatedCallParameters.build(), logId);
+
+      final var transaction =
+          createTransactionForFeeEstimation(callParameters, gasEstimation, baseFee, logId);
+
+      log.atDebug()
+          .setMessage("[{}] Transaction for fee estimation: {}")
+          .addArgument(logId)
+          .addArgument(transaction::toTraceLog)
+          .log();
 
       final Wei estimatedPriorityFee =
           getEstimatedPriorityFee(transaction, baseFee, minGasPrice, gasEstimation);
@@ -379,22 +407,30 @@ public class LineaEstimateGas {
               .toBigInteger());
     }
 
+    int compressedSize = getCompressedTxSize(transaction);
     return txProfitabilityCalculator.profitablePriorityFeePerGas(
-        transaction, profitabilityConf.estimateGasMinMargin(), estimatedGasUsed, minGasPrice);
+        transaction,
+        profitabilityConf.estimateGasMinMargin(),
+        estimatedGasUsed,
+        minGasPrice,
+        compressedSize);
   }
 
   private void validateLineCounts(
       final Optional<StateOverrideMap> maybeStateOverrides,
-      final Transaction transaction,
+      final CallParameter callParameter,
       final long logId) {
 
     final var pendingBlockHeader = transactionSimulationService.simulatePendingBlockHeader();
-    final var lineCountingTracer =
-        createLineCountingTracer(pendingBlockHeader, blockchainService.getChainId().get());
+    final var lineCountingTracer = createLineCountingTracer(pendingBlockHeader, blockchainService);
 
     final var maybeSimulationResults =
         transactionSimulationService.simulate(
-            transaction, maybeStateOverrides, pendingBlockHeader, lineCountingTracer, false, true);
+            callParameter,
+            maybeStateOverrides,
+            pendingBlockHeader,
+            lineCountingTracer,
+            EnumSet.of(ALLOW_FUTURE_NONCE));
 
     ModuleLimitsValidationResult moduleLimit =
         moduleLineCountValidator.validate(lineCountingTracer.getModulesLineCount());
@@ -408,9 +444,9 @@ public class LineaEstimateGas {
           // if the transaction is invalid or doesn't have enough gas with the max it never will
           if (r.isInvalid()) {
             log.atDebug()
-                .setMessage("[{}] Invalid transaction {}, reason {}")
+                .setMessage("[{}] Invalid simulation with call parameters {}, reason {}")
                 .addArgument(logId)
-                .addArgument(transaction::toTraceLog)
+                .addArgument(callParameter)
                 .addArgument(r.result())
                 .log();
             throw new PluginRpcEndpointException(
@@ -418,9 +454,9 @@ public class LineaEstimateGas {
           }
           if (!r.isSuccessful()) {
             log.atDebug()
-                .setMessage("[{}] Failed transaction {}, reason {}")
+                .setMessage("[{}] Failed simulation with call parameters {}, reason {}")
                 .addArgument(logId)
-                .addArgument(transaction::toTraceLog)
+                .addArgument(callParameter)
                 .addArgument(r.result())
                 .log();
             r.getRevertReason()
@@ -432,7 +468,7 @@ public class LineaEstimateGas {
             final var invalidReason = r.result().getInvalidReason();
             throw new PluginRpcEndpointException(
                 new EstimateGasError(
-                    "Failed transaction" + invalidReason.map(ir -> ", reason: " + ir).orElse("")));
+                    "Failed simulation" + invalidReason.map(ir -> ", reason: " + ir).orElse("")));
           }
         },
         () ->
@@ -480,7 +516,7 @@ public class LineaEstimateGas {
         || callParameters.getMaxFeePerBlobGas().isPresent());
   }
 
-  private Transaction createTransactionForSimulation(
+  private Transaction createTransactionForFeeEstimation(
       final CallParameter callParameters,
       final long gasEstimation,
       final Wei baseFee,
@@ -556,13 +592,20 @@ public class LineaEstimateGas {
   }
 
   private LineCountingTracer createLineCountingTracer(
-      final ProcessableBlockHeader pendingBlockHeader, final BigInteger chainId) {
+      final ProcessableBlockHeader pendingBlockHeader, final BlockchainService blockchainService) {
+    final Fork forkId =
+        fromMainnetHardforkIdToTracerFork(
+            (HardforkId.MainnetHardforkId)
+                blockchainService.getNextBlockHardforkId(
+                    blockchainService.getChainHeadHeader(), Instant.now().getEpochSecond()));
+
     final var lineCountingTracer =
         tracerConfiguration.isLimitless()
-            ? new ZkCounter(l1L2BridgeConfiguration)
-            : new ZkTracer(LONDON, l1L2BridgeConfiguration, chainId);
+            ? new ZkCounter(l1L2BridgeConfiguration, forkId)
+            : new ZkTracer(forkId, l1L2BridgeConfiguration, blockchainService.getChainId().get());
     lineCountingTracer.traceStartConflation(1L);
-    lineCountingTracer.traceStartBlock(pendingBlockHeader, pendingBlockHeader.getCoinbase());
+    lineCountingTracer.traceStartBlock(
+        worldStateService.getWorldView(), pendingBlockHeader, pendingBlockHeader.getCoinbase());
     return lineCountingTracer;
   }
 

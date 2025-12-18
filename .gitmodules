@@ -18,3 +18,6 @@
 	path = status-network-contracts/lib/openzeppelin-contracts-upgradeable
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable
     branch = v4.8.3
+[submodule "linea-constraints"]
+	path = tracer/linea-constraints
+	url = https://github.com/Consensys/linea-constraints

@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.util.List;
-import linea.plugin.acc.test.LineaPluginTestBase;
+import linea.plugin.acc.test.LineaPluginPoSTestBase;
 import linea.plugin.acc.test.TestCommandLineOptionsBuilder;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.datatypes.Wei;
@@ -33,7 +33,7 @@ import org.web3j.protocol.core.Request;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
 import org.web3j.utils.Numeric;
 
-public class ExtraDataPricingTest extends LineaPluginTestBase {
+public class ExtraDataPricingTest extends LineaPluginPoSTestBase {
   protected static final Wei MIN_GAS_PRICE = Wei.of(1_000_000_000);
   protected static final int WEI_IN_KWEI = 1000;
 
@@ -120,17 +120,18 @@ public class ExtraDataPricingTest extends LineaPluginTestBase {
     final var fixedCostMetric =
         getMetricValue(PRICING_CONF, "values", List.of(entry("field", "fixed_cost_wei")));
 
-    assertThat(fixedCostMetric).isEqualTo(MIN_GAS_PRICE.multiply(2).getValue().doubleValue());
+    assertThat(fixedCostMetric)
+        .isEqualTo(MIN_GAS_PRICE.multiply(2).getAsBigInteger().doubleValue());
 
     final var variableCostMetric =
         getMetricValue(PRICING_CONF, "values", List.of(entry("field", "variable_cost_wei")));
 
-    assertThat(variableCostMetric).isEqualTo(MIN_GAS_PRICE.getValue().doubleValue());
+    assertThat(variableCostMetric).isEqualTo(MIN_GAS_PRICE.getAsBigInteger().doubleValue());
 
     final var ethGasPriceMetric =
         getMetricValue(PRICING_CONF, "values", List.of(entry("field", "eth_gas_price_wei")));
 
-    assertThat(ethGasPriceMetric).isEqualTo(MIN_GAS_PRICE.getValue().doubleValue());
+    assertThat(ethGasPriceMetric).isEqualTo(MIN_GAS_PRICE.getAsBigInteger().doubleValue());
   }
 
   static class MinerSetExtraDataRequest implements Transaction<Boolean> {

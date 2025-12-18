@@ -67,6 +67,7 @@ public class LineaEstimateGasEndpointPlugin extends AbstractLineaRequiredPlugin 
         profitabilityConfiguration(),
         l1L2BridgeSharedConfiguration(),
         tracerConfiguration(),
+        worldStateService,
         sharedServiceManager.getDenyListManager(),
         sharedServiceManager.getKarmaServiceClient());
   }
