@@ -210,7 +210,7 @@ contract DeployProtocolScript is BaseScript {
         // whitelist reward distributors for transferring Karma tokens
         karma.setAllowedToTransfer(address(stakeManager), true);
         console.log("Whitelisted reward distributor (StakeManager)", address(stakeManager), "for transfer");
-        karma.setAllowedToTransfer(address(stakeManager), true);
+        karma.setAllowedToTransfer(address(simpleKarmaDistributor), true);
         console.log(
             "Whitelisted reward distributor (SimpleKarmaDistributor)", address(simpleKarmaDistributor), "for transfer"
         );
