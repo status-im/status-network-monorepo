@@ -40,4 +40,10 @@ interface IRewardDistributor {
      * @return Amount of reward tokens redeemed.
      */
     function redeemRewards(address account) external returns (uint256);
+
+    /**
+     * @notice Returns whether the distributor is currently paused.
+     * @return True if the distributor is paused, false otherwise.
+     */
+    function isPaused() external view returns (bool);
 }

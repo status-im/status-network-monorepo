@@ -153,9 +153,10 @@ When an account with the slasher role initiates a slash:
 1. **Balance Calculation**: The system calculates the account's total balance, including both actual tokens and virtual
    rewards from all registered reward distributors.
 
-2. **Virtual Reward Redemption**: Before slashing, the system automatically redeems all virtual rewards from all reward
-   distributors, converting them into actual Karma tokens. This is necessary as virtual Karma cannot be burned
-   otherwise.
+2. **Virtual Reward Redemption**: Before slashing, the system automatically redeems all virtual rewards from all
+   **non-paused** reward distributors, converting them into actual Karma tokens. This is necessary as virtual Karma
+   cannot be burned otherwise. **Paused distributors are skipped** during this redemption process, meaning their virtual
+   rewards remain unredeemed and are not included in the slash calculation.
 
 3. **Slash Amount Calculation**: The slash amount is calculated as a percentage of the total balance (configurable by
    the admin, defaulting to 50%). There is a minimum slash amount of 1 KARMA to ensure meaningful penalties.

@@ -339,7 +339,10 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
         // first, redeem all rewards from reward distributors
         for (uint256 i = 0; i < rewardDistributors.length(); i++) {
             address distributor = rewardDistributors.at(i);
-            IRewardDistributor(distributor).redeemRewards(account);
+            // skip paused distributors
+            if (!IRewardDistributor(distributor).isPaused()) {
+                IRewardDistributor(distributor).redeemRewards(account);
+            }
         }
 
         uint256 currentBalance = super.balanceOf(account);

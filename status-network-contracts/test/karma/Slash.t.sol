@@ -137,4 +137,61 @@ contract SlashTest is KarmaTest {
             karma.balanceOf(rewardRecipient), rewardAmount, "Reward recipient should receive 10% of slashed amount"
         );
     }
+
+    function test_SlashSkipsPausedDistributor() public {
+        uint256 actualBalance = 500e18;
+        uint256 distributor1Balance = 1000e18;
+        uint256 distributor2Balance = 2000e18;
+        uint256 totalBalance = actualBalance + distributor1Balance + distributor2Balance;
+
+        // Set up the balances
+        _mintKarmaToAccount(alice, actualBalance);
+        distributor1.setUserKarmaShare(alice, distributor1Balance);
+        distributor2.setUserKarmaShare(alice, distributor2Balance);
+
+        // Give distributors enough tokens to redeem
+        vm.startPrank(owner);
+        karma.mint(address(distributor1), distributor1Balance);
+        karma.mint(address(distributor2), distributor2Balance);
+        vm.stopPrank();
+
+        // Verify initial balance
+        assertEq(karma.balanceOf(alice), totalBalance);
+
+        // Pause distributor1
+        distributor1.setPaused(true);
+
+        address rewardRecipient = makeAddr("rewardRecipient");
+
+        // Slash alice
+        vm.prank(slasher);
+        uint256 slashedAmount = karma.slash(alice, rewardRecipient);
+
+        // Verify that distributor1's rewards were NOT redeemed (still has karma share)
+        assertEq(
+            distributor1.userKarmaShare(alice), distributor1Balance, "Paused distributor should not have redeemed"
+        );
+
+        // Verify that distributor2's rewards WERE redeemed (karma share reset to 0)
+        assertEq(distributor2.userKarmaShare(alice), 0, "Unpaused distributor should have redeemed");
+
+        // Calculate expected slash: 50% of (actualBalance + distributor2Balance)
+        // Note: distributor1's balance is NOT redeemed because it's paused
+        uint256 balanceAvailableForSlash = actualBalance + distributor2Balance;
+        uint256 expectedSlash = (balanceAvailableForSlash * karma.slashPercentage()) / 10_000;
+        assertEq(slashedAmount, expectedSlash, "Should slash 50% of available (non-paused) balance");
+
+        // Calculate reward (10% of slashed amount)
+        uint256 rewardAmount = (slashedAmount * karma.slashRewardPercentage()) / 10_000;
+
+        // Verify alice's balance after slash (includes unredeemed distributor1 balance)
+        assertEq(
+            karma.balanceOf(alice),
+            distributor1Balance + balanceAvailableForSlash - expectedSlash,
+            "Alice should still have paused distributor balance plus remaining balance"
+        );
+
+        // Verify reward recipient received the slash reward
+        assertEq(karma.balanceOf(rewardRecipient), rewardAmount, "Reward recipient should receive slash reward");
+    }
 }
