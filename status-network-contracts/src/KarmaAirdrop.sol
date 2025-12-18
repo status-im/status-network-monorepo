@@ -148,7 +148,10 @@ contract KarmaAirdrop is Ownable2Step, Pausable {
 
         // If the account has no karma balance before this claim, delegate to the default delegatee
         if (IERC20(TOKEN).balanceOf(account) == amount) {
-            IVotes(TOKEN).delegateBySig(DEFAULT_DELEGATEE, nonce, expiry, v, r, s);
+            // We're try/catch'ing this call as a griefer could block claims by front-running
+            // the call to `claim() and calling `delegateBySig` on behalf of the account that tries to claim, which
+            // will consume the nonce and make the signature invalid.
+            try IVotes(TOKEN).delegateBySig(DEFAULT_DELEGATEE, nonce, expiry, v, r, s) { } catch { }
         }
 
         emit Claimed(index, account, amount);
