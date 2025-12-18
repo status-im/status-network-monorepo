@@ -10,6 +10,9 @@
   - [Virtual vs Actual Karma](#virtual-vs-actual-karma)
   - [Why This Design?](#why-this-design)
   - [Balance Calculation Example](#balance-calculation-example)
+- [Removing Reward Distributors](#removing-reward-distributors)
+  - [What Happens During Removal](#what-happens-during-removal)
+  - [Implications](#implications)
 - [Slashing](#slashing)
 - [Supply and Balance Calculation](#supply-and-balance-calculation)
 - [Sources of Karma Tokens](#sources-of-karma-tokens)
@@ -109,6 +112,24 @@ Consider an account that has:
 
 The account's total Karma balance will show 180 (100 + 50 + 30), but only the 100 actual tokens can be used for voting.
 The contract provides separate functions to query actual token balances versus total balances including virtual rewards.
+
+## Removing Reward Distributors
+
+The Karma contract allows the owner to remove reward distributors from the system. When a reward distributor is removed,
+an important cleanup operation occurs to maintain the integrity of the Karma supply.
+
+### What Happens During Removal
+
+When a reward distributor is removed all remaining Karma tokens held by the distributor are permanently burned. This
+includes any rewards that were minted to the distributor but not yet converted to virtual rewards or claimed by users.
+
+### Implications
+
+When planning to remove a reward distributor, operators should be aware that:
+
+- Any Karma tokens held by the distributor that haven't been converted to virtual rewards will be permanently burned.
+- Users should be given adequate notice to claim their virtual rewards before a distributor is removed.
+- The removal operation is irreversible once executed.
 
 ## Slashing
 

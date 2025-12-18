@@ -6,6 +6,7 @@
 - [Purpose and Design Goals](#purpose-and-design-goals)
 - [Virtual vs Actual Karma](#virtual-vs-actual-karma)
   - [Redeeming rewards](#redeeming-rewards)
+- [Removing Reward Distributors](#removing-reward-distributors)
 
 ## Overview
 
@@ -61,3 +62,13 @@ gracefully and never reverts, even when:
 - The account has no rewards to redeem (should return 0)
 - Internal state is inconsistent (should handle gracefully)
 - External calls fail (should not propagate reverts)
+
+## Removing Reward Distributors
+
+When a reward distributor is removed from the Karma system, the Karma contract performs a cleanup operation. All actual
+Karma tokens held by the distributor contract are permanently burned. This includes any rewards that were minted to the
+distributor but not yet converted to virtual rewards or claimed by users.
+
+Operators should ensure users have adequate notice to claim their virtual rewards before a distributor is removed, as
+any unclaimed backing tokens will be burned during the removal process. For more details, see the
+[Removing Reward Distributors](karma.md#removing-reward-distributors) section in the Karma documentation.
