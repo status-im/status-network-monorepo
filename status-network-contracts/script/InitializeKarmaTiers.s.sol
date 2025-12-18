@@ -16,21 +16,28 @@ contract InitializeKarmaTiersScript is Script {
         console.log("Current tier count:", karmaTiers.getTierCount());
 
         // Build tiers array - MUST start from minKarma=0 for contiguity
-        KarmaTiers.Tier[] memory tiers = new KarmaTiers.Tier[](10);
+        KarmaTiers.Tier[] memory tiers = new KarmaTiers.Tier[](11);
 
         // Tier 0: 0 karma = 0 tx (no gasless for users without karma)
-        tiers[0] = KarmaTiers.Tier({ minKarma: 0, maxKarma: 1, name: "entry", txPerEpoch: 2 });
-        tiers[1] = KarmaTiers.Tier({ minKarma: 2, maxKarma: 49, name: "newbie", txPerEpoch: 6 });
-        tiers[2] = KarmaTiers.Tier({ minKarma: 50, maxKarma: 499, name: "basic", txPerEpoch: 16 });
-        tiers[3] = KarmaTiers.Tier({ minKarma: 500, maxKarma: 4999, name: "active", txPerEpoch: 96 });
-        tiers[4] = KarmaTiers.Tier({ minKarma: 5000, maxKarma: 19_999, name: "regular", txPerEpoch: 480 });
-        tiers[5] = KarmaTiers.Tier({ minKarma: 20_000, maxKarma: 99_999, name: "power", txPerEpoch: 960 });
-        tiers[6] = KarmaTiers.Tier({ minKarma: 100_000, maxKarma: 499_999, name: "pro", txPerEpoch: 10_080 });
+        tiers[0] = KarmaTiers.Tier({ name: "none", minKarma: 0, maxKarma: 1 ether - 1, txPerEpoch: 0 });
+        tiers[1] = KarmaTiers.Tier({ name: "entry", minKarma: 1 ether, maxKarma: 1 ether, txPerEpoch: 2 });
+        tiers[2] = KarmaTiers.Tier({ name: "newbie", minKarma: 1 ether + 1, maxKarma: 50 ether - 1, txPerEpoch: 6 });
+        tiers[3] = KarmaTiers.Tier({ name: "basic", minKarma: 50 ether, maxKarma: 500 ether - 1, txPerEpoch: 16 });
+        tiers[4] = KarmaTiers.Tier({ name: "active", minKarma: 500 ether, maxKarma: 5000 ether - 1, txPerEpoch: 96 });
+        tiers[5] =
+            KarmaTiers.Tier({ name: "regular", minKarma: 5000 ether, maxKarma: 20_000 ether - 1, txPerEpoch: 480 });
+        tiers[6] =
+            KarmaTiers.Tier({ name: "power", minKarma: 20_000 ether, maxKarma: 100_000 ether - 1, txPerEpoch: 960 });
         tiers[7] =
-            KarmaTiers.Tier({ minKarma: 500_000, maxKarma: 4_999_999, name: "high-throughput", txPerEpoch: 108_000 });
-        tiers[8] = KarmaTiers.Tier({ minKarma: 5_000_000, maxKarma: 9_999_999, name: "s-tier", txPerEpoch: 240_000 });
+            KarmaTiers.Tier({ name: "pro", minKarma: 100_000 ether, maxKarma: 500_000 ether - 1, txPerEpoch: 10_080 });
+        tiers[8] = KarmaTiers.Tier({
+            name: "high-throughput", minKarma: 500_000 ether, maxKarma: 5_000_000 ether - 1, txPerEpoch: 108_000
+        });
         tiers[9] = KarmaTiers.Tier({
-            minKarma: 10_000_000, maxKarma: type(uint256).max, name: "legendary", txPerEpoch: 480_000
+            name: "s-tier", minKarma: 5_000_000 ether, maxKarma: 10_000_000 ether - 1, txPerEpoch: 240_000
+        });
+        tiers[10] = KarmaTiers.Tier({
+            name: "legendary", minKarma: 10_000_000 ether, maxKarma: type(uint256).max, txPerEpoch: 480_000
         });
 
         vm.startBroadcast();
