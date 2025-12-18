@@ -327,12 +327,6 @@ print-all-contract-addresses:
 	echo "  RLN: $$RLN" && \
 	echo "  KarmaNFT: $$KARMA_NFT"
 	@echo "=========================="
-=======
-		$(MAKE) -j7 $(LINEA_L1_CONTRACT_DEPLOYMENT_TARGET) deploy-token-bridge-l1 deploy-l1-test-erc20 deploy-l2messageservice deploy-token-bridge-l2 deploy-l2-test-erc20 deploy-l2-evm-opcode-tester; \
-	else \
-		$(MAKE) -j6 $(LINEA_L1_CONTRACT_DEPLOYMENT_TARGET) deploy-l2messageservice; \
-	fi
->>>>>>> linea-upstream/main
 
 
 deploy-l2-evm-opcode-tester:
