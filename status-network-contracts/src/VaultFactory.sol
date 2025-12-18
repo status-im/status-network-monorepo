@@ -47,9 +47,7 @@ contract VaultFactory is Ownable {
     address public vaultImplementation;
 
     modifier onlyStakeManager() {
-        if (msg.sender != address(stakeManager)) {
-            revert VaultFactory__Unauthorized();
-        }
+        _onlyStakeManager(msg.sender);
         _;
     }
 
@@ -124,5 +122,11 @@ contract VaultFactory is Ownable {
         clone = StakeVault(Clones.clone(vaultImplementation));
         clone.initialize(owner, address(stakeManager));
         emit VaultCreated(address(clone), owner);
+    }
+
+    function _onlyStakeManager(address sender) internal view {
+        if (sender != address(stakeManager)) {
+            revert VaultFactory__Unauthorized();
+        }
     }
 }

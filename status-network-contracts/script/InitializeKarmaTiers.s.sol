@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import "forge-std/Script.sol";
-import "../src/KarmaTiers.sol";
+import { console } from "forge-std/Test.sol";
+import { Script } from "forge-std/Script.sol";
+import { KarmaTiers } from "../src/KarmaTiers.sol";
 
 contract InitializeKarmaTiersScript is Script {
     function run() external {
