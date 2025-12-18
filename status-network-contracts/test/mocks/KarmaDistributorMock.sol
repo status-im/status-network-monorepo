@@ -14,6 +14,8 @@ contract KarmaDistributorMock is IRewardDistributor {
 
     IERC20 rewardToken;
 
+    bool public paused;
+
     constructor(IERC20 _rewardToken) {
         rewardToken = _rewardToken;
     }
@@ -47,5 +49,13 @@ contract KarmaDistributorMock is IRewardDistributor {
         // Reset the user's karma share after redemption
         userKarmaShare[account] = 0;
         return amount;
+    }
+
+    function isPaused() external view override returns (bool) {
+        return paused;
+    }
+
+    function setPaused(bool _paused) external {
+        paused = _paused;
     }
 }

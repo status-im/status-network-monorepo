@@ -180,6 +180,15 @@ contract SimpleKarmaDistributor is Initializable, UUPSUpgradeable, AccessControl
     }
 
     /**
+     * @notice Returns whether the distributor is currently paused.
+     * @dev SimpleKarmaDistributor does not have pause functionality, so always returns false.
+     * @return Always returns false.
+     */
+    function isPaused() external pure returns (bool) {
+        return false;
+    }
+
+    /**
      * @inheritdoc UUPSUpgradeable
      */
     function _authorizeUpgrade(address) internal view override {
