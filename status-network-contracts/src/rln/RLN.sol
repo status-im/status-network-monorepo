@@ -13,7 +13,6 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
     error RLN__MemberNotFound();
     error RLN__IdCommitmentAlreadyRegistered();
-    error RLN__SetIsFull();
     error RLN__Unauthorized();
     error RLN__InvalidCommitment();
     error RLN__RevealWindowNotStarted();
@@ -43,9 +42,6 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
 
     bytes32 public constant SLASHER_ROLE = keccak256("SLASHER_ROLE");
     bytes32 public constant REGISTER_ROLE = keccak256("REGISTER_ROLE");
-
-    /// @dev Registry set size (1 << DEPTH).
-    uint256 public SET_SIZE;
 
     /// @dev Current index where identityCommitment will be stored.
     uint256 public identityCommitmentIndex;
@@ -78,14 +74,12 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
     /// @param _owner: address of the owner of the contract;
     /// @param _slasher: address of the slasher;
     /// @param _register: address of the register;
-    /// @param depth: depth of the merkle tree;
     /// @param _token: address of the ERC20 contract;
     /// @param _poseidonHasher: address of the PoseidonHasher contract;
     function initialize(
         address _owner,
         address _slasher,
         address _register,
-        uint256 depth,
         address _token,
         address _poseidonHasher
     )
@@ -98,7 +92,6 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
         _setupRole(SLASHER_ROLE, _slasher);
         _setupRole(REGISTER_ROLE, _register);
         /// forge-lint: disable-next-line(incorrect-shift)
-        SET_SIZE = 1 << depth;
 
         karma = Karma(_token);
         poseidonHasher = IPoseidonHasher(_poseidonHasher);
@@ -148,9 +141,6 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
     /// @param identityCommitment: `identityCommitment`;
     function register(uint256 identityCommitment, address user) external onlyRole(REGISTER_ROLE) {
         uint256 index = identityCommitmentIndex;
-        if (index >= SET_SIZE) {
-            revert RLN__SetIsFull();
-        }
         if (members[identityCommitment].userAddress != address(0)) {
             revert RLN__IdCommitmentAlreadyRegistered();
         }

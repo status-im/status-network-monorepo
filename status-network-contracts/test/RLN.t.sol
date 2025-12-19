@@ -18,9 +18,6 @@ contract RLNTest is Test {
     RLN public rln;
     PoseidonHasher public poseidonHasher;
 
-    uint256 private constant DEPTH = 2; // for most tests
-    uint256 private constant SMALL_DEPTH = 1; // for "full" test
-
     // Sample private keys (32 bytes)
     bytes32 private privateKey0 = bytes32(uint256(1234));
     bytes32 private privateKey1 = bytes32(uint256(5678));
@@ -68,8 +65,8 @@ contract RLNTest is Test {
         registerAddr = makeAddr("register");
         slasherAddr = makeAddr("slasher");
 
-        // Deploy RLN via UUPS proxy with DEPTH = 2
-        rln = _deployRLN(DEPTH, karma);
+        // Deploy RLN via UUPS proxy
+        rln = _deployRLN(karma);
 
         // Sanity‐check that roles were assigned correctly
         assertTrue(rln.hasRole(rln.DEFAULT_ADMIN_ROLE(), adminAddr));
@@ -86,9 +83,9 @@ contract RLNTest is Test {
     }
 
     /// @dev Deploys a new RLN instance (behind ERC1967Proxy).
-    function _deployRLN(uint256 depth, Karma karmaToken) internal returns (RLN) {
+    function _deployRLN(Karma karmaToken) internal returns (RLN) {
         bytes memory initData = abi.encodeCall(
-            RLN.initialize, (adminAddr, slasherAddr, registerAddr, depth, address(karmaToken), address(poseidonHasher))
+            RLN.initialize, (adminAddr, slasherAddr, registerAddr, address(karmaToken), address(poseidonHasher))
         );
         address impl = address(new RLN());
         address proxy = address(new ERC1967Proxy(impl, initData));
@@ -98,9 +95,6 @@ contract RLNTest is Test {
     /* ---------- INITIAL STATE ---------- */
 
     function test_initial_state() public view {
-        // SET_SIZE should be 2^DEPTH = 4
-        assertEq(rln.SET_SIZE(), uint256(1) << DEPTH);
-
         // No identities registered yet
         assertEq(rln.identityCommitmentIndex(), 0);
 
@@ -138,24 +132,6 @@ contract RLNTest is Test {
         (address u1, uint256 i1) = _memberData(identityCommitment1);
         assertEq(u1, user2Addr);
         assertEq(i1, indexBefore);
-    }
-
-    function test_register_fails_when_index_exceeds_set_size() public {
-        // Deploy a small RLN with depth = 1 => SET_SIZE = 2
-        RLN smallRLN = _deployRLN(SMALL_DEPTH, karma);
-        address smallRegister = registerAddr;
-
-        // Fill up both slots
-        vm.startPrank(smallRegister);
-        smallRLN.register(identityCommitment0, user1Addr);
-        smallRLN.register(identityCommitment1, user2Addr);
-        vm.stopPrank();
-
-        // Now the set is full (2 members). Attempt a third registration.
-        vm.startPrank(smallRegister);
-        vm.expectRevert(RLN.RLN__SetIsFull.selector);
-        smallRLN.register(identityCommitment2, user3Addr);
-        vm.stopPrank();
     }
 
     function test_register_fails_when_duplicate_identity_commitment() public {
