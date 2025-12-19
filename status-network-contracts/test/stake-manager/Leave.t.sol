@@ -127,7 +127,7 @@ contract LeaveTest is StakeManagerTest {
         assertEq(aliceRewardsBeforePause, 500e18, "Alice should have half the rewards (5 days)");
 
         // Update global state to reflect accrued rewards
-        streamer.updateGlobalState();
+        streamer.updateRewards();
         // Pause the system
         vm.prank(guardian);
         streamer.pause();

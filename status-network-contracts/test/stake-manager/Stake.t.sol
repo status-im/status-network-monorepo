@@ -159,7 +159,7 @@ contract StakeTest is StakeManagerTest {
         uint256 currentTime = vm.getBlockTimestamp();
         vm.warp(currentTime + (YEAR));
 
-        streamer.updateGlobalState();
+        streamer.updateRewards();
         streamer.updateVault(vaults[alice]);
 
         uint256 expectedMPIncrease = stakeAmount; // 1 year passed, 1 MP accrued per token staked
@@ -192,7 +192,7 @@ contract StakeTest is StakeManagerTest {
         currentTime = vm.getBlockTimestamp();
         vm.warp(currentTime + (YEAR / 2));
 
-        streamer.updateGlobalState();
+        streamer.updateRewards();
         streamer.updateVault(vaults[alice]);
 
         expectedMPIncrease = stakeAmount / 2; // 1/2 year passed, 1/2 MP accrued per token staked
