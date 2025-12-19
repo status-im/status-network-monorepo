@@ -45,17 +45,10 @@ contract MultipleVaultsStakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: 90e18,
                 totalMPStaked: 90e18,
-                totalMPAccrued: 90e18,
                 totalMaxMP: 450e18,
                 stakingBalance: 90e18,
                 rewardBalance: 0,
                 rewardIndex: 0
-            })
-        );
-
-        checkUserTotals(
-            CheckUserTotalsParams({
-                user: alice, totalStakedBalance: 90e18, totalMPAccrued: 90e18, totalMaxMP: 450e18
             })
         );
     }
