@@ -20,7 +20,6 @@ contract StackOverflowStakeManager is UUPSUpgradeable, IStakeManager, TrustedCod
     uint8 public constant MAX_VAULTS_PER_USER = 3;
 
     uint256 public totalStaked;
-    uint256 public totalMaxMP;
     uint256 public rewardIndex;
     uint256 public accountedRewards;
     uint256 public lastMPUpdatedTime;

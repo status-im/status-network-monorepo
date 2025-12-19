@@ -34,12 +34,7 @@ contract UnstakeTest is StakeTest {
 
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 2e18,
-                totalMPStaked: 2e18,
-                totalMaxMP: 10e18,
-                stakingBalance: 2e18,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 2e18, totalMPStaked: 2e18, stakingBalance: 2e18, rewardBalance: 0, rewardIndex: 0
             })
         );
 
@@ -60,7 +55,7 @@ contract UnstakeTest is StakeTest {
 
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 0, totalMPStaked: 0, totalMaxMP: 0, stakingBalance: 0, rewardBalance: 0, rewardIndex: 0
+                totalStaked: 0, totalMPStaked: 0, stakingBalance: 0, rewardBalance: 0, rewardIndex: 0
             })
         );
     }
@@ -76,12 +71,7 @@ contract UnstakeTest is StakeTest {
 
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 10e18,
-                totalMPStaked: 20e18,
-                totalMaxMP: 50e18,
-                stakingBalance: 10e18,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 10e18, totalMPStaked: 20e18, stakingBalance: 10e18, rewardBalance: 0, rewardIndex: 0
             })
         );
 
@@ -92,7 +82,6 @@ contract UnstakeTest is StakeTest {
             CheckStreamerParams({
                 totalStaked: 5e18, // 10 - 5
                 totalMPStaked: 10e18,
-                totalMaxMP: 25e18,
                 stakingBalance: 5e18,
                 rewardBalance: 0,
                 rewardIndex: 0
@@ -121,7 +110,6 @@ contract UnstakeTest is StakeTest {
                 totalStaked: stakeAmount,
                 totalMPStaked: (stakeAmount + expectedBonusMP) + stakeAmount,
                 // `stakeAmount` after 1 year
-                totalMaxMP: _maxTotalMP(stakeAmount, lockUpPeriod),
                 stakingBalance: 10e18,
                 rewardBalance: 0,
                 rewardIndex: 0
@@ -137,7 +125,6 @@ contract UnstakeTest is StakeTest {
             CheckStreamerParams({
                 totalStaked: newBalance,
                 totalMPStaked: expectedTotalMP,
-                totalMaxMP: _maxTotalMP(newBalance, lockUpPeriod),
                 stakingBalance: newBalance,
                 rewardBalance: 0,
                 rewardIndex: 0
@@ -154,7 +141,6 @@ contract UnstakeTest is StakeTest {
             CheckStreamerParams({
                 totalStaked: 2e18,
                 totalMPStaked: 2e18,
-                totalMaxMP: 10e18,
                 stakingBalance: 2e18,
                 rewardBalance: 0, // rewards are all paid out to alice
                 rewardIndex: 50e18
@@ -240,7 +226,6 @@ contract UnstakeTest is StakeTest {
                 assertEq(vaultData.maxMP, predictedTotalMaxMP[stage], "stage 1: wrong account max MP");
 
                 assertEq(streamer.totalStaked(), totalStaked[stage], "stage 1: wrong total staked");
-                assertEq(streamer.totalMaxMP(), predictedTotalMaxMP[stage], "stage 1: wrong totalMaxMP MP");
             }
         }
 
@@ -254,7 +239,6 @@ contract UnstakeTest is StakeTest {
             assertEq(vaultData.maxMP, predictedTotalMaxMP[stage], "stage 2: wrong account max MP");
 
             assertEq(streamer.totalStaked(), totalStaked[stage], "stage 2: wrong total staked");
-            assertEq(streamer.totalMaxMP(), predictedTotalMaxMP[stage], "stage 2: wrong totalMaxMP MP");
         }
 
         stage++; // third stage: reduced stake
@@ -266,7 +250,6 @@ contract UnstakeTest is StakeTest {
             assertEq(vaultData.maxMP, predictedTotalMaxMP[stage], "stage 3: wrong account max MP");
 
             assertEq(streamer.totalStaked(), totalStaked[stage], "stage 3: wrong total staked");
-            assertEq(streamer.totalMaxMP(), predictedTotalMaxMP[stage], "stage 3: wrong totalMaxMP MP");
         }
     }
 
@@ -278,12 +261,7 @@ contract UnstakeTest is StakeTest {
 
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 20e18,
-                totalMPStaked: 20e18,
-                totalMaxMP: 100e18,
-                stakingBalance: 20e18,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 20e18, totalMPStaked: 20e18, stakingBalance: 20e18, rewardBalance: 0, rewardIndex: 0
             })
         );
 
@@ -323,7 +301,6 @@ contract UnstakeTest is StakeTest {
             CheckStreamerParams({
                 totalStaked: 30e18,
                 totalMPStaked: 30e18,
-                totalMaxMP: 150e18,
                 stakingBalance: 30e18,
                 // alice owned a 25% of the pool, so 25% of the rewards are paid out to alice (250)
                 rewardBalance: 750e18,
@@ -350,7 +327,6 @@ contract UnstakeTest is StakeTest {
             CheckStreamerParams({
                 totalStaked: 20e18,
                 totalMPStaked: 20e18,
-                totalMaxMP: 100e18,
                 stakingBalance: 20e18,
                 rewardBalance: 0, // bob should've now gotten the rest of the rewards
                 rewardIndex: 125e17
@@ -374,12 +350,7 @@ contract UnstakeTest is StakeTest {
 
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 0,
-                totalMPStaked: 0,
-                totalMaxMP: 0,
-                stakingBalance: 0,
-                rewardBalance: 0,
-                rewardIndex: 125e17
+                totalStaked: 0, totalMPStaked: 0, stakingBalance: 0, rewardBalance: 0, rewardIndex: 125e17
             })
         );
 

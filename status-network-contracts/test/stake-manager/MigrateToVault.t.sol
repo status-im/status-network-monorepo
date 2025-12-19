@@ -71,7 +71,6 @@ contract StakeVaultMigrateToVaultTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: stakeAmount,
                 totalMPStaked: initialAccountMP,
-                totalMaxMP: initialMaxMP,
                 stakingBalance: stakeAmount,
                 rewardBalance: 0,
                 rewardIndex: 0
@@ -102,7 +101,6 @@ contract StakeVaultMigrateToVaultTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: stakeAmount,
                 totalMPStaked: stakeAmount * 2,
-                totalMaxMP: initialMaxMP,
                 stakingBalance: stakeAmount,
                 rewardBalance: 0,
                 rewardIndex: 0
@@ -126,7 +124,6 @@ contract StakeVaultMigrateToVaultTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: stakeAmount,
                 totalMPStaked: initialAccountMP * 2,
-                totalMaxMP: initialMaxMP,
                 stakingBalance: stakeAmount,
                 rewardBalance: 0,
                 rewardIndex: 0

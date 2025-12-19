@@ -22,12 +22,7 @@ contract LeaveTest is StakeManagerTest {
 
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 100e18,
-                totalMPStaked: 100e18,
-                totalMaxMP: 500e18,
-                stakingBalance: 100e18,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 100e18, totalMPStaked: 100e18, stakingBalance: 100e18, rewardBalance: 0, rewardIndex: 0
             })
         );
 
@@ -37,7 +32,7 @@ contract LeaveTest is StakeManagerTest {
         // stake manager properly updates accounting
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 0, totalMPStaked: 0, totalMaxMP: 0, stakingBalance: 0, rewardBalance: 0, rewardIndex: 0
+                totalStaked: 0, totalMPStaked: 0, stakingBalance: 0, rewardBalance: 0, rewardIndex: 0
             })
         );
 
@@ -111,12 +106,7 @@ contract LeaveTest is StakeManagerTest {
 
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 100e18,
-                totalMPStaked: 100e18,
-                totalMaxMP: 500e18,
-                stakingBalance: 100e18,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 100e18, totalMPStaked: 100e18, stakingBalance: 100e18, rewardBalance: 0, rewardIndex: 0
             })
         );
 
@@ -175,12 +165,7 @@ contract LeaveTest is StakeManagerTest {
         _stake(alice, 100e18, 0);
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 100e18,
-                totalMPStaked: 100e18,
-                totalMaxMP: 500e18,
-                stakingBalance: 100e18,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 100e18, totalMPStaked: 100e18, stakingBalance: 100e18, rewardBalance: 0, rewardIndex: 0
             })
         );
 
@@ -204,12 +189,7 @@ contract LeaveTest is StakeManagerTest {
         _stake(alice, 100e18, 0);
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 100e18,
-                totalMPStaked: 100e18,
-                totalMaxMP: 500e18,
-                stakingBalance: 100e18,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 100e18, totalMPStaked: 100e18, stakingBalance: 100e18, rewardBalance: 0, rewardIndex: 0
             })
         );
 

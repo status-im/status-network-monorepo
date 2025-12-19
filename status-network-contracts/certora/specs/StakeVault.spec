@@ -16,7 +16,6 @@ methods {
   function StakeManagerHarness.isVaultTrusted(address) external returns (bool) envfree;
   function StakeManagerHarness.lastMPUpdatedTime() external returns (uint256) envfree;
   function StakeManagerHarness.totalStaked() external returns (uint256) envfree;
-  function StakeManagerHarness.totalMaxMP() external returns (uint256) envfree;
   function _.owner() external => DISPATCHER(true);
   function _.transfer(address, uint256) external => DISPATCHER(true);
   function _.balanceOf(address) external => DISPATCHER(true);
