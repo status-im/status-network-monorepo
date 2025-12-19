@@ -14,7 +14,7 @@ contract IntegrationTest is StakeManagerTest {
         // T0
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 0, totalMPStaked: 0, totalMaxMP: 0, stakingBalance: 0, rewardBalance: 0, rewardIndex: 0
+                totalStaked: 0, totalMPStaked: 0, stakingBalance: 0, rewardBalance: 0, rewardIndex: 0
             })
         );
 
@@ -24,12 +24,7 @@ contract IntegrationTest is StakeManagerTest {
 
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 10e18,
-                totalMPStaked: 10e18,
-                totalMaxMP: 50e18,
-                stakingBalance: 10e18,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 10e18, totalMPStaked: 10e18, stakingBalance: 10e18, rewardBalance: 0, rewardIndex: 0
             })
         );
 
@@ -51,12 +46,7 @@ contract IntegrationTest is StakeManagerTest {
 
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 40e18,
-                totalMPStaked: 40e18,
-                totalMaxMP: 200e18,
-                stakingBalance: 40e18,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 40e18, totalMPStaked: 40e18, stakingBalance: 40e18, rewardBalance: 0, rewardIndex: 0
             })
         );
 
@@ -94,7 +84,6 @@ contract IntegrationTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: 40e18,
                 totalMPStaked: 40e18,
-                totalMaxMP: 200e18,
                 stakingBalance: 40e18,
                 rewardBalance: 1000e18,
                 rewardIndex: 125e17 // 1000 rewards / (40 staked + 40 MP) = 12.5
@@ -136,7 +125,6 @@ contract IntegrationTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: 40e18,
                 totalMPStaked: 40e18,
-                totalMaxMP: 200e18,
                 stakingBalance: 40e18,
                 rewardBalance: 1000e18,
                 // 6 months passed and more MPs have been accrued
@@ -152,7 +140,6 @@ contract IntegrationTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: 30e18,
                 totalMPStaked: 30e18,
-                totalMaxMP: 150e18, // 200e18 - (10e18 * 5) = 150e18
                 stakingBalance: 30e18,
                 rewardBalance: 750e18,
                 rewardIndex: 10e18
@@ -192,7 +179,6 @@ contract IntegrationTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: 60e18,
                 totalMPStaked: 60e18,
-                totalMaxMP: 300e18,
                 stakingBalance: 60e18,
                 rewardBalance: 750e18,
                 rewardIndex: 10e18
@@ -246,7 +232,6 @@ contract IntegrationTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: 60e18,
                 totalMPStaked: 60e18,
-                totalMaxMP: 300e18,
                 stakingBalance: 60e18,
                 rewardBalance: 1750e18,
                 rewardIndex: 17_407_407_407_407_407_407
@@ -299,7 +284,6 @@ contract IntegrationTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: 30e18,
                 totalMPStaked: 30e18,
-                totalMaxMP: 150e18,
                 stakingBalance: 30e18,
                 // 1750 - (750 + 555.55) = 444.44
                 rewardBalance: 444_444_444_444_444_444_475,

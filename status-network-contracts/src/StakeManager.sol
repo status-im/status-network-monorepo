@@ -63,8 +63,6 @@ contract StakeManager is
     uint256 public totalMPStaked;
     /// @notice Total rewards accrued in the system.
     uint256 public totalRewardsAccrued;
-    /// @notice Total maximum multiplier points that can be accrued.
-    uint256 public totalMaxMP;
     /// @notice Time of the last multiplier points update.
     uint256 public lastMPUpdatedTime;
     /// @notice Index of the current reward period.
@@ -265,7 +263,6 @@ contract StakeManager is
         vault.mpAccrued += _deltaMpTotal;
 
         vault.maxMP += _deltaMPMax;
-        totalMaxMP += _deltaMPMax;
 
         vault.rewardIndex = lastRewardIndex;
 
@@ -310,7 +307,6 @@ contract StakeManager is
 
         // Update global state
         totalMPStaked += deltaMp;
-        totalMaxMP += deltaMp;
 
         vault.rewardIndex = lastRewardIndex;
 
@@ -610,7 +606,6 @@ contract StakeManager is
         vault.mpAccrued -= _deltaMpTotal;
 
         totalMPStaked -= _deltaMpTotal;
-        totalMaxMP -= _deltaMpMax;
         totalStaked -= amount;
     }
 

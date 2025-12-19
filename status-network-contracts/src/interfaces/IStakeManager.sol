@@ -144,12 +144,6 @@ interface IStakeManager is ITrustedCodehashAccess, IStakeConstants {
     function totalStaked() external view returns (uint256);
 
     /**
-     * @notice Returns the total max MP across all vaults.
-     * @return uint256 The total max MP.
-     */
-    function totalMaxMP() external view returns (uint256);
-
-    /**
      * @notice Returns the staked balance of a vault.
      * @param _vault The address of the vault to query.
      * @return _balance The staked balance of the vault.
