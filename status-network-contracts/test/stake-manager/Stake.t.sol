@@ -17,7 +17,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: 10e18,
                 totalMPStaked: 10e18,
-                totalMPAccrued: 10e18,
                 totalMaxMP: 50e18,
                 stakingBalance: 10e18,
                 rewardBalance: 0,
@@ -45,7 +44,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: 10e18,
                 totalMPStaked: 10e18,
-                totalMPAccrued: 10e18,
                 totalMaxMP: 50e18,
                 stakingBalance: 10e18,
                 rewardBalance: 0,
@@ -70,7 +68,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: 10e18,
                 totalMPStaked: 10e18,
-                totalMPAccrued: 10e18,
                 totalMaxMP: 50e18,
                 stakingBalance: 10e18,
                 rewardBalance: 1000e18,
@@ -92,7 +89,6 @@ contract StakeTest is StakeManagerTest {
                 totalStaked: stakeAmount,
                 // 10e18 + (amount * (lockPeriod * MAX_MULTIPLIER * SCALE_FACTOR / MAX_LOCKUP_PERIOD) / SCALE_FACTOR)
                 totalMPStaked: stakeAmount + expectedBonusMP,
-                totalMPAccrued: stakeAmount + expectedBonusMP,
                 totalMaxMP: expectedMaxTotalMP,
                 stakingBalance: stakeAmount,
                 rewardBalance: 0,
@@ -113,7 +109,6 @@ contract StakeTest is StakeManagerTest {
                 totalStaked: stakeAmount,
                 // 10 + (amount * (lockPeriod * MAX_MULTIPLIER * SCALE_FACTOR / MAX_LOCKUP_PERIOD) / SCALE_FACTOR)
                 totalMPStaked: stakeAmount + expectedBonusMP,
-                totalMPAccrued: stakeAmount + expectedBonusMP,
                 totalMaxMP: 90e18,
                 stakingBalance: stakeAmount,
                 rewardBalance: 0,
@@ -135,7 +130,6 @@ contract StakeTest is StakeManagerTest {
                 totalStaked: stakeAmount,
                 // 10 + (amount * (lockPeriod * MAX_MULTIPLIER * SCALE_FACTOR / MAX_LOCKUP_PERIOD) / SCALE_FACTOR)
                 totalMPStaked: stakeAmount + expectedBonusMP,
-                totalMPAccrued: stakeAmount + expectedBonusMP,
                 totalMaxMP: expectedMaxTotalMP,
                 stakingBalance: stakeAmount,
                 rewardBalance: 0,
@@ -155,7 +149,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: stakeAmount,
                 totalMPStaked: stakeAmount,
-                totalMPAccrued: stakeAmount,
                 totalMaxMP: totalMaxMP,
                 stakingBalance: stakeAmount,
                 rewardBalance: 0,
@@ -176,7 +169,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: stakeAmount,
                 totalMPStaked: totalMPAccrued,
-                totalMPAccrued: totalMPAccrued,
                 totalMaxMP: totalMaxMP,
                 stakingBalance: stakeAmount,
                 rewardBalance: 0,
@@ -210,7 +202,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: stakeAmount,
                 totalMPStaked: totalMPAccrued,
-                totalMPAccrued: totalMPAccrued,
                 totalMaxMP: totalMaxMP,
                 stakingBalance: stakeAmount,
                 rewardBalance: 0,
@@ -243,7 +234,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: stakeAmount,
                 totalMPStaked: stakeAmount,
-                totalMPAccrued: stakeAmount,
                 totalMaxMP: totalMaxMP,
                 stakingBalance: stakeAmount,
                 rewardBalance: 0,
@@ -274,7 +264,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: stakeAmount,
                 totalMPStaked: totalMaxMP,
-                totalMPAccrued: totalMaxMP,
                 totalMaxMP: totalMaxMP,
                 stakingBalance: stakeAmount,
                 rewardBalance: 0,
@@ -306,7 +295,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: stakeAmount,
                 totalMPStaked: totalMaxMP,
-                totalMPAccrued: totalMaxMP,
                 totalMaxMP: totalMaxMP,
                 stakingBalance: stakeAmount,
                 rewardBalance: 0,
@@ -352,7 +340,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: expectedStake,
                 totalMPStaked: expectedMP + expectedBonus,
-                totalMPAccrued: expectedMP + expectedBonus,
                 totalMaxMP: expectedMaxMP,
                 stakingBalance: stakeAmount,
                 rewardBalance: 0,
@@ -380,7 +367,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: expectedStake,
                 totalMPStaked: expectedMP + expectedBonus,
-                totalMPAccrued: expectedMP + expectedBonus,
                 totalMaxMP: expectedMaxMP,
                 stakingBalance: expectedStake,
                 rewardBalance: 0,
@@ -417,7 +403,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: 40e18,
                 totalMPStaked: 40e18,
-                totalMPAccrued: 40e18,
                 totalMaxMP: 200e18,
                 stakingBalance: 40e18,
                 rewardBalance: 0,
@@ -463,7 +448,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: 40e18,
                 totalMPStaked: 40e18,
-                totalMPAccrued: 40e18,
                 totalMaxMP: 200e18,
                 stakingBalance: 40e18,
                 rewardBalance: 0,
@@ -501,7 +485,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: 40e18,
                 totalMPStaked: 40e18,
-                totalMPAccrued: 40e18,
                 totalMaxMP: 200e18,
                 stakingBalance: 40e18,
                 rewardBalance: 1000e18,
@@ -533,7 +516,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: sumOfStakeAmount,
                 totalMPStaked: sumOfStakeAmount + sumOfExpectedBonusMP,
-                totalMPAccrued: sumOfStakeAmount + sumOfExpectedBonusMP,
                 totalMaxMP: expectedMaxTotalMP,
                 stakingBalance: sumOfStakeAmount,
                 rewardBalance: 0,
@@ -566,7 +548,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: sumOfStakeAmount,
                 totalMPStaked: sumOfStakeAmount + sumOfExpectedBonusMP,
-                totalMPAccrued: sumOfStakeAmount + sumOfExpectedBonusMP,
                 totalMaxMP: expectedMaxTotalMP,
                 stakingBalance: sumOfStakeAmount,
                 rewardBalance: 0,
@@ -604,7 +585,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: params.totalStaked,
                 totalMPStaked: params.totalMPAccrued,
-                totalMPAccrued: params.totalMPAccrued,
                 totalMaxMP: params.totalMaxMP,
                 stakingBalance: params.totalStaked,
                 rewardBalance: 0,
@@ -655,7 +635,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: params.totalStaked,
                 totalMPStaked: params.totalMPAccrued,
-                totalMPAccrued: params.totalMPAccrued,
                 totalMaxMP: params.totalMaxMP,
                 stakingBalance: params.totalStaked,
                 rewardBalance: 0,
@@ -706,7 +685,6 @@ contract StakeTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: params.totalStaked,
                 totalMPStaked: params.totalMPAccrued,
-                totalMPAccrued: params.totalMPAccrued,
                 totalMaxMP: params.totalMaxMP,
                 stakingBalance: params.totalStaked,
                 rewardBalance: 0,

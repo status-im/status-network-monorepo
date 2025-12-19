@@ -180,7 +180,6 @@ contract RewardsAccrualTest is StakeManagerTest {
         assertEq(streamer.totalMPStaked(), 100e18);
         assertEq(streamer.totalShares(), 200e18);
         assertEq(streamer.totalRewardsSupply(), 0);
-        assertEq(streamer.totalMP(), 100e18);
         assertEq(streamer.mpBalanceOf(vaults[alice]), 100e18);
         assertEq(streamer.mpAccruedOf(vaults[alice]), 100e18);
         assertEq(streamer.vaultShares(vaults[alice]), 200e18);
@@ -198,7 +197,6 @@ contract RewardsAccrualTest is StakeManagerTest {
         assertEq(streamer.totalShares(), 400e18);
         assertEq(streamer.totalRewardsSupply(), 500e18);
         // totalMP: 200 + 50 accrued by Alice (not stake yet)
-        assertEq(streamer.totalMP(), 250e18);
         assertEq(streamer.mpBalanceOf(vaults[alice]), 150e18);
         assertEq(streamer.mpAccruedOf(vaults[alice]), 100e18);
         assertEq(streamer.vaultShares(vaults[alice]), 200e18);
@@ -214,7 +212,6 @@ contract RewardsAccrualTest is StakeManagerTest {
         assertEq(streamer.totalMPStaked(), 200e18);
         assertEq(streamer.totalShares(), 400e18);
         assertEq(streamer.totalRewardsSupply(), 1000e18);
-        assertEq(streamer.totalMP(), 350e18);
         assertEq(streamer.mpBalanceOf(vaults[alice]), 200e18);
         assertEq(streamer.mpAccruedOf(vaults[alice]), 100e18);
         assertEq(streamer.vaultShares(vaults[alice]), 200e18);
@@ -230,7 +227,6 @@ contract RewardsAccrualTest is StakeManagerTest {
         assertEq(streamer.totalMPStaked(), 200e18);
         assertEq(streamer.totalShares(), 400e18);
         assertEq(streamer.totalRewardsSupply(), 1000e18);
-        assertEq(streamer.totalMP(), 550e18);
         assertEq(streamer.mpBalanceOf(vaults[alice]), 300e18);
         assertEq(streamer.mpAccruedOf(vaults[alice]), 100e18);
         assertEq(streamer.vaultShares(vaults[alice]), 200e18);
@@ -246,7 +242,6 @@ contract RewardsAccrualTest is StakeManagerTest {
         assertEq(streamer.totalMPStaked(), 400e18);
         assertEq(streamer.totalShares(), 600e18);
         assertEq(streamer.totalRewardsSupply(), 1000e18);
-        assertEq(streamer.totalMP(), 550e18);
         assertEq(streamer.mpBalanceOf(vaults[alice]), 300e18);
         assertEq(streamer.mpAccruedOf(vaults[alice]), 300e18);
         assertEq(streamer.vaultShares(vaults[alice]), 400e18);
@@ -264,7 +259,6 @@ contract RewardsAccrualTest is StakeManagerTest {
         assertEq(streamer.totalMPStaked(), 400e18);
         assertEq(streamer.totalShares(), 600e18);
         assertEq(streamer.totalRewardsSupply(), 1600e18);
-        assertEq(streamer.totalMP(), 750e18);
         assertEq(streamer.mpBalanceOf(vaults[alice]), 400e18);
         assertEq(streamer.mpAccruedOf(vaults[alice]), 300e18);
         assertEq(streamer.vaultShares(vaults[alice]), 400e18);

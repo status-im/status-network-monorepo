@@ -74,7 +74,6 @@ contract StakeManagerTest is StakeMath, Test {
     struct CheckStreamerParams {
         uint256 totalStaked;
         uint256 totalMPStaked;
-        uint256 totalMPAccrued;
         uint256 totalMaxMP;
         uint256 stakingBalance;
         uint256 rewardBalance;
@@ -84,7 +83,6 @@ contract StakeManagerTest is StakeMath, Test {
     function checkStreamer(CheckStreamerParams memory p) public view {
         assertEq(streamer.totalStaked(), p.totalStaked, "wrong total staked");
         assertEq(streamer.totalMPStaked(), p.totalMPStaked, "wrong total staked MP");
-        assertEq(streamer.totalMPAccrued(), p.totalMPAccrued, "wrong total accrued MP");
         assertEq(streamer.totalMaxMP(), p.totalMaxMP, "wrong totalMaxMP MP");
         // assertEq(rewardToken.balanceOf(address(streamer)), p.rewardBalance, "wrong reward balance");
         // assertEq(streamer.rewardIndex(), p.rewardIndex, "wrong reward index");
@@ -93,7 +91,6 @@ contract StakeManagerTest is StakeMath, Test {
     function checkStreamer(string memory text, CheckStreamerParams memory p) public view {
         assertEq(streamer.totalStaked(), p.totalStaked, string(abi.encodePacked(text, "wrong total staked")));
         assertEq(streamer.totalMPStaked(), p.totalMPStaked, string(abi.encodePacked(text, "wrong total staked MP")));
-        assertEq(streamer.totalMPAccrued(), p.totalMPAccrued, string(abi.encodePacked(text, "wrong total accrued MP")));
         assertEq(streamer.totalMaxMP(), p.totalMaxMP, string(abi.encodePacked(text, "wrong totalMaxMP MP")));
         // assertEq(rewardToken.balanceOf(address(streamer)), p.rewardBalance, "wrong reward balance");
         // assertEq(streamer.rewardIndex(), p.rewardIndex, "wrong reward index");

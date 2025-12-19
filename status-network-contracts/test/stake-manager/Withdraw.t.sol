@@ -20,7 +20,6 @@ contract WithdrawTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: 100e18,
                 totalMPStaked: 100e18,
-                totalMPAccrued: 100e18,
                 totalMaxMP: 500e18,
                 stakingBalance: 100e18,
                 rewardBalance: 0,
