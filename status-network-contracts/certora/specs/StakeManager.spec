@@ -10,7 +10,7 @@ methods {
     function totalStaked() external returns (uint256) envfree;
     function vaultData(address) external returns (uint256, uint256, uint256, uint256, uint256, uint256) envfree;
     function lastMPUpdatedTime() external returns (uint256) envfree;
-    function updateGlobalState() external;
+    function updateRewards() external;
     function updateVault(address vaultAddress) external;
     function getVaultLockUntil(address) external returns (uint256) envfree;
     function emergencyModeEnabled() external returns (bool) envfree;

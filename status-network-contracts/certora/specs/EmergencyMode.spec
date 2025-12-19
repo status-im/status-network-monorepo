@@ -31,7 +31,7 @@ definition isUUPSUpgradeableFunction(method f) returns bool = (
 );
 
 definition noCallDuringEmergency(method f) returns bool = (
-  f.selector == sig:streamer.updateGlobalState().selector
+  f.selector == sig:streamer.updateRewards().selector
                 || f.selector == sig:streamer.setRewardsSupplier(address).selector
                 || f.selector == sig:streamer.setMaxVaultsPerUser(uint256).selector
                 || f.selector == sig:streamer.setVaultFactory(address).selector

@@ -249,7 +249,7 @@ contract StakeManager is
             revert StakeManager__AmountCannotBeZero();
         }
 
-        _updateGlobalState();
+        _updateRewardIndex();
         _updateVault(msg.sender, true);
 
         VaultData storage vault = vaultData[msg.sender];
@@ -298,7 +298,7 @@ contract StakeManager is
             revert StakeManager__DurationCannotBeZero();
         }
 
-        _updateGlobalState();
+        _updateRewardIndex();
         _updateVault(msg.sender, false);
         (uint256 deltaMp, uint256 newLockEnd) =
             _calculateLock(vault.stakedBalance, vault.maxMP, currentLockUntil, block.timestamp, lockPeriod);
@@ -332,7 +332,7 @@ contract StakeManager is
         onlyTrustedCodehash
         onlyRegisteredVault
     {
-        _updateGlobalState();
+        _updateRewardIndex();
         _updateVault(msg.sender, false);
 
         VaultData storage vault = vaultData[msg.sender];
@@ -358,12 +358,12 @@ contract StakeManager is
     }
 
     /**
-     * @notice Allows the owner to update the global state.
+     * @notice Allows anyone to update the reward index.
      * @dev This function is only callable when emergency mode is disabled.
-     * @dev Takes care of updating the global MP and reward index.
+     * @dev Updates the global reward index based on time elapsed.
      */
-    function updateGlobalState() external onlyNotEmergencyMode whenNotPaused {
-        _updateGlobalState();
+    function updateRewards() external onlyNotEmergencyMode whenNotPaused {
+        _updateRewardIndex();
     }
 
     /**
@@ -390,7 +390,7 @@ contract StakeManager is
         }
 
         // this will call updateRewardIndex and update the totalRewardsAccrued
-        _updateGlobalState();
+        _updateRewardIndex();
 
         uint256 remainingRewards = 0;
 
@@ -418,7 +418,7 @@ contract StakeManager is
      * @param account The address of the account to update.
      */
     function updateAccount(address account) external onlyNotEmergencyMode whenNotPaused {
-        _updateGlobalState();
+        _updateRewardIndex();
         address[] memory accountVaults = vaults[account];
         for (uint256 i = 0; i < accountVaults.length; i++) {
             _updateVault(accountVaults[i], false);
@@ -433,7 +433,7 @@ contract StakeManager is
      * @return The amount of rewards redeemed.
      */
     function redeemRewards(address account) external onlyNotEmergencyMode whenNotPaused returns (uint256) {
-        _updateGlobalState();
+        _updateRewardIndex();
         address[] memory accountVaults = vaults[account];
         uint256 redeemed = 0;
         for (uint256 i = 0; i < accountVaults.length; i++) {
@@ -461,7 +461,7 @@ contract StakeManager is
      * @param vaultAddress The address of the vault to update.
      */
     function updateVault(address vaultAddress) external onlyNotEmergencyMode whenNotPaused {
-        _updateGlobalState();
+        _updateRewardIndex();
         _updateVault(vaultAddress, false);
     }
 
@@ -514,7 +514,7 @@ contract StakeManager is
             revert StakeManager__MigrationTargetHasFunds();
         }
 
-        _updateGlobalState();
+        _updateRewardIndex();
         _updateVault(msg.sender, false);
 
         VaultData storage oldVault = vaultData[msg.sender];
@@ -568,10 +568,6 @@ contract StakeManager is
     /*//////////////////////////////////////////////////////////////////////////
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
-
-    function _updateGlobalState() internal virtual {
-        _updateRewardIndex();
-    }
 
     function _updateVault(address vaultAddress, bool forceMPUpdate) internal virtual {
         VaultData storage vault = vaultData[vaultAddress];

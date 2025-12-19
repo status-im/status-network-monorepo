@@ -45,7 +45,7 @@ contract RedeemRewardsTest is StakeManagerTest {
         // let half of the reward duration pass
         vm.warp(block.timestamp + rewardDuration);
 
-        streamer.updateGlobalState();
+        streamer.updateRewards();
         uint256 totalRewardsAccruedBefore = streamer.totalRewardsAccrued();
 
         vm.prank(alice);

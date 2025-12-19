@@ -9,7 +9,7 @@ contract IntegrationTest is StakeManagerTest {
     }
 
     function testStakeFoo() public {
-        streamer.updateGlobalState();
+        streamer.updateRewards();
 
         // T0
         checkStreamer(
@@ -88,7 +88,7 @@ contract IntegrationTest is StakeManagerTest {
 
         // T3
         vm.prank(admin);
-        streamer.updateGlobalState();
+        streamer.updateRewards();
 
         checkStreamer(
             CheckStreamerParams({
@@ -130,7 +130,7 @@ contract IntegrationTest is StakeManagerTest {
         // T4
         uint256 currentTime = vm.getBlockTimestamp();
         vm.warp(currentTime + (YEAR / 2));
-        streamer.updateGlobalState();
+        streamer.updateRewards();
 
         checkStreamer(
             CheckStreamerParams({
@@ -240,7 +240,7 @@ contract IntegrationTest is StakeManagerTest {
 
         // T6
         vm.prank(admin);
-        streamer.updateGlobalState();
+        streamer.updateRewards();
 
         checkStreamer(
             CheckStreamerParams({
