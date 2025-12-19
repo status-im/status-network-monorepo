@@ -907,9 +907,9 @@ contract StakeManager is
 
     /**
      * @notice Returns whether the distributor is currently paused.
-     * @return True if the distributor is paused, false otherwise.
+     * @return True if the distributor is paused or in emergency mode, false otherwise.
      */
     function isPaused() external view returns (bool) {
-        return paused();
+        return paused() || emergencyModeEnabled;
     }
 }
