@@ -117,6 +117,7 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
     /// @param hash: keccak256 hash of abi.encodePacked(privateKey, rewardRecipient);
     /// @return bytes32: the computed commitment key.
     function _slashCommitmentKey(address sender, bytes32 hash) internal pure returns (bytes32) {
+        /// forge-lint: disable-next-line(asm-keccak256)
         return keccak256(abi.encodePacked(sender, hash));
     }
 
