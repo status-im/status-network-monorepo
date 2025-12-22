@@ -26,6 +26,8 @@ contract KarmaAirdrop is Ownable2Step, Pausable {
     error KarmaAirdrop__InvalidProof();
     /// @notice Emitted when token transfer fails
     error KarmaAirdrop__TransferFailed();
+    /// @notice Emitted when delegatee is incorrect
+    error KarmaAirdrop__IncorrectDelegatee();
 
     /// @notice Emitted when a claim is made
     event Claimed(uint256 index, address account, uint256 amount);
@@ -152,6 +154,14 @@ contract KarmaAirdrop is Ownable2Step, Pausable {
             // the call to `claim() and calling `delegateBySig` on behalf of the account that tries to claim, which
             // will consume the nonce and make the signature invalid.
             try IVotes(TOKEN).delegateBySig(DEFAULT_DELEGATEE, nonce, expiry, v, r, s) { } catch { }
+
+            // Check that the delegatee is set correctly. Due to the try/catch above,
+            // users can provide an invalid signature, so we need to verify the delegatee.
+            // Putting this check in `catch {}` isn't sufficient, as the delegateBySig could succeed
+            // with an incorrect signature as well.
+            if (IVotes(TOKEN).delegates(account) != DEFAULT_DELEGATEE) {
+                revert KarmaAirdrop__IncorrectDelegatee();
+            }
         }
 
         emit Claimed(index, account, amount);
