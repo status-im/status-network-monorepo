@@ -241,4 +241,132 @@ contract ClaimTest is KarmaAirdropTest {
         assertEq(rewardToken.delegates(alice), defaultDelegatee);
         assertEq(rewardToken.getVotes(defaultDelegatee), amount);
     }
+
+    function test_RevertWhen_InvalidSignatureAndNotDelegatedToDefaultDelegatee() public {
+        // This test verifies that claims revert when:
+        // 1. The delegation signature is invalid, AND
+        // 2. The user has NOT pre-delegated to the default delegatee
+
+        uint256 index = 0;
+        uint256 amount = 100e18;
+
+        bytes32 leaf = keccak256(abi.encodePacked(index, alice, amount));
+        bytes32 merkleRoot = leaf;
+        bytes32[] memory merkleProof = new bytes32[](0);
+
+        rewardToken.mint(address(airdrop), amount);
+
+        vm.prank(owner);
+        airdrop.setMerkleRoot(merkleRoot);
+
+        // Verify alice has no karma balance before claim
+        assertEq(rewardToken.balanceOf(alice), 0);
+
+        // Generate INVALID delegation signature (using wrong nonce)
+        uint256 correctNonce = 0;
+        uint256 wrongNonce = 999;
+        uint256 expiry = block.timestamp + 1 hours;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _generateDelegationSignature(alicePrivateKey, defaultDelegatee, wrongNonce, expiry);
+
+        // Verify alice is not delegated to anyone yet (delegates to address(0))
+        assertEq(rewardToken.delegates(alice), address(0));
+
+        // Attempt to claim with invalid signature should revert
+        vm.expectRevert(KarmaAirdrop.KarmaAirdrop__IncorrectDelegatee.selector);
+        airdrop.claim(index, alice, amount, merkleProof, correctNonce, expiry, v, r, s);
+
+        // Verify the claim did NOT succeed
+        assertFalse(airdrop.isClaimed(index));
+        assertEq(rewardToken.balanceOf(alice), 0);
+    }
+
+    function test_RevertWhen_InvalidSignatureAndDelegatedToWrongAddress() public {
+        // This test verifies that claims revert when:
+        // 1. The delegation signature is invalid, AND
+        // 2. The user is pre-delegated to someone OTHER than the default delegatee
+
+        uint256 index = 0;
+        uint256 amount = 100e18;
+
+        bytes32 leaf = keccak256(abi.encodePacked(index, alice, amount));
+        bytes32 merkleRoot = leaf;
+        bytes32[] memory merkleProof = new bytes32[](0);
+
+        rewardToken.mint(address(airdrop), amount);
+
+        vm.prank(owner);
+        airdrop.setMerkleRoot(merkleRoot);
+
+        // Alice pre-delegates to a DIFFERENT address (not the default delegatee)
+        address wrongDelegatee = makeAddr("wrongDelegatee");
+        vm.prank(alice);
+        rewardToken.delegate(wrongDelegatee);
+
+        // Verify alice is delegated to the wrong address
+        assertEq(rewardToken.delegates(alice), wrongDelegatee);
+
+        // Generate INVALID delegation signature (using wrong nonce)
+        uint256 correctNonce = 1; // Nonce is now 1 because delegate() consumed nonce 0
+        uint256 wrongNonce = 999;
+        uint256 expiry = block.timestamp + 1 hours;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _generateDelegationSignature(alicePrivateKey, defaultDelegatee, wrongNonce, expiry);
+
+        // Attempt to claim with invalid signature should revert
+        vm.expectRevert(KarmaAirdrop.KarmaAirdrop__IncorrectDelegatee.selector);
+        airdrop.claim(index, alice, amount, merkleProof, correctNonce, expiry, v, r, s);
+
+        // Verify the claim did NOT succeed
+        assertFalse(airdrop.isClaimed(index));
+        assertEq(rewardToken.balanceOf(alice), 0);
+        // Delegation should remain to the wrong delegatee
+        assertEq(rewardToken.delegates(alice), wrongDelegatee);
+    }
+
+    function test_ClaimSucceedsWhenPreDelegatedToDefaultDelegatee() public {
+        // This test verifies that claims succeed when:
+        // 1. The delegation signature is invalid (or not needed), AND
+        // 2. The user has already pre-delegated to the default delegatee
+
+        uint256 index = 0;
+        uint256 amount = 100e18;
+
+        bytes32 leaf = keccak256(abi.encodePacked(index, alice, amount));
+        bytes32 merkleRoot = leaf;
+        bytes32[] memory merkleProof = new bytes32[](0);
+
+        rewardToken.mint(address(airdrop), amount);
+
+        vm.prank(owner);
+        airdrop.setMerkleRoot(merkleRoot);
+
+        // Alice pre-delegates to the default delegatee BEFORE claiming
+        vm.prank(alice);
+        rewardToken.delegate(defaultDelegatee);
+
+        // Verify alice is delegated to default delegatee
+        assertEq(rewardToken.delegates(alice), defaultDelegatee);
+
+        // Generate INVALID delegation signature (using wrong nonce)
+        // This should be fine because alice is already delegated correctly
+        uint256 correctNonce = 1; // Nonce is now 1 because delegate() consumed nonce 0
+        uint256 wrongNonce = 999;
+        uint256 expiry = block.timestamp + 1 hours;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _generateDelegationSignature(alicePrivateKey, defaultDelegatee, wrongNonce, expiry);
+
+        // Claim should succeed because alice is already delegated to default delegatee
+        vm.expectEmit(true, true, true, true);
+        emit KarmaAirdrop.Claimed(index, alice, amount);
+        airdrop.claim(index, alice, amount, merkleProof, correctNonce, expiry, v, r, s);
+
+        // Verify the claim succeeded
+        assertTrue(airdrop.isClaimed(index));
+        assertEq(rewardToken.balanceOf(alice), amount);
+        assertEq(rewardToken.balanceOf(address(airdrop)), 0);
+        // Delegation should remain to default delegatee
+        assertEq(rewardToken.delegates(alice), defaultDelegatee);
+        assertEq(rewardToken.getVotes(defaultDelegatee), amount);
+    }
 }
