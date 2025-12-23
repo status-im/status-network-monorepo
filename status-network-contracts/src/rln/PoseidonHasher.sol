@@ -292,6 +292,7 @@ contract PoseidonHasher is IPoseidonHasher {
             // we have a value corresponding to 2*(p-1) which is less than 2^256 and hence doesn't overflow
             //ROUND 0 - FULL
             let s0 := C0
+            input := mod(input, q)
             let s1 := add(input, C1)
             // SBOX
             let t := mulmod(s0, s0, q)
