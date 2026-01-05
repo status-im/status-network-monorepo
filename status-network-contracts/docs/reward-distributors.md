@@ -34,7 +34,8 @@ calculations.
 
 ## Virtual vs Actual Karma
 
-We refer to "actual" Karma as the ERC-20 tokens that exist in the Karma contract and can be transferred, voted with etc.
+We refer to "actual" Karma as the ERC-20 tokens that exist in the Karma contract that can be used as voting power in the
+Status network and are not transferrable.
 "Virtual" Karma refers to reward balances tracked by distributors that represent earned rewards. They are fully backed
 by actual Karma and can be converted to actual tokens any time. Reward distributors implement their own logic for
 determining how virtual rewards accrue to accounts (staking, activity, time-based).
