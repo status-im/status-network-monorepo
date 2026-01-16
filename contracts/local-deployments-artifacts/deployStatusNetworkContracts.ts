@@ -1,10 +1,7 @@
-import { ethers } from "ethers";
 import fs from "fs";
 import path from "path";
 import * as dotenv from "dotenv";
-import { getEnvVarOrDefault, getRequiredEnvVar } from "../common/helpers/environment";
-import { deployContractFromArtifacts, getInitializerData } from "../common/helpers/deployments";
-import { get1559Fees } from "../scripts/utils";
+import { getEnvVarOrDefault } from "../common/helpers/environment";
 
 dotenv.config();
 
@@ -25,12 +22,6 @@ async function main(): Promise<StatusNetworkContracts> {
   const stakingToken = getEnvVarOrDefault("STATUS_NETWORK_STAKING_TOKEN", "0x0000000000000000000000000000000000000001"); // Placeholder SNT address
   const rlnDepth = parseInt(getEnvVarOrDefault("STATUS_NETWORK_RLN_DEPTH", "20"));
 
-  const provider = new ethers.JsonRpcProvider(process.env.RPC_URL || "http://localhost:8545");
-  const wallet = new ethers.Wallet(process.env.PRIVATE_KEY || process.env.L2_PRIVATE_KEY!, provider);
-
-  const { gasPrice } = await get1559Fees(provider);
-  let walletNonce = await wallet.getNonce();
-
   console.log(`Deployer: ${deployer}`);
   console.log(`Staking Token: ${stakingToken}`);
   console.log(`RLN Depth: ${rlnDepth}`);
@@ -38,10 +29,12 @@ async function main(): Promise<StatusNetworkContracts> {
   // Since we don't have the actual contract artifacts in the current setup,
   // we'll need to point to the status-network-contracts build artifacts
   const statusContractsPath = path.join(__dirname, "../../status-network-contracts");
-  
+
   // Check if status-network-contracts directory exists
   if (!fs.existsSync(statusContractsPath)) {
-    throw new Error("Status Network contracts directory not found. Please ensure the status-network-contracts are available.");
+    throw new Error(
+      "Status Network contracts directory not found. Please ensure the status-network-contracts are available.",
+    );
   }
 
   console.log("📋 Note: This deployment script assumes Status Network contracts are compiled and available.");
@@ -53,11 +46,11 @@ async function main(): Promise<StatusNetworkContracts> {
   // Simulate deployment addresses (in real deployment, these would be actual contract addresses)
   const mockDeployments: StatusNetworkContracts = {
     stakeManager: "0x1000000000000000000000000000000000000001",
-    vaultFactory: "0x1000000000000000000000000000000000000002", 
+    vaultFactory: "0x1000000000000000000000000000000000000002",
     karma: "0x1000000000000000000000000000000000000003",
     rln: "0x1000000000000000000000000000000000000004",
     karmaNFT: "0x1000000000000000000000000000000000000005",
-    karmaTiers: "0x1000000000000000000000000000000000000006"
+    karmaTiers: "0x1000000000000000000000000000000000000006",
   };
 
   console.log("✅ Status Network Contracts deployment simulation completed:");

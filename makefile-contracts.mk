@@ -122,7 +122,7 @@ deploy-l2messageservice:
 		cd contracts/; \
 		MESSAGE_SERVICE_CONTRACT_NAME=L2MessageService \
 		PRIVATE_KEY=$${DEPLOYMENT_PRIVATE_KEY:-0xb17202c37cce9498e6f7dcdc1abd207802d09b5eee96677ea219ac867a198b91} \
-		RPC_URL=http://localhost:9045/ \
+		RPC_URL=http://localhost:8545/ \
 		L2MSGSERVICE_SECURITY_COUNCIL=0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266 \
 		L2MSGSERVICE_L1L2_MESSAGE_SETTER=$${L2MSGSERVICE_L1L2_MESSAGE_SETTER:-0xd42e308fc964b71e18126df469c21b0d7bcb86cc} \
 		L2MSGSERVICE_RATE_LIMIT_PERIOD=86400 \
@@ -205,7 +205,7 @@ deploy-status-network-contracts:
 			exit 1; \
 		fi && \
 		echo "Using Karma address: $$KARMA_ADDRESS" && \
-		FOUNDRY_DISABLE_NIGHTLY_WARNING=true ETH_FROM=0x1B9AbEeC3215D8AdE8A33607f2cF0f4F60e5F0D0 KARMA_ADDRESS=$$KARMA_ADDRESS forge script script/DeployStakeManager.s.sol:DeployStakeManagerScript \
+		FOUNDRY_DISABLE_NIGHTLY_WARNING=true ETH_FROM=0x1B9AbEeC3215D8AdE8A33607f2cF0f4F60e5F0D0 KARMA_ADDRESS=$$KARMA_ADDRESS MAX_VAULTS_PER_USER=5 forge script script/DeployStakeManager.s.sol:DeployStakeManagerScript \
 			--rpc-url http://localhost:8545 \
 			--private-key $${DEPLOYMENT_PRIVATE_KEY:-0x1dd171cec7e2995408b5513004e8207fe88d6820aeff0d82463b3e41df251aae} \
 			--broadcast --root . || { echo "StakeManager deployment failed"; exit 1; }

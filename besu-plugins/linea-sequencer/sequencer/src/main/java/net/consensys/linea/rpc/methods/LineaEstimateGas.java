@@ -242,7 +242,7 @@ public class LineaEstimateGas {
                               RpcErrorType.INVALID_REQUEST, "Not on a baseFee market"));
 
           final Transaction tempTxForFeeEstimation =
-              createTransactionForSimulation(callParameters, premiumGasEstimate, baseFee, logId);
+              createTransactionForFeeEstimation(callParameters, premiumGasEstimate, baseFee, logId);
           final Wei estimatedPriorityFee =
               getEstimatedPriorityFee(
                   tempTxForFeeEstimation, baseFee, minGasPrice, premiumGasEstimate);

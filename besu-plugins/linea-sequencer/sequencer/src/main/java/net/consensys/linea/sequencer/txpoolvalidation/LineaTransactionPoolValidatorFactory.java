@@ -10,10 +10,10 @@
 package net.consensys.linea.sequencer.txpoolvalidation;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import net.consensys.linea.config.LineaNodeType;
 import net.consensys.linea.config.LineaProfitabilityConfiguration;
 import net.consensys.linea.config.LineaRlnValidatorConfiguration;
 import net.consensys.linea.config.LineaTracerConfiguration;
@@ -37,9 +37,12 @@ import org.hyperledger.besu.plugin.services.TransactionSimulationService;
 import org.hyperledger.besu.plugin.services.WorldStateService;
 import org.hyperledger.besu.plugin.services.txvalidator.PluginTransactionPoolValidator;
 import org.hyperledger.besu.plugin.services.txvalidator.PluginTransactionPoolValidatorFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Represents a factory for creating transaction pool validators. */
 public class LineaTransactionPoolValidatorFactory implements PluginTransactionPoolValidatorFactory {
+  private static final Logger LOG = LoggerFactory.getLogger(LineaTransactionPoolValidatorFactory.class);
 
   private final BesuConfiguration besuConfiguration;
   private final BlockchainService blockchainService;
@@ -54,6 +57,7 @@ public class LineaTransactionPoolValidatorFactory implements PluginTransactionPo
   private final SharedServiceManager sharedServiceManager;
   private final boolean rlnProverForwarderEnabled;
   private final InvalidTransactionByLineCountCache invalidTransactionByLineCountCache;
+  private final LineaNodeType nodeType;
 
   private final AtomicReference<Set<Address>> deniedAddresses;
 
@@ -70,7 +74,8 @@ public class LineaTransactionPoolValidatorFactory implements PluginTransactionPo
       final LineaRlnValidatorConfiguration rlnValidatorConf,
       final SharedServiceManager sharedServiceManager,
       final boolean rlnProverForwarderEnabled,
-      final InvalidTransactionByLineCountCache invalidTransactionByLineCountCache) {
+      final InvalidTransactionByLineCountCache invalidTransactionByLineCountCache,
+      final LineaNodeType nodeType) {
     this.besuConfiguration = besuConfiguration;
     this.blockchainService = blockchainService;
     this.worldStateService = worldStateService;
@@ -84,6 +89,7 @@ public class LineaTransactionPoolValidatorFactory implements PluginTransactionPo
     this.sharedServiceManager = sharedServiceManager;
     this.rlnProverForwarderEnabled = rlnProverForwarderEnabled;
     this.invalidTransactionByLineCountCache = invalidTransactionByLineCountCache;
+    this.nodeType = nodeType;
 
     this.deniedAddresses = new AtomicReference<>(txPoolValidatorConf.deniedAddresses());
   }
@@ -98,6 +104,21 @@ public class LineaTransactionPoolValidatorFactory implements PluginTransactionPo
   public PluginTransactionPoolValidator createTransactionValidator() {
     final var validatorsList = new ArrayList<PluginTransactionPoolValidator>();
 
+    // Conditionally add RLN Prover Forwarder (enabled via configuration flag)
+    // Keep it first so we forward local txs before any other validator rejects them.
+    if (rlnProverForwarderEnabled) {
+      validatorsList.add(
+          new RlnProverForwarderValidator(
+              rlnValidatorConf,
+              true, // enabled
+              sharedServiceManager.getKarmaServiceClient(),
+              transactionSimulationService,
+              blockchainService,
+              worldStateService,
+              tracerConfiguration,
+              l1L2BridgeConfiguration));
+    }
+
     validatorsList.add(new TraceLineLimitValidator(invalidTransactionByLineCountCache));
     validatorsList.add(new AllowedAddressValidator(deniedAddresses));
     validatorsList.add(new GasLimitValidator(txPoolValidatorConf.maxTxGasLimit()));
@@ -105,18 +126,10 @@ public class LineaTransactionPoolValidatorFactory implements PluginTransactionPo
     validatorsList.add(
         new ProfitabilityValidator(besuConfiguration, blockchainService, profitabilityConf));
 
-    // Conditionally add RLN Prover Forwarder (enabled via configuration flag)
-    if (rlnProverForwarderEnabled) {
-      validatorsList.add(
-          new RlnProverForwarderValidator(
-              rlnValidatorConf,
-              true, // enabled
-              sharedServiceManager.getKarmaServiceClient(),
-              sharedServiceManager.getDenyListManager()));
-    }
-
     // Conditionally add RLN Validator (for proof verification)
-    if (rlnValidatorConf.rlnValidationEnabled()) {
+    // Only add RlnVerifierValidator on SEQUENCER nodes, not RPC nodes
+    // RPC nodes need RLN enabled for shared services (WorldStateService, etc.) but should NOT reject transactions
+    if (rlnValidatorConf.rlnValidationEnabled() && nodeType == LineaNodeType.SEQUENCER) {
       validatorsList.add(
           new RlnVerifierValidator(
               rlnValidatorConf,
@@ -131,6 +144,7 @@ public class LineaTransactionPoolValidatorFactory implements PluginTransactionPo
             blockchainService,
             worldStateService,
             transactionSimulationService,
+            txPoolValidatorConf,
             tracerConfiguration,
             l1L2BridgeConfiguration,
             rejectedTxJsonRpcManager));
@@ -138,12 +152,25 @@ public class LineaTransactionPoolValidatorFactory implements PluginTransactionPo
     final PluginTransactionPoolValidator[] validators =
         validatorsList.toArray(new PluginTransactionPoolValidator[0]);
 
-    return (transaction, isLocal, hasPriority) ->
-        Arrays.stream(validators)
-            .map(v -> v.validateTransaction(transaction, isLocal, hasPriority))
-            .filter(Optional::isPresent)
-            .findFirst()
-            .map(Optional::get);
+    return (transaction, isLocal, hasPriority) -> {
+      for (final PluginTransactionPoolValidator validator : validators) {
+        final Optional<String> maybeError =
+            validator.validateTransaction(transaction, isLocal, hasPriority);
+        if (maybeError.isPresent()) {
+          if (LOG.isDebugEnabled()) {
+            LOG.debug(
+                "Tx {} rejected by {} (isLocal={}, hasPriority={}): {}",
+                transaction.getHash(),
+                validator.getClass().getSimpleName(),
+                isLocal,
+                hasPriority,
+                maybeError.get());
+          }
+          return maybeError;
+        }
+      }
+      return Optional.empty();
+    };
   }
 
   public void setDeniedAddresses(final Set<Address> deniedAddresses) {

@@ -115,7 +115,8 @@ public class LineaTransactionPoolValidatorPlugin extends AbstractLineaRequiredPl
                   rlnValidatorConfiguration,
                   sharedServiceManager,
                   lineaRpcConfiguration().rlnProverForwarderEnabled(),
-                  getInvalidTransactionByLineCountCache()));
+                  getInvalidTransactionByLineCountCache(),
+                  lineaRejectedTxReportingConfiguration.lineaNodeType()));
       transactionPoolValidatorService.registerPluginTransactionValidatorFactory(
           lineaTransactionPoolValidatorFactory.get());
 

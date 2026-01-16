@@ -57,7 +57,7 @@ export const RLN_CONFIG = {
   // The sequencer uses --plugin-linea-rln-epoch-mode=TEST which uses a fixed epoch ID for proofs.
   // This is separate from quota tracking - proofs always validate, but quotas reset per epoch.
   test: {
-    premiumGasThresholdGwei: 10,
+    premiumGasThresholdGwei: 12,
     premiumGasMultiplier: 1.5,
     // Epoch duration must match prover's --epoch-duration-secs (30s in production test mode)
     // Quotas reset every epoch, enabling epoch boundary tests

@@ -72,6 +72,11 @@ export class RlnTestClient {
     private karmaServiceUrl?: string,
   ) {
     this.logger = logger;
+    this.logger.info("RLN test client initialized", {
+      rpcUrl: this.rpcUrl,
+      sequencerProvider: this.sequencerProvider ? "configured" : "missing",
+      karmaServiceUrl: this.karmaServiceUrl ?? "missing",
+    });
   }
 
   get rpcProvider(): ethers.Provider {
@@ -90,11 +95,14 @@ export class RlnTestClient {
     const from = await signer.getAddress();
     const nonce = options.nonce ?? (await this._rpcProvider.getTransactionCount(from, "latest"));
     const sendTime = Date.now();
+    const chainId = (await this._rpcProvider.getNetwork()).chainId;
 
-    this.logger.debug("Sending gasless transaction", {
+    this.logger.info("Sending gasless transaction", {
       from,
       to: options.to,
       nonce,
+      chainId: chainId.toString(),
+      rpcUrl: this.rpcUrl,
     });
 
     const tx = await signer.sendTransaction({
@@ -106,7 +114,12 @@ export class RlnTestClient {
       nonce,
     });
 
-    this.logger.debug("Gasless transaction sent", { txHash: tx.hash });
+    this.logger.info("Gasless transaction sent", {
+      txHash: tx.hash,
+      from,
+      to: options.to,
+      nonce,
+    });
 
     // Wait for tx to be mined (just until included in block, no extra confirmations)
     // Handle TRANSACTION_REPLACED error which can occur with concurrent transactions
@@ -128,9 +141,17 @@ export class RlnTestClient {
           });
           receipt = replacementError.receipt;
         } else {
+          this.logger.error("Gasless transaction replaced but failed", {
+            txHash: tx.hash,
+            error: error instanceof Error ? error.message : String(error),
+          });
           throw error;
         }
       } else {
+        this.logger.error("Gasless transaction failed to mine", {
+          txHash: tx.hash,
+          error: error instanceof Error ? error.message : String(error),
+        });
         throw error;
       }
     }
@@ -138,7 +159,7 @@ export class RlnTestClient {
     const minedTime = Date.now();
     txBenchmarker.recordTx("gasless", tx.hash, sendTime, minedTime, receipt.blockNumber);
 
-    this.logger.debug("Gasless transaction mined", {
+    this.logger.info("Gasless transaction mined", {
       txHash: tx.hash,
       blockNumber: receipt.blockNumber,
       status: receipt.status,
@@ -199,10 +220,11 @@ export class RlnTestClient {
     const from = await signer.getAddress();
     const nonce = await this._rpcProvider.getTransactionCount(from, "latest");
 
-    this.logger.debug("Sending gasless transaction (expecting failure)", {
+    this.logger.info("Sending gasless transaction (expecting failure)", {
       from,
       to: options.to,
       nonce,
+      rpcUrl: this.rpcUrl,
     });
 
     try {
@@ -220,6 +242,12 @@ export class RlnTestClient {
       });
 
       const tx = await Promise.race([txPromise, timeoutPromise]);
+      this.logger.info("Gasless transaction submitted (expecting failure)", {
+        txHash: tx.hash,
+        from,
+        to: options.to,
+        nonce,
+      });
       const receipt = await tx.wait(1, timeoutMs);
 
       if (receipt && receipt.status === 1) {
@@ -232,7 +260,7 @@ export class RlnTestClient {
       if (err.message.includes("Expected transaction to fail")) {
         throw err;
       }
-      this.logger.debug("Transaction failed as expected", { error: err.message });
+      this.logger.info("Transaction failed as expected", { error: err.message });
       return err.message;
     }
   }
@@ -260,12 +288,15 @@ export class RlnTestClient {
     const from = await signer.getAddress();
     const nonce = options.nonce ?? (await this._rpcProvider.getTransactionCount(from, "latest"));
     const sendTime = Date.now();
+    const chainId = (await this._rpcProvider.getNetwork()).chainId;
 
-    this.logger.debug("Sending premium gas transaction", {
+    this.logger.info("Sending premium gas transaction", {
       from,
       to: options.to,
       gasPrice: options.gasPrice.toString(),
       nonce,
+      chainId: chainId.toString(),
+      rpcUrl: this.rpcUrl,
     });
 
     const txRequest: ethers.TransactionRequest = {
@@ -275,11 +306,11 @@ export class RlnTestClient {
       gasLimit: options.gasLimit ?? 25000,
       gasPrice: options.gasPrice,
       nonce,
-      chainId: (await this._rpcProvider.getNetwork()).chainId,
+      chainId,
     };
     const tx = await signer.sendTransaction(txRequest);
 
-    this.logger.debug("Premium gas transaction sent", { txHash: tx.hash });
+    this.logger.info("Premium gas transaction sent", { txHash: tx.hash });
 
     // Wait for tx to be mined (just until included in block, no extra confirmations)
     // Handle TRANSACTION_REPLACED error which can occur with concurrent transactions
@@ -304,6 +335,10 @@ export class RlnTestClient {
           throw error;
         }
       } else {
+        this.logger.error("Premium transaction failed to mine", {
+          txHash: tx.hash,
+          error: error instanceof Error ? error.message : String(error),
+        });
         throw error;
       }
     }
@@ -311,7 +346,7 @@ export class RlnTestClient {
     const minedTime = Date.now();
     txBenchmarker.recordTx("premium", tx.hash, sendTime, minedTime, receipt.blockNumber);
 
-    this.logger.debug("Premium gas transaction mined", {
+    this.logger.info("Premium gas transaction mined", {
       txHash: tx.hash,
       blockNumber: receipt.blockNumber,
       status: receipt.status,
@@ -409,29 +444,43 @@ export class RlnTestClient {
     txHash: string,
     timeout: number = RLN_CONFIG.test.transactionTimeoutMs,
   ): Promise<ethers.TransactionReceipt> {
-    this.logger.debug("Waiting for transaction", { txHash, timeout });
+    this.logger.info("Waiting for transaction", {
+      txHash,
+      timeout,
+      sequencerProvider: "configured",
+    });
 
     const startTime = Date.now();
     const pollInterval = 500;
+    let nextLogTime = startTime + 5000;
 
     while (Date.now() - startTime < timeout) {
       try {
         const receipt = await this.sequencerProvider.getTransactionReceipt(txHash);
         if (receipt) {
-          this.logger.debug("Transaction mined", {
+          this.logger.info("Transaction mined", {
             txHash,
             blockNumber: receipt.blockNumber,
           });
           return receipt;
         }
       } catch {
-        this.logger.debug("Transaction not yet mined", { txHash });
+        // ignore and continue polling
       }
 
+      if (Date.now() >= nextLogTime) {
+        this.logger.info("Transaction still pending", {
+          txHash,
+          elapsedMs: Date.now() - startTime,
+        });
+        nextLogTime = Date.now() + 5000;
+      }
       await this.sleep(pollInterval);
     }
 
-    throw new Error(`Transaction ${txHash} not mined after ${timeout}ms`);
+    const error = new Error(`Transaction ${txHash} not mined after ${timeout}ms`);
+    this.logger.error("Transaction timed out", { txHash, timeout });
+    throw error;
   }
 
   /**

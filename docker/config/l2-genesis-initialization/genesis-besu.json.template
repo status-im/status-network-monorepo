@@ -33,7 +33,7 @@
   "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
   "nonce": "0x0",
   "timestamp": "0x645580D1",
-  "baseFeePerGas": "0x7",
+  "baseFeePerGas": "0x0",
   "@_WARNING": "FOR LOCAL DEV ONLY - DO NOT REUSE THESE KEYS ELSEWHERE",
   "alloc": {
     "0x1b9abeec3215d8ade8a33607f2cf0f4f60e5f0d0": {

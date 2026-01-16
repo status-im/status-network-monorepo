@@ -143,8 +143,8 @@ public class LineaTransactionSelectorCliOptions implements LineaCliOptions {
     options.maxBlockCallDataSize = config.maxBlockCallDataSize();
     options.overLineCountLimitCacheSize = config.overLinesLimitCacheSize();
     options.maxGasPerBlock = config.maxGasPerBlock();
-    options.unprofitableCacheSize = config.unprofitableCacheSize();
-    options.unprofitableRetryLimit = config.unprofitableRetryLimit();
+    // options.unprofitableCacheSize = config.unprofitableCacheSize(); // Removed in upstream
+    // options.unprofitableRetryLimit = config.unprofitableRetryLimit(); // Removed in upstream
     options.profitabilityCheckEnabled = config.profitabilityCheckEnabled();
     options.eventsDenyListPath = config.eventsDenyListPath();
     options.eventsBundleDenyListPath = config.eventsBundleDenyListPath();
