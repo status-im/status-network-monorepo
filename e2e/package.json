@@ -20,7 +20,7 @@
     "test:rln:report": "npm run test:rln:json; npx ts-node src/rln-gasless/scripts/generate-report.ts jest-results.json rln-gasless-report.json",
     "generate:rln-report": "npx ts-node src/rln-gasless/scripts/generate-report.ts jest-results.json rln-gasless-report.json",
     "init:karma-tiers": "npx ts-node ../scripts/initialize-karma-tiers.ts",
-    "postinstall": "typechain --target ethers-v6 --out-dir ./src/typechain '../contracts/local-deployments-artifacts/**/*.json'",
+    "postinstall:disabled": "typechain --target ethers-v6 --out-dir ./src/typechain '../contracts/local-deployments-artifacts/**/*.json'",
     "lint:fix": "pnpm run lint:ts:fix && pnpm run prettier:fix",
     "clean": "rimraf node_modules src/typechain"
   },

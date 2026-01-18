@@ -10,7 +10,7 @@ services:
       - ../config/coordinator/coordinator-config-v2.toml:/coordinator/coordinator-config-v2.toml:ro
 
   maru:
-    image: consensys/maru:${MARU_TAG:-9737a45}
+    image: consensys/maru:${MARU_TAG:-v1.0.0-20260108114606-36f5e2f}
     hostname: maru
     container_name: maru
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
@@ -35,7 +35,7 @@ services:
   rln-prover:
     hostname: rln-prover
     container_name: rln-prover
-    image: status-rln-prover:20251217152830
+    image: status-rln-prover:20260118131133
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo", "rln" ]
     ports:
       - "50051:50051"
@@ -65,7 +65,7 @@ services:
   sequencer:
     hostname: sequencer
     container_name: sequencer
-    image: linea-besu-minimal-rln:20260116224432
+    image: linea-besu-minimal-rln:20260118183645-gasless-fix
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     ports:
       - "8545:8545"
@@ -135,7 +135,7 @@ services:
       l1network:
       linea:
         ipv4_address: 11.11.11.101
-    platform: linux/amd64
+    platform: linux/arm64
 
   l2-node:
     container_name: l2-node
@@ -173,7 +173,7 @@ services:
   l2-node-besu:
     hostname: l2-node-besu
     container_name: l2-node-besu
-    image: linea-besu-minimal-rln:20260116224432
+    image: linea-besu-minimal-rln:20260118183645-gasless-fix
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     depends_on:
       sequencer:
@@ -233,12 +233,12 @@ services:
       l1network:
       linea:
         ipv4_address: 11.11.11.119
-    platform: linux/amd64
+    platform: linux/arm64
 
   l2-node-besu-follower:
     hostname: l2-node-besu-follower
     container_name: l2-node-besu-follower
-    image: linea-besu-minimal-rln:20260116224432
+    image: linea-besu-minimal-rln:20260118183645-gasless-fix
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     depends_on:
       sequencer:
@@ -298,7 +298,7 @@ services:
       l1network:
       linea:
         ipv4_address: 11.11.11.121
-    platform: linux/amd64
+    platform: linux/arm64
 
   traces-node:
     hostname: traces-node

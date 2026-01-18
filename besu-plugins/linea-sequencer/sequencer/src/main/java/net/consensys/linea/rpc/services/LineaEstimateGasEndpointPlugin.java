@@ -60,7 +60,16 @@ public class LineaEstimateGasEndpointPlugin extends AbstractLineaRequiredPlugin 
     sharedServiceManager =
         new net.consensys.linea.sequencer.txpoolvalidation.shared.SharedServiceManager(
             rlnValidatorConfiguration(), lineaRpcConfiguration());
+  }
 
+  @Override
+  public void doStart() {
+    if (l1L2BridgeSharedConfiguration().equals(LineaL1L2BridgeSharedConfiguration.TEST_DEFAULT)) {
+      throw new IllegalArgumentException("L1L2 bridge settings have not been defined.");
+    }
+
+    // Initialize lineaEstimateGas here instead of beforeExternalServices()
+    // because worldStateService is only available after start()
     lineaEstimateGasMethod.init(
         lineaRpcConfiguration(),
         transactionPoolValidatorConfiguration(),
@@ -70,13 +79,6 @@ public class LineaEstimateGasEndpointPlugin extends AbstractLineaRequiredPlugin 
         worldStateService,
         sharedServiceManager.getDenyListManager(),
         sharedServiceManager.getKarmaServiceClient());
-  }
-
-  @Override
-  public void doStart() {
-    if (l1L2BridgeSharedConfiguration().equals(LineaL1L2BridgeSharedConfiguration.TEST_DEFAULT)) {
-      throw new IllegalArgumentException("L1L2 bridge settings have not been defined.");
-    }
   }
 
   @Override
