@@ -25,6 +25,7 @@ pub mod tests_common;
 mod user_db_2;
 mod user_db_2_tests;
 mod user_db_tests;
+mod user_db_2_entities;
 
 // std
 use alloy::network::EthereumWallet;
@@ -34,11 +35,19 @@ use std::time::Duration;
 // third-party
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::signers::local::PrivateKeySigner;
-use prover_db_migration::{Migrator, MigratorTrait};
-use sea_orm::Database;
+// use prover_db_migration::{Migrator, MigratorTrait};
+// use sea_orm::Database;
 use tokio::task::JoinSet;
 use tracing::{debug, info};
 use zeroize::Zeroizing;
+use sqlx::{postgres::{
+    PgHasArrayType,
+    PgTypeInfo,
+    types::Oid,
+    PgArgumentBuffer,
+    PgValueRef,
+    Postgres
+}, Type, Encode, Decode, Pool};
 // internal
 pub use crate::args::{ARGS_DEFAULT_GENESIS, AppArgs, AppArgsConfig};
 use crate::epoch_service::EpochService;
@@ -139,16 +148,21 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
                 .to_string(),
         )
     })?;
+    /*
     let db_conn = Database::connect(&db_url)
+        .await
+        .map_err(UserDb2OpenError::from)?;
+    */
+    let db_conn = sqlx::PgPool::connect(db_url.as_str())
         .await
         .map_err(UserDb2OpenError::from)?;
 
     // Run database migrations
-    info!("Running database migrations...");
-    Migrator::up(&db_conn, None)
-        .await
-        .map_err(|e| AppError2::MigrationError(e.to_string()))?;
-    info!("Database migrations complete");
+    // info!("Running database migrations...");
+    // Migrator::up(&db_conn, None)
+    //     .await
+    //     .map_err(|e| AppError2::MigrationError(e.to_string()))?;
+    // info!("Database migrations complete");
 
     let user_db_service = UserDbService::new(
         db_conn,

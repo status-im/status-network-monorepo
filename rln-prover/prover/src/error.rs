@@ -100,8 +100,8 @@ pub enum ProofGenerationStringError {
     Serialization(String),
     #[error("Proof serialization failed: {0}")]
     SerializationWrite(String),
-    #[error(transparent)]
-    MerkleProofError(#[from] GetMerkleTreeProofError2),
+    #[error("Merkle proof generation failed: {0}")]
+    MerkleProofError(String),
 }
 
 impl From<ProofGenerationError> for ProofGenerationStringError {
@@ -110,7 +110,7 @@ impl From<ProofGenerationError> for ProofGenerationStringError {
             ProofGenerationError::Proof(e) => ProofGenerationStringError::Proof(e.to_string()),
             ProofGenerationError::Serialization(e) => Self::Serialization(e.to_string()),
             ProofGenerationError::SerializationWrite(e) => Self::SerializationWrite(e.to_string()),
-            ProofGenerationError::MerkleProofError(e) => Self::MerkleProofError(e),
+            ProofGenerationError::MerkleProofError(e) => Self::MerkleProofError(e.to_string()),
         }
     }
 }

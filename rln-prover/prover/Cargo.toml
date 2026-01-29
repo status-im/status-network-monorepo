@@ -46,15 +46,16 @@ metrics-exporter-prometheus = "0.17.2"
 rayon = "1.11"
 
 # user db 2
-prover_db_entity = { path = "../prover_db_entity" }
-prover_db_migration = { path = "../prover_db_migration" }
-prover_merkle_tree = { path = "../prover_pmtree_db_impl" }
-prover_pmtree = { path = "../prover_pmtree" }
-sea-orm = { version = "2.0.0-rc.18", features = [
-    "runtime-tokio-native-tls",
-    "sqlx-postgres",
-    "debug-print"
-]}
+# prover_db_entity = { path = "../prover_db_entity" }
+# prover_db_migration = { path = "../prover_db_migration" }
+# prover_merkle_tree = { path = "../prover_pmtree_db_impl" }
+# prover_pmtree = { path = "../prover_pmtree" }
+# sea-orm = { version = "2.0.0-rc.18", features = [
+#     "runtime-tokio-native-tls",
+#     "sqlx-postgres",
+#     "debug-print"
+# ]}
+sqlx.workspace = true
 
 [build-dependencies]
 tonic-prost-build.workspace = true
@@ -65,17 +66,17 @@ ark-groth16.workspace = true
 tempfile = "3.21"
 tracing-test = "0.2.5"
 lazy_static = "1.5.0"
-prover_db_migration = { path = "../prover_db_migration" }
+# prover_db_migration = { path = "../prover_db_migration" }
 function_name = "0.3.0"
 
-[dev-dependencies.sea-orm]
-workspace = true
-features = [
-    "runtime-tokio-native-tls",
-    "sqlx-postgres",
-    "sqlx-sqlite",
-    "debug-print"
-]
+# [dev-dependencies.sea-orm]
+# workspace = true
+# features = [
+#     "runtime-tokio-native-tls",
+#     "sqlx-postgres",
+#     "sqlx-sqlite",
+#     "debug-print"
+# ]
 
 [[bench]]
 name = "prover_bench"

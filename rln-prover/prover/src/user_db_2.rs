@@ -3,16 +3,28 @@ use std::sync::Arc;
 // third-party
 use alloy::primitives::{Address, U256};
 use ark_bn254::Fr;
+use ark_ff::AdditiveGroup;
 use parking_lot::RwLock;
 use tokio::sync::RwLock as TokioRwLock;
 // RLN
 use rln::{hashers::poseidon_hash, protocol::keygen};
 // db
-use sea_orm::sea_query::{LockType, OnConflict};
-use sea_orm::{
-    ColumnTrait, DatabaseConnection, DbErr, EntityTrait, ExprTrait, IntoActiveModel,
-    PaginatorTrait, QueryFilter, QuerySelect, Set, TransactionTrait,
-};
+// use sea_orm::sea_query::{LockType, OnConflict};
+// use sea_orm::{
+//     ColumnTrait, DatabaseConnection, DbErr, EntityTrait, ExprTrait, IntoActiveModel,
+//     PaginatorTrait, QueryFilter, QuerySelect, Set, TransactionTrait,
+// };
+// sqlx
+// use sqlx::{Pool, Postgres, FromRow};
+use sqlx::{postgres::{
+    PgHasArrayType,
+    PgTypeInfo,
+    types::Oid,
+    PgArgumentBuffer,
+    PgValueRef,
+    Postgres
+}, Type, Encode, Decode, Pool, error::Error as SqlxError, Row};
+use sqlx::types::Json;
 // internal
 use crate::epoch_service::{Epoch, EpochSlice};
 use crate::tier::{TierLimit, TierLimits, TierMatch, TierName};
@@ -22,19 +34,20 @@ use crate::user_db_error::{
     UserTierInfoError2,
 };
 use crate::user_db_types::{EpochCounter, EpochSliceCounter, RateLimit};
-use prover_db_entity::{deny_list, m_tree_config, tier_limits, tx_counter, user};
-use prover_merkle_tree::{
-    MemoryDb, MemoryDbConfig, PersistentDb, PersistentDbConfig, PersistentDbError,
-};
-use prover_pmtree::tree::MerkleProof;
-use prover_pmtree::{MerkleTree, PmtreeErrorKind};
+// use prover_db_entity::{deny_list, m_tree_config, tier_limits, tx_counter, user};
+// use prover_merkle_tree::{
+//     MemoryDb, MemoryDbConfig, PersistentDb, PersistentDbConfig, PersistentDbError,
+// };
+// use prover_pmtree::tree::MerkleProof;
+// use prover_pmtree::{MerkleTree, PmtreeErrorKind};
 use rln_proof::{ProverPoseidonHash, RlnUserIdentity};
 use smart_contract::KarmaAmountExt;
+use crate::user_db_2_entities::{DenyListSqlx, MerkleProof, MerkleTreeConfigSqlx, PgFrStruct, TierLimitsSqlx, TxCounterSqlx, UserIdSqlx, UserSqlx, PGFR_ARRAY_OID, PGFR_OID};
 
 const TIER_LIMITS_KEY: &str = "CURRENT";
 const TIER_LIMITS_NEXT_KEY: &str = "NEXT";
 
-type ProverMerkleTree = MerkleTree<MemoryDb, ProverPoseidonHash, PersistentDb, MerkleTreeError>;
+// type ProverMerkleTree = MerkleTree<MemoryDb, ProverPoseidonHash, PersistentDb, MerkleTreeError>;
 
 #[derive(Debug, PartialEq)]
 pub struct UserTierInfo2 {
@@ -55,11 +68,11 @@ pub struct UserDb2Config {
 
 #[derive(Clone)]
 pub(crate) struct UserDb2 {
-    db: DatabaseConnection,
+    db: Pool<Postgres>,
     config: UserDb2Config,
     rate_limit: RateLimit,
     pub(crate) epoch_store: Arc<RwLock<(Epoch, EpochSlice)>>,
-    merkle_trees: Arc<TokioRwLock<Vec<ProverMerkleTree>>>,
+    // merkle_trees: Arc<TokioRwLock<Vec<ProverMerkleTree>>>,
 }
 
 impl std::fmt::Debug for UserDb2 {
@@ -75,21 +88,37 @@ impl std::fmt::Debug for UserDb2 {
 impl UserDb2 {
     /// Returns a new `UserDB` instance
     pub async fn new(
-        db: DatabaseConnection,
+        db: Pool<Postgres>,
         config: UserDb2Config,
         epoch_store: Arc<RwLock<(Epoch, EpochSlice)>>,
         tier_limits: TierLimits,
         rate_limit: RateLimit,
-    ) -> Result<Self, DbErr> {
+    ) -> Result<Self, SqlxError> {
         debug_assert!(config.tree_count <= config.max_tree_count);
+
+        //
+        let row: (Oid, Oid) = sqlx::query_as("SELECT oid, typarray FROM pg_type WHERE typname = 'pgfr'")
+            .fetch_one(&db)
+            .await?;
+
+        PGFR_OID.set(row.0).expect("Failed to set PGFR_OID");
+        PGFR_ARRAY_OID.set(row.1).expect("Failed to set array OID");
 
         // tier limits
         debug_assert!(tier_limits.validate().is_ok());
+        /*
         let _res_delete = tier_limits::Entity::delete_many()
             .filter(tier_limits::Column::Name.eq(TIER_LIMITS_KEY))
             .exec(&db)
             .await?;
+        */
+        let res_delete = sqlx::query("DELETE FROM tier_limits WHERE name = ?")
+            .bind(TIER_LIMITS_KEY)
+            .execute(&db)
+            .await?;
+        debug_assert!(res_delete.rows_affected() == 1);
 
+        /*
         let tier_limits_value = serde_json::to_value(tier_limits).unwrap();
         let tier_limits_active_model = tier_limits::ActiveModel {
             name: Set(TIER_LIMITS_KEY.to_string()),
@@ -99,12 +128,23 @@ impl UserDb2 {
         tier_limits::Entity::insert(tier_limits_active_model)
             .exec(&db)
             .await?;
+        */
+
+        let res_insert = sqlx::query("INSERT INTO tier_limits VALUES ($1, $2)")
+            .bind(TIER_LIMITS_KEY)
+            .bind(Json(tier_limits))
+            .execute(&db)
+            .await?;
+
+        debug_assert!(res_insert.rows_affected() == 1);
 
         // merkle trees
         let merkle_tree_count = Self::get_merkle_tree_count_from_db(&db).await?;
-        let mut merkle_trees = Vec::with_capacity(merkle_tree_count as usize);
+        // let mut merkle_trees = Vec::with_capacity(merkle_tree_count as usize);
 
         if merkle_tree_count == 0 {
+
+            /*
             // FIXME: 'as'
             for i in 0..(config.tree_count as i16) {
                 let persistent_db_config = PersistentDbConfig {
@@ -123,7 +163,12 @@ impl UserDb2 {
 
                 merkle_trees.push(mt);
             }
+            */
+
+            todo!()
+
         } else {
+            /*
             for i in 0..(merkle_tree_count as i16) {
                 let persistent_db_config = PersistentDbConfig {
                     db_conn: db.clone(),
@@ -137,6 +182,10 @@ impl UserDb2 {
 
                 merkle_trees.push(mt);
             }
+            */
+
+            // TODO: nothing to do here? Merkle trees are already created in the DB
+
         }
 
         Ok(Self {
@@ -144,46 +193,52 @@ impl UserDb2 {
             config,
             rate_limit,
             epoch_store,
-            merkle_trees: Arc::new(TokioRwLock::new(merkle_trees)),
+            // merkle_trees: Arc::new(TokioRwLock::new(merkle_trees)),
         })
     }
 
     // (Internal) Simple Db related methods
 
-    pub(crate) async fn has_user(&self, address: &Address) -> Result<bool, DbErr> {
-        let res = user::Entity::find()
-            .filter(user::Column::Address.eq(address.to_string()))
-            .one(&self.db)
+    pub(crate) async fn has_user(&self, address: &Address) -> Result<bool, SqlxError> {
+        let res: Option<UserIdSqlx> = sqlx::query_as("SELECT id FROM user WHERE address=? LIMIT 1")
+            .bind(address.to_string())
+            .fetch_optional(&self.db)
             .await?;
+
         Ok(res.is_some())
     }
 
-    pub(crate) async fn get_user(&self, address: &Address) -> Result<Option<user::Model>, DbErr> {
-        user::Entity::find()
-            .filter(user::Column::Address.eq(address.to_string()))
-            .one(&self.db)
-            .await
+    pub(crate) async fn get_user(&self, address: &Address) -> Result<Option<UserSqlx>, SqlxError> {
+        let res: Option<UserSqlx> = sqlx::query_as("SELECT * FROM user WHERE address=? LIMIT 1")
+            .bind(address.to_string())
+            .fetch_optional(&self.db)
+            .await?;
+
+        Ok(res)
     }
 
     pub(crate) async fn get_user_identity(&self, address: &Address) -> Option<RlnUserIdentity> {
         let res = self.get_user(address).await.ok()??;
-        // FIXME: deser directly when query with orm?
-        serde_json::from_value(res.rln_id).ok()
+        Some(res.rln_id.0)
     }
 
-    async fn get_tier_limits(&self) -> Result<TierLimits, DbErr> {
-        let res = tier_limits::Entity::find()
-            .filter(tier_limits::Column::Name.eq(TIER_LIMITS_KEY))
-            .one(&self.db)
-            .await?
-            .unwrap() // unwrap safe - db is always initialized with this row
-            ;
+    async fn get_tier_limits(&self) -> Result<TierLimits, SqlxError> {
+        let res: Option<TierLimitsSqlx> = sqlx::query_as("SELECT * FROM tier_limits WHERE name = ? LIMIT 1")
+            .bind(TIER_LIMITS_KEY)
+            .fetch_optional(&self.db)
+            .await?;
 
-        // unwrap safe - db is initialized with valid tier limits
-        Ok(serde_json::from_value(res.tier_limits.unwrap()).unwrap())
+        Ok(res.
+            unwrap() // unwrap safe - db is always initialized with this row (name)
+            .tier_limits
+            .unwrap() // unwrap safe - db is initialized with valid tier limits
+            .0
+        )
     }
 
-    async fn set_tier_limits(&self, tier_limits: TierLimits) -> Result<(), DbErr> {
+    async fn set_tier_limits(&self, tier_limits: TierLimits) -> Result<(), SqlxError> {
+
+        /*
         let tier_limits_active_model = tier_limits::ActiveModel {
             name: Set(TIER_LIMITS_NEXT_KEY.to_string()),
             tier_limits: Set(Some(serde_json::to_value(tier_limits).unwrap())),
@@ -199,11 +254,23 @@ impl UserDb2 {
             )
             .exec(&self.db)
             .await?;
+        */
+
+        sqlx::query("INSERT INTO tier_limits (name, tier_limits) VALUES ($1, $2) ON CONFLICT (name) DO UPDATE SET tier_limits = EXCLUDED.tier_limits")
+            .bind(TIER_LIMITS_NEXT_KEY)
+            .bind(Json(tier_limits))
+            .execute(&self.db)
+            .await?;
+
         Ok(())
     }
 
-    async fn get_merkle_tree_count_from_db(db: &DatabaseConnection) -> Result<u64, DbErr> {
-        m_tree_config::Entity::find().count(db).await
+    async fn get_merkle_tree_count_from_db(db: &Pool<Postgres>) -> Result<u64, SqlxError> {
+        // m_tree_config::Entity::find().count(db).await
+        let res: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM m_tree_config")
+            .fetch_one(db)
+            .await?;
+        Ok(res as u64)
     }
 
     // internal methods for tx_counter
@@ -212,7 +279,8 @@ impl UserDb2 {
         &self,
         address: &Address,
         incr_value: Option<i64>,
-    ) -> Result<EpochCounter, DbErr> {
+    ) -> Result<EpochCounter, SqlxError> {
+
         let incr_value = incr_value.unwrap_or(1);
         let (epoch, _epoch_slice) = *self.epoch_store.read();
         tracing::info!(
@@ -222,17 +290,25 @@ impl UserDb2 {
             "incr_tx_counter: incrementing counter"
         );
 
-        let txn = self.db.begin().await?;
+        let mut txn = self.db.begin().await?;
 
         // Use SELECT FOR UPDATE to prevent race conditions with concurrent transactions
         // This locks the row until the transaction commits, ensuring atomic read-modify-write
+        /*
         let res = tx_counter::Entity::find()
             .filter(tx_counter::Column::Address.eq(address.to_string()))
             .lock(LockType::Update)
             .one(&txn)
             .await?;
+        */
+
+        let res: Option<TxCounterSqlx> = sqlx::query_as("SELECT * FROM tx_counter WHERE address = ? LIMIT 1")
+            .bind(address.to_string())
+            .fetch_optional(&mut *txn)
+            .await?;
 
         let new_tx_counter = if let Some(res) = res {
+            /*
             let mut res_active = res.into_active_model();
 
             // unwrap safe: res_active.epoch/epoch_slice cannot be null
@@ -259,7 +335,40 @@ impl UserDb2 {
 
             // res_active.update(&txn).await?;
             tx_counter::Entity::update(res_active).exec(&txn).await?
-        } else {
+            */
+
+            let model_epoch = res.epoch;
+            let model_epoch_counter = res.epoch_counter;
+
+            if model_epoch == 0 {
+
+                let res: TxCounterSqlx = sqlx::query_as("UPDATE tx_counter SET epoch = $1, epoch_counter = $1 WHERE address = $3 RETURNING *")
+                    .bind(i64::from(epoch))
+                    .bind(incr_value)
+                    .bind(address.to_string())
+                    .fetch_one(&mut *txn)
+                    .await?;
+                res
+
+            } else if epoch != Epoch::from(model_epoch) {
+                let res: TxCounterSqlx = sqlx::query_as("UPDATE tx_counter SET epoch = $1, epoch_counter = $1 WHERE address = $3 RETURNING *")
+                    .bind(i64::from(epoch))
+                    .bind(incr_value)
+                    .bind(address.to_string())
+                    .fetch_one(&mut *txn)
+                    .await?;
+                res
+            } else {
+                let res: TxCounterSqlx = sqlx::query_as("UPDATE tx_counter SET epoch_counter = $1 WHERE address = $2 RETURNING *")
+                    .bind(model_epoch_counter.saturating_add(incr_value))
+                    .bind(address.to_string())
+                    .fetch_one(&mut *txn)
+                    .await?;
+                res
+            }
+
+            } else {
+            /*
             // first time - need to create a new entry
             let new_tx_counter = tx_counter::ActiveModel {
                 address: Set(address.to_string()),
@@ -274,6 +383,16 @@ impl UserDb2 {
             tx_counter::Entity::insert(new_tx_counter)
                 .exec_with_returning(&txn)
                 .await?
+            */
+
+            let res: TxCounterSqlx = sqlx::query_as("INSERT INTO tx_counter (address, epoch, epoch_counter) VALUES ($1, $2, $3) RETURNING *")
+                .bind(address.to_string())
+                .bind(i64::from(epoch))
+                .bind(incr_value)
+                .fetch_one(&mut *txn)
+                .await?;
+
+            res
         };
 
         txn.commit().await?;
@@ -285,18 +404,18 @@ impl UserDb2 {
         &self,
         address: &Address,
     ) -> Result<EpochCounter, TxCounterError2> {
-        let res = tx_counter::Entity::find()
-            .filter(tx_counter::Column::Address.eq(address.to_string()))
-            .one(&self.db)
+
+        let res: Option<TxCounterSqlx> = sqlx::query_as("SELECT * FROM tx_counter WHERE address = ? LIMIT 1")
+            .fetch_optional(&self.db)
             .await?;
 
         match res {
             None => Err(TxCounterError2::NotRegistered(*address)),
-            Some(res) => Ok(self.counters_from_key(res)),
+            Some(res) => Ok(self.counters_from_key(res))
         }
     }
 
-    fn counters_from_key(&self, model: tx_counter::Model) -> EpochCounter {
+    fn counters_from_key(&self, model: TxCounterSqlx) -> EpochCounter {
         let (epoch, _epoch_slice) = *self.epoch_store.read();
         let cmp = model.epoch == i64::from(epoch);
 
@@ -330,60 +449,10 @@ impl UserDb2 {
         }
     }
 
-    /*
-    =======
-                Some(res) => Ok(self.counters_from_key(res)),
-            }
-        }
-
-    >>>>>>> 1cbd5c6a (Cargo fmt)
-        fn counters_from_key(&self, model: tx_counter::Model) -> (EpochCounter, EpochSliceCounter) {
-            let (epoch, epoch_slice) = *self.epoch_store.read();
-            let cmp = (
-                model.epoch == i64::from(epoch),
-                model.epoch_slice == i64::from(epoch_slice),
-            );
-
-            match cmp {
-                (true, true) => {
-                    // EpochCounter stored in DB == epoch store
-                    // We query for an epoch / epoch slice and this is what is stored in the Db
-                    // Return the counters
-                    (
-                        // FIXME: as
-                        (model.epoch_counter as u64).into(),
-                        // FIXME: as
-                        (model.epoch_slice_counter as u64).into(),
-                    )
-                }
-                (true, false) => {
-                    // EpochCounter.epoch_slice (stored in Db) != epoch_store.epoch_slice
-                    // We query for an epoch slice after what is stored in Db
-                    // This can happen if no Tx has updated the epoch slice counter (yet)
-                    // FIXME: as
-                    (
-                        (model.epoch_counter as u64).into(),
-                        EpochSliceCounter::from(0),
-                    )
-                }
-                (false, true) => {
-                    // EpochCounter.epoch (stored in DB) != epoch_store.epoch
-                    // We query for an epoch after what is stored in Db
-                    // This can happen if no Tx has updated the epoch counter (yet)
-                    (EpochCounter::from(0), EpochSliceCounter::from(0))
-                }
-                (false, false) => {
-                    // EpochCounter (stored in DB) != epoch_store
-                    // Outdated value (both for epoch & epoch slice)
-                    (EpochCounter::from(0), EpochSliceCounter::from(0))
-                }
-            }
-        }
-        */
-
     // user register & delete (with app logic)
 
     pub(crate) async fn register_user(&self, address: Address) -> Result<Fr, RegisterError2> {
+
         // Generate RLN identity
         let (identity_secret_hash, id_commitment) = keygen();
 
@@ -399,89 +468,58 @@ impl UserDb2 {
 
         let rate_commit = poseidon_hash(&[id_commitment, Fr::from(u64::from(self.rate_limit))]);
 
-        let mut guard = self.merkle_trees.write().await;
+        let mut txn = self.db.begin().await?;
 
-        let found = guard
-            .iter_mut()
-            .enumerate()
-            .find(|(_, tree)| tree.leaves_set() < tree.capacity());
+        // Step 1: find the first tree that is not full
+        // Note: FOR UPDATE will wait until it can lock the row
+        let max_entry: i64 = 1 << self.config.tree_depth;
+        let tree_config: Option<MerkleTreeConfigSqlx> = sqlx::query_as(r#"
+            SELECT *
+            FROM m_tree_config
+            WHERE next_index < $1
+            ORDER BY tree_index ASC
+            LIMIT 1
+            FOR UPDATE
+        "#)
+            .bind(max_entry)
+            .fetch_optional(&mut *txn)
+            .await?;
 
-        let (last_tree_index, last_index_in_mt) = if let Some((tree_index, tree_to_set)) = found {
-            // Found a tree that can accept our new user
-            let index_in_mt = tree_to_set.leaves_set();
-            tree_to_set
-                .set(index_in_mt, rate_commit)
-                .await
-                .map_err(RegisterError2::TreeError)?;
+        match tree_config {
+            Some(tree_config) => {
 
-            (tree_index, index_in_mt)
-        } else {
-            // All trees are full, let's create a new one that can accept our new user
+                // Step 2: update m_tree_config
+                let res = sqlx::query("UPDATE m_tree_config SET next_index = next_index + 1 WHERE id = $1",)
+                    .bind(tree_config.id)
+                    .execute(&mut *txn)
+                    .await?;
+                debug_assert!(res.rows_affected() == 1);
 
-            // as safe : assume sizeof usize == sizeof 64 (see user_db_types.rs)
-            let tree_count = guard.len() as u64;
-
-            if tree_count == self.config.max_tree_count {
+                // Step 3: update merkle_tree leaf
+                let v = PgFrStruct { inner: rate_commit};
+                let _res = sqlx::query("SELECT pgfr_mtree_set_leaf($1, $2, $3, $4)")
+                    .bind(i16::from(self.config.tree_depth))
+                    .bind(tree_config.tree_index)// depth
+                    .bind(tree_config.next_index)
+                    .bind(&v)
+                    .execute(&mut *txn)
+                    .await?;
+            },
+            None => {
                 return Err(RegisterError2::TooManyUsers);
             }
-
-            let persistent_db_config = PersistentDbConfig {
-                db_conn: self.db.clone(),
-                tree_index: tree_count as i16, // FIXME: as
-                insert_batch_size: 10_000,     // TODO: no hardcoded value
-            };
-
-            let mut mt = ProverMerkleTree::new(
-                self.config.tree_depth as usize,
-                MemoryDbConfig,
-                persistent_db_config.clone(),
-            )
-            .await
-            .unwrap();
-
-            mt.set(0, rate_commit)
-                .await
-                .map_err(RegisterError2::TreeError)?;
-
-            guard.push(mt);
-
-            (tree_count as usize, 0)
-        };
-
-        drop(guard);
-
-        let txn = self.db.begin().await?;
-
-        // TODO: unwrap safe?
-        let user_active_model = user::ActiveModel {
-            address: Set(address.to_string()),
-            rln_id: Set(serde_json::to_value(rln_identity).unwrap()),
-            tree_index: Set(last_tree_index as i64),
-            index_in_merkle_tree: Set(last_index_in_mt as i64), // FIXME
-            ..Default::default()
-        };
-
-        user::Entity::insert(user_active_model).exec(&txn).await?;
-
-        let tx_counter_active_model = tx_counter::ActiveModel {
-            address: Set(address.to_string()),
-            ..Default::default()
-        };
-
-        tx_counter::Entity::insert(tx_counter_active_model)
-            .exec(&txn)
-            .await?;
+        }
 
         txn.commit().await?;
 
         Ok(id_commitment)
     }
 
-    pub(crate) async fn remove_user(&self, address: &Address) -> Result<bool, MerkleTreeError> {
+    pub(crate) async fn remove_user(&self, address: &Address) -> Result<bool, SqlxError> {
         let user = self
             .get_user(address)
-            .await
-            .map_err(|e| MerkleTreeError::PDb(e.into()))?;
+            .await?;
+            // .map_err(|e| MerkleTreeError::PDb(e.into()))?;
 
         if user.is_none() {
             // User not found (User not registered)
@@ -492,6 +530,7 @@ impl UserDb2 {
         let tree_index = user.tree_index as usize;
         let index_in_merkle_tree = user.index_in_merkle_tree as usize;
 
+        /*
         let mut guard = self.merkle_trees.write().await;
         // FIXME: unwrap safe?
         let mt = guard.get_mut(tree_index).unwrap();
@@ -525,6 +564,36 @@ impl UserDb2 {
         txn.commit()
             .await
             .map_err(|e| MerkleTreeError::PDb(e.into()))?;
+        */
+
+        let mut txn = self
+            .db
+            .begin()
+            .await?;
+        // Note: never reuse index in Merkle Tree (for security reasons)
+        //       instead we reset the user rate commit to 0
+        let v = PgFrStruct { inner: Fr::ZERO };
+        let _res = sqlx::query("SELECT pgfr_mtree_set_leaf($1, $2, $3, $4)")
+            .bind(i16::from(self.config.tree_depth))
+            .bind(tree_index as i64)// depth
+            .bind(index_in_merkle_tree as i64)
+            .bind(&v)
+            .execute(&mut *txn)
+            .await?;
+
+        sqlx::query("DELETE FROM user WHERE address = $1")
+            .bind(address.to_string())
+            .execute(&mut *txn)
+            .await?;
+        sqlx::query("DELETE FROM tx_counter WHERE address = $1")
+            .bind(address.to_string())
+            .execute(&mut *txn)
+            .await?;
+        // TODO: delete in deny_list and others?
+
+        txn.commit()
+            .await?;
+
 
         Ok(true)
     }
@@ -533,7 +602,8 @@ impl UserDb2 {
     pub async fn get_merkle_proof(
         &self,
         address: &Address,
-    ) -> Result<MerkleProof<ProverPoseidonHash>, GetMerkleTreeProofError2> {
+    ) -> Result<MerkleProof, GetMerkleTreeProofError2> {
+
         let (tree_index, index_in_mt) = {
             let user = self.get_user(address).await?;
             if user.is_none() {
@@ -543,13 +613,14 @@ impl UserDb2 {
             (user.tree_index, user.index_in_merkle_tree)
         };
 
-        let guard = self.merkle_trees.read().await;
-        // FIXME: no 'as'
-        let proof = guard[tree_index as usize]
-            .proof(index_in_mt as usize)
-            .map_err(GetMerkleTreeProofError2::from)?;
+        let row: (MerkleProof,) = sqlx::query_as("SELECT pgfr_mtree_get_proof($1, $2, $3)")
+            .bind(i16::from(self.config.tree_depth))
+            .bind(tree_index)
+            .bind(0i64)
+            .fetch_one(&self.db)
+            .await?;
 
-        Ok(proof)
+        Ok(row.0)
     }
 
     // external UserDb methods
@@ -637,26 +708,22 @@ impl UserDb2 {
     /// Check if an address is on the deny list and not expired
     ///
     /// Returns true if the address is denied (and not expired), false otherwise
-    pub async fn is_denied(&self, address: &Address) -> Result<bool, DbErr> {
+    pub async fn is_denied(&self, address: &Address) -> Result<bool, SqlxError> {
+
+        let address_str = address.to_string().to_lowercase();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
 
-        let address_str = address.to_string().to_lowercase();
-
         // Single query: check if exists AND (no expiry OR not expired)
-        let count = deny_list::Entity::find()
-            .filter(deny_list::Column::Address.eq(&address_str))
-            .filter(
-                deny_list::Column::ExpiresAt
-                    .is_null()
-                    .or(deny_list::Column::ExpiresAt.gt(now)),
-            )
-            .count(&self.db)
+        let res: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM deny_list WHERE address = $1 AND (expires_at IS NULL OR expires_at > $2)")
+            .bind(address_str)
+            .bind(now)
+            .fetch_one(&self.db)
             .await?;
 
-        Ok(count > 0)
+        Ok(res > 0)
     }
 
     /// Add an address to the deny list
@@ -672,7 +739,8 @@ impl UserDb2 {
         address: &Address,
         reason: Option<String>,
         ttl_seconds: Option<i64>,
-    ) -> Result<bool, DbErr> {
+    ) -> Result<bool, SqlxError> {
+
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -696,41 +764,32 @@ impl UserDb2 {
             );
         }
 
-        // Use insert with on_conflict for atomic upsert
-        let new_entry = deny_list::ActiveModel {
-            address: Set(address_str.clone()),
-            expires_at: Set(expires_at),
-            denied_at: Set(Some(now)),
-        };
+        let result = sqlx::query(r#"
+            INSERT INTO deny_list (address, expires_at, denied_at) VALUES ($1, $2, $3)
+            ON CONFLICT (address) DO UPDATE SET expires_at = EXCLUDED.expires_at, denied_at = EXCLUDED.denied_at
+            RETURNING (xmax = 0) as "is_insert!" "#)
+            .bind(address_str)
+            .bind(expires_at)
+            .bind(now)
+            .fetch_one(&self.db)
+            .await?;
 
-        let result = deny_list::Entity::insert(new_entry)
-            .on_conflict(
-                sea_orm::sea_query::OnConflict::column(deny_list::Column::Address)
-                    .update_columns([deny_list::Column::ExpiresAt, deny_list::Column::DeniedAt])
-                    .to_owned(),
-            )
-            .exec(&self.db)
-            .await;
+        // true = row has been inserted, false = row has been updated
+        Ok(result.get(0))
 
-        match result {
-            Ok(_) => Ok(true),
-            Err(DbErr::RecordNotInserted) => Ok(false), // Was updated, not inserted
-            Err(e) => Err(e),
-        }
     }
 
     /// Remove an address from the deny list
     ///
     /// Returns true if the address was removed, false if it wasn't on the list
-    pub async fn remove_from_deny_list(&self, address: &Address) -> Result<bool, DbErr> {
+    pub async fn remove_from_deny_list(&self, address: &Address) -> Result<bool, SqlxError> {
         let address_str = address.to_string().to_lowercase();
-
-        let result = deny_list::Entity::delete_many()
-            .filter(deny_list::Column::Address.eq(address_str))
-            .exec(&self.db)
+        let result = sqlx::query(r#"DELETE FROM deny_list WHERE address = $1"#)
+            .bind(address_str)
+            .execute(&self.db)
             .await?;
 
-        Ok(result.rows_affected > 0)
+        Ok(result.rows_affected() > 0)
     }
 
     /// Get deny list entry for an address (if exists and not expired)
@@ -739,7 +798,8 @@ impl UserDb2 {
     pub async fn get_deny_list_entry(
         &self,
         address: &Address,
-    ) -> Result<Option<deny_list::Model>, DbErr> {
+    ) -> Result<Option<DenyListSqlx>, SqlxError> {
+
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -748,49 +808,42 @@ impl UserDb2 {
         let address_str = address.to_string().to_lowercase();
 
         // Single query with expiry check
-        deny_list::Entity::find()
-            .filter(deny_list::Column::Address.eq(address_str))
-            .filter(
-                deny_list::Column::ExpiresAt
-                    .is_null()
-                    .or(deny_list::Column::ExpiresAt.gt(now)),
-            )
-            .one(&self.db)
-            .await
+        let result: Option<DenyListSqlx> = sqlx::query_as("SELECT * FROM deny_list WHERE address = $1 AND (expires_at IS NULL OR expires_at > $2)")
+            .bind(address_str)
+            .bind(now)
+            .fetch_optional(&self.db)
+            .await?;
+
+        Ok(result)
     }
 
     /// Clean up expired deny list entries
     ///
     /// Returns the number of entries removed
-    pub async fn cleanup_expired_deny_list_entries(&self) -> Result<u64, DbErr> {
+    pub async fn cleanup_expired_deny_list_entries(&self) -> Result<u64, SqlxError> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
 
-        let result = deny_list::Entity::delete_many()
-            .filter(
-                deny_list::Column::ExpiresAt
-                    .is_not_null()
-                    .and(deny_list::Column::ExpiresAt.lte(now)),
-            )
-            .exec(&self.db)
+        let result = sqlx::query("DELETE FROM deny_list WHERE expires_at IS NOT NULL AND expires_at <= $1")
+            .bind(now)
+            .execute(&self.db)
             .await?;
 
-        Ok(result.rows_affected)
+        Ok(result.rows_affected())
     }
 
     // ============ Nullifier Methods (High-Throughput) ============
 
     /// Check if a nullifier exists for the given epoch
     /// Returns true if the nullifier already exists (duplicate/replay), false otherwise
-    pub async fn nullifier_exists(&self, nullifier: &[u8], epoch: i64) -> Result<bool, DbErr> {
-        use prover_db_entity::nullifiers;
+    pub async fn nullifier_exists(&self, nullifier: &[u8], epoch: i64) -> Result<bool, SqlxError> {
 
-        let count = nullifiers::Entity::find()
-            .filter(nullifiers::Column::Nullifier.eq(nullifier.to_vec()))
-            .filter(nullifiers::Column::Epoch.eq(epoch))
-            .count(&self.db)
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM nullifiers WHERE nullifier = $1 AND epoch = $2 LIMIT 1")
+            .bind(nullifier)
+            .bind(epoch)
+            .fetch_one(&self.db)
             .await?;
 
         Ok(count > 0)
@@ -800,32 +853,19 @@ impl UserDb2 {
     /// Returns Ok(true) if inserted, Ok(false) if already exists (duplicate)
     ///
     /// Uses INSERT ... ON CONFLICT DO NOTHING for atomic check-and-insert
-    pub async fn record_nullifier(&self, nullifier: &[u8], epoch: i64) -> Result<bool, DbErr> {
-        use prover_db_entity::nullifiers;
+    pub async fn record_nullifier(&self, nullifier: &[u8], epoch: i64) -> Result<bool, SqlxError> {
 
-        let new_entry = nullifiers::ActiveModel {
-            nullifier: Set(nullifier.to_vec()),
-            epoch: Set(epoch),
-        };
+        let result = sqlx::query(r#"
+                INSERT INTO nullifiers VALUES ($1, $2)
+                ON CONFLICT (nullifier, epoch) DO NOTHING
+                RETURNING (xmax = 0) as "is_insert!"
+            "#)
+            .bind(nullifier)
+            .bind(epoch)
+            .fetch_one(&self.db)
+            .await?;
 
-        // Try to insert, ignore if already exists
-        let result = nullifiers::Entity::insert(new_entry)
-            .on_conflict(
-                sea_orm::sea_query::OnConflict::columns([
-                    nullifiers::Column::Nullifier,
-                    nullifiers::Column::Epoch,
-                ])
-                .do_nothing()
-                .to_owned(),
-            )
-            .exec(&self.db)
-            .await;
-
-        match result {
-            Ok(_) => Ok(true),                          // Inserted successfully
-            Err(DbErr::RecordNotInserted) => Ok(false), // Already existed
-            Err(e) => Err(e),
-        }
+        Ok(result.get(0))
     }
 
     /// Check and record a nullifier atomically
@@ -837,7 +877,7 @@ impl UserDb2 {
         &self,
         nullifier: &[u8],
         epoch: i64,
-    ) -> Result<bool, DbErr> {
+    ) -> Result<bool, SqlxError> {
         // record_nullifier already does atomic check-and-insert
         self.record_nullifier(nullifier, epoch).await
     }
@@ -853,40 +893,39 @@ impl UserDb2 {
         &self,
         current_epoch: i64,
         keep_epochs: i64,
-    ) -> Result<u64, DbErr> {
-        use prover_db_entity::nullifiers;
+    ) -> Result<u64, SqlxError> {
 
         let cutoff_epoch = current_epoch - keep_epochs;
-
-        let result = nullifiers::Entity::delete_many()
-            .filter(nullifiers::Column::Epoch.lt(cutoff_epoch))
-            .exec(&self.db)
+        let result = sqlx::query("DELETE FROM nullifiers WHERE epoch < $1")
+            .bind(cutoff_epoch)
+            .execute(&self.db)
             .await?;
 
-        Ok(result.rows_affected)
+        Ok(result.rows_affected())
     }
 
     /// Get count of nullifiers for a specific epoch
     /// Useful for monitoring and debugging
-    pub async fn get_nullifier_count_for_epoch(&self, epoch: i64) -> Result<u64, DbErr> {
-        use prover_db_entity::nullifiers;
+    pub async fn get_nullifier_count_for_epoch(&self, epoch: i64) -> Result<u64, SqlxError> {
+        let result: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM nullifiers WHERE epoch = $1")
+            .bind(epoch)
+            .fetch_one(&self.db)
+            .await?;
 
-        nullifiers::Entity::find()
-            .filter(nullifiers::Column::Epoch.eq(epoch))
-            .count(&self.db)
-            .await
+        Ok(result as u64)
     }
 }
 
 // Test only functions
 #[cfg(test)]
 impl UserDb2 {
-    pub(crate) async fn get_db_tree_count(&self) -> Result<u64, DbErr> {
+    pub(crate) async fn get_db_tree_count(&self) -> Result<u64, SqlxError> {
         Self::get_merkle_tree_count_from_db(&self.db).await
     }
 
     pub(crate) async fn get_vec_tree_count(&self) -> usize {
-        self.merkle_trees.read().await.len()
+        // self.merkle_trees.read().await.len()
+        todo!()
     }
 
     pub(crate) async fn get_user_indexes(&self, address: &Address) -> (i64, i64) {
@@ -896,6 +935,7 @@ impl UserDb2 {
     }
 }
 
+/*
 #[derive(thiserror::Error, Debug)]
 pub enum MerkleTreeError {
     #[error(transparent)]
@@ -903,6 +943,7 @@ pub enum MerkleTreeError {
     #[error(transparent)]
     PDb(#[from] PersistentDbError),
 }
+*/
 
 #[cfg(feature = "postgres")]
 #[cfg(test)]
@@ -914,10 +955,10 @@ mod tests {
     use async_trait::async_trait;
     use claims::assert_matches;
     use derive_more::Display;
-    use sea_orm::{ConnectionTrait, Database, Statement};
+    // use sea_orm::{ConnectionTrait, Database, Statement};
     use tracing_test::traced_test;
     // internal
-    use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
+    // use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
 
     #[derive(Debug, Display, thiserror::Error)]
     struct DummyError();

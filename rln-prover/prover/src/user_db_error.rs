@@ -1,13 +1,13 @@
 use std::num::TryFromIntError;
 // third-party
 use alloy::primitives::Address;
-use prover_pmtree::PmtreeErrorKind;
-use sea_orm::DbErr;
+// use prover_pmtree::PmtreeErrorKind;
+// use sea_orm::DbErr;
 use zerokit_utils::error::{FromConfigError, ZerokitMerkleTreeError};
 // internal
 use crate::tier::ValidateTierLimitsError;
 // TODO: define MerkleTreeError here?
-use crate::user_db_2::MerkleTreeError;
+// use crate::user_db_2::MerkleTreeError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum UserDbOpenError {
@@ -101,7 +101,7 @@ pub enum UserTierInfoError<E: std::error::Error> {
 #[derive(Debug, thiserror::Error)]
 pub enum UserDb2OpenError {
     #[error(transparent)]
-    Db(#[from] DbErr),
+    Db(#[from] sqlx::error::Error),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -109,33 +109,33 @@ pub enum RegisterError2 {
     #[error("User (address: {0:?}) has already been registered")]
     AlreadyRegistered(Address),
     #[error(transparent)]
-    Db(#[from] DbErr),
+    Db(#[from] sqlx::error::Error),
     #[error("Too many users, exceeding merkle tree capacity...")]
     TooManyUsers,
-    #[error("Merkle tree error: {0}")]
-    TreeError(MerkleTreeError),
+    // #[error("Merkle tree error: {0}")]
+    // TreeError(MerkleTreeError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
     FromConfig(#[from] FromConfigError),
 }
 
-#[derive(thiserror::Error, Debug, PartialEq)]
+#[derive(thiserror::Error, Debug)]
 pub enum TxCounterError2 {
     #[error("User (address: {0:?}) is not registered")]
     NotRegistered(Address),
     #[error(transparent)]
-    Db(#[from] DbErr),
+    Db(#[from] sqlx::error::Error),
 }
 
-#[derive(thiserror::Error, Debug, Clone)]
+#[derive(thiserror::Error, Debug)]
 pub enum GetMerkleTreeProofError2 {
     #[error("User (address: {0:?}) is not registered")]
     NotRegistered(Address),
     #[error(transparent)]
-    Db(#[from] DbErr),
-    #[error(transparent)]
-    MerkleTree(#[from] PmtreeErrorKind),
+    Db(#[from] sqlx::error::Error),
+    // #[error(transparent)]
+    // MerkleTree(#[from] PmtreeErrorKind),
 }
 
 /*
@@ -153,7 +153,7 @@ pub enum SetTierLimitsError2 {
     #[error(transparent)]
     Validate(#[from] ValidateTierLimitsError),
     #[error(transparent)]
-    Db(#[from] DbErr),
+    Db(#[from] sqlx::error::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -165,5 +165,5 @@ pub enum UserTierInfoError2<E: std::error::Error> {
     #[error(transparent)]
     TxCounter(#[from] TxCounterError2),
     #[error(transparent)]
-    Db(#[from] DbErr),
+    Db(#[from] sqlx::error::Error),
 }
