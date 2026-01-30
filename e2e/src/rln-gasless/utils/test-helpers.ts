@@ -278,7 +278,7 @@ export const SUB_THRESHOLD_GAS_PRICE = parseGwei("9");
 /**
  * Exactly at threshold gas price
  */
-export const THRESHOLD_GAS_PRICE = parseGwei("10");
+export const THRESHOLD_GAS_PRICE = parseGwei("12");
 
 /**
  * Recipient address for test transactions

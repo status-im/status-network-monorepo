@@ -103,6 +103,7 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
   // Simulation dependencies for estimating gas used
   private final TransactionSimulationService transactionSimulationService;
   private final BlockchainService blockchainService;
+  private final org.hyperledger.besu.plugin.services.WorldStateService worldStateService;
   private final LineaTracerConfiguration tracerConfiguration;
   private final LineaL1L2BridgeSharedConfiguration l1L2BridgeConfiguration;
 
@@ -119,6 +120,7 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
       KarmaServiceClient karmaServiceClient,
       TransactionSimulationService transactionSimulationService,
       BlockchainService blockchainService,
+      org.hyperledger.besu.plugin.services.WorldStateService worldStateService,
       LineaTracerConfiguration tracerConfiguration,
       LineaL1L2BridgeSharedConfiguration l1L2BridgeSharedConfiguration) {
     this(
@@ -127,6 +129,7 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
         karmaServiceClient,
         transactionSimulationService,
         blockchainService,
+        worldStateService,
         tracerConfiguration,
         l1L2BridgeSharedConfiguration,
         null);
@@ -137,7 +140,7 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
       LineaRlnValidatorConfiguration rlnConfig,
       boolean enabled,
       KarmaServiceClient karmaServiceClient) {
-    this(rlnConfig, enabled, karmaServiceClient, null, null, null, null, null);
+    this(rlnConfig, enabled, karmaServiceClient, null, null, null, null, null, null);
   }
 
   /**
@@ -148,7 +151,7 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
    * @param enabled Whether the validator is enabled (should be false in sequencer mode)
    */
   public RlnProverForwarderValidator(LineaRlnValidatorConfiguration rlnConfig, boolean enabled) {
-    this(rlnConfig, enabled, null, null, null, null, null, null);
+    this(rlnConfig, enabled, null, null, null, null, null, null, null);
   }
 
   /**
@@ -169,6 +172,7 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
       KarmaServiceClient karmaServiceClient,
       TransactionSimulationService transactionSimulationService,
       BlockchainService blockchainService,
+      org.hyperledger.besu.plugin.services.WorldStateService worldStateService,
       LineaTracerConfiguration tracerConfiguration,
       LineaL1L2BridgeSharedConfiguration l1L2BridgeSharedConfiguration,
       ManagedChannel providedChannel) {
@@ -177,6 +181,7 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
     this.karmaServiceClient = karmaServiceClient;
     this.transactionSimulationService = transactionSimulationService;
     this.blockchainService = blockchainService;
+    this.worldStateService = worldStateService;
     this.tracerConfiguration = tracerConfiguration;
     this.l1L2BridgeConfiguration = l1L2BridgeSharedConfiguration;
 
@@ -428,11 +433,12 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
       final ProcessableBlockHeader pendingBlockHeader, final BigInteger chainId) {
     var lineCountingTracer =
         tracerConfiguration != null && tracerConfiguration.isLimitless()
-            ? new ZkCounter(l1L2BridgeConfiguration)
+            ? new ZkCounter(l1L2BridgeConfiguration, net.consensys.linea.zktracer.Fork.LONDON)
             : new ZkTracer(
                 net.consensys.linea.zktracer.Fork.LONDON, l1L2BridgeConfiguration, chainId);
     lineCountingTracer.traceStartConflation(1L);
-    lineCountingTracer.traceStartBlock(pendingBlockHeader, pendingBlockHeader.getCoinbase());
+    lineCountingTracer.traceStartBlock(
+        worldStateService.getWorldView(), pendingBlockHeader, pendingBlockHeader.getCoinbase());
     return lineCountingTracer;
   }
 
@@ -452,9 +458,19 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
       final var pendingBlockHeader = transactionSimulationService.simulatePendingBlockHeader();
       final var chainId = blockchainService.getChainId().orElse(BigInteger.ZERO);
       final var tracer = createLineCountingTracer(pendingBlockHeader, chainId);
+      LOG.debug(
+          "Starting gas estimation simulation for tx {}", transaction.getHash().toHexString());
       final var maybeSimulationResults =
           transactionSimulationService.simulate(
-              transaction, java.util.Optional.empty(), pendingBlockHeader, tracer, false, true);
+              transaction,
+              java.util.Optional.empty(),
+              pendingBlockHeader,
+              tracer,
+              java.util.EnumSet.of(
+                  org.hyperledger.besu.plugin.services.TransactionSimulationService
+                      .SimulationParameters.ALLOW_FUTURE_NONCE));
+      LOG.debug(
+          "Gas estimation simulation completed for tx {}", transaction.getHash().toHexString());
 
       if (maybeSimulationResults.isPresent()) {
         final var sim = maybeSimulationResults.get();

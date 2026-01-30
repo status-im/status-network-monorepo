@@ -75,6 +75,7 @@ class RlnProverForwarderValidatorEstimatedGasTest {
             /* karmaServiceClient */ null,
             /* txSim */ null,
             /* blockchain */ null,
+            /* worldStateService */ null,
             /* tracerConfig */ null,
             /* l1l2 */ null,
             /* providedChannel */ channel);

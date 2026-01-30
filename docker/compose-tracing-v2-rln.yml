@@ -37,6 +37,17 @@ services:
       file: compose-spec-l1-services.yml
       service: l1-node-genesis-generator
 
+  l2-genesis-initialization:
+    extends:
+      file: compose-spec-l2-services-rln.yml
+      service: l2-genesis-initialization
+
+  # MARU consensus client for block production
+  maru:
+    extends:
+      file: compose-spec-l2-services-rln.yml
+      service: maru
+
   # RLN-enabled sequencer using our custom Besu image
   sequencer:
     extends:
@@ -55,9 +66,15 @@ services:
       file: compose-spec-l2-services-rln.yml
       service: l2-node-besu
 
+  # Follower RPC node for redundancy
+  l2-node-besu-follower:
+    extends:
+      file: compose-spec-l2-services-rln.yml
+      service: l2-node-besu-follower
+
   traces-node:
     extends:
-      file: compose-spec-l2-services.yml
+      file: compose-spec-l2-services-rln.yml
       service: traces-node
 
   prover-v3:
@@ -72,30 +89,30 @@ services:
 
   coordinator:
     extends:
-      file: compose-spec-l2-services.yml
+      file: compose-spec-l2-services-rln.yml
       service: coordinator
 
   web3signer:
     extends:
-      file: compose-spec-l2-services.yml
+      file: compose-spec-l2-services-rln.yml
       service: web3signer
 
   postgres:
     extends:
-      file: compose-spec-l2-services.yml
+      file: compose-spec-l2-services-rln.yml
       service: postgres
 
   zkbesu-shomei:
     extends:
-      file: compose-spec-l2-services.yml
+      file: compose-spec-l2-services-rln.yml
       service: zkbesu-shomei
 
   shomei:
     extends:
-      file: compose-spec-l2-services.yml
+      file: compose-spec-l2-services-rln.yml
       service: shomei
 
   transaction-exclusion-api:
     extends:
-      file: compose-spec-l2-services.yml
+      file: compose-spec-l2-services-rln.yml
       service: transaction-exclusion-api

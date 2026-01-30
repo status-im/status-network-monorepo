@@ -257,18 +257,16 @@ describe("RLN Integration and Error Handling", () => {
         basic: basicUser.address,
       });
 
-      // Send transactions from each user based on their tier
-      // Entry: 2 tx
-      for (let i = 0; i < 2; i++) {
-        const receipt = await rlnClient.sendGaslessTransaction(entryUser, {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          data: uniqueTxData(`int002-entry-${i}`),
-        });
-        expect(receipt.status).toBe(1);
-      }
+      // Send transactions from each user based on their tier quota
+      // Entry: 1 tx (quota = 1)
+      const entryReceipt = await rlnClient.sendGaslessTransaction(entryUser, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        data: uniqueTxData(`int002-entry-0`),
+      });
+      expect(entryReceipt.status).toBe(1);
 
-      // Newbie: 3 tx (subset of 6 quota)
+      // Newbie: 3 tx (quota = 5, using subset)
       for (let i = 0; i < 3; i++) {
         const receipt = await rlnClient.sendGaslessTransaction(newbieUser, {
           to: TEST_RECIPIENT,
@@ -278,7 +276,7 @@ describe("RLN Integration and Error Handling", () => {
         expect(receipt.status).toBe(1);
       }
 
-      // Basic: 4 tx (subset of 16 quota)
+      // Basic: 4 tx (quota = 15, using subset)
       for (let i = 0; i < 4; i++) {
         const receipt = await rlnClient.sendGaslessTransaction(basicUser, {
           to: TEST_RECIPIENT,
@@ -290,7 +288,7 @@ describe("RLN Integration and Error Handling", () => {
 
       logger.info(`${INT_002.id}: PASSED ✓`);
     },
-    HIGH_VOLUME_TIMEOUT, // 2 + 3 + 4 = 9 TXs = ~36s
+    HIGH_VOLUME_TIMEOUT, // 1 + 3 + 4 = 8 TXs
   );
 
   it(
@@ -329,7 +327,9 @@ describe("RLN Integration and Error Handling", () => {
   it(
     formatScenario(INT_004),
     async () => {
-      const user = getEntryUser();
+      // Use Newbie tier (quota=5) to avoid deny list issues
+      // Entry tier (quota=1) would exhaust quota and hit 60s deny list TTL
+      const user = getNewbieUser();
       const epochDuration = RLN_CONFIG.test.epochDurationSeconds;
 
       logger.info(`${INT_004.id}: Testing epoch transition`, {
@@ -366,7 +366,7 @@ describe("RLN Integration and Error Handling", () => {
 
       logger.info(`${INT_004.id}: PASSED ✓`);
     },
-    EPOCH_TEST_TIMEOUT, // This test waits for epoch boundary (60s)
+    EPOCH_TEST_TIMEOUT, // This test waits for epoch boundary (30s + buffer)
   );
 
   it(
@@ -648,7 +648,7 @@ describe("RLN Integration and Error Handling", () => {
 
       logger.info(`${EDGE_004.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    30000, // Extended timeout: 3 users × 4s registration + verification time
   );
 
   it(

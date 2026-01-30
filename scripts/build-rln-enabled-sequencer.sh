@@ -25,7 +25,7 @@ echo -e "  RLN Prover: ${STATUS_RLN_PROVER_DIR}"
 echo -e "  Custom Besu: ${CUSTOM_BESU_DIR}"
 
 # Use the exact same image version as the official Linea setup
-BESU_PACKAGE_TAG="beta-v2.1-rc16.2-20250521134911-f6cb0f2"
+BESU_PACKAGE_TAG="beta-v4.4-rc7-20251215105212-1b78d76"
 BESU_BASE_IMAGE="consensys/linea-besu-package:${BESU_PACKAGE_TAG}"
 
 # Build options
@@ -125,14 +125,15 @@ echo -e "${GREEN}✅ RLN Bridge library ready: $RLN_LIB_FILE${NC}"
 echo -e "${BLUE}☕ Building Custom Sequencer JAR with Dependencies...${NC}"
 cd "$REPO_ROOT"
 
-# Build with distPlugin to include dependencies not provided by Besu
-# Note: Removed 'clean' task to avoid re-downloading 181MB Besu tarball every build
+# Build the sequencer plugin with all dependencies using the artifacts task
+# Note: Removed 'clean' task to avoid re-downloading Besu tarball every build
 # Gradle's incremental build handles changes automatically
-./gradlew :besu-plugins:linea-sequencer:sequencer:distPlugin -x test -x checkSpdxHeader -x spotlessJavaCheck -x spotlessGroovyGradleCheck --no-daemon
+./gradlew :besu-plugins:linea-sequencer:sequencer:artifacts -x test -x checkSpdxHeader -x spotlessJavaCheck -x spotlessGroovyGradleCheck --no-daemon
 
-# Look for both JAR and ZIP files from distPlugin
-SEQUENCER_JAR=$(find "${LINEA_SEQUENCER_DIR}/sequencer/build/libs" -name "linea-sequencer-*.jar" | head -1)
-SEQUENCER_DIST=$(find "${LINEA_SEQUENCER_DIR}/sequencer/build/distributions" -name "linea-sequencer-*.zip" | head -1)
+# Look for both JAR and ZIP files from artifacts task
+# Sort by modification time to get the most recently built JAR (newest first) - portable way
+SEQUENCER_JAR=$(ls -t "${LINEA_SEQUENCER_DIR}/sequencer/build/libs"/linea-sequencer-*.jar 2>/dev/null | head -1)
+SEQUENCER_DIST=$(ls -t "${LINEA_SEQUENCER_DIR}/sequencer/build/distributions"/linea-sequencer-*.zip 2>/dev/null | head -1)
 
 echo -e "${YELLOW}  Found JAR: $SEQUENCER_JAR${NC}"
 echo -e "${YELLOW}  Found Distribution: $SEQUENCER_DIST${NC}"
@@ -194,21 +195,43 @@ echo -e "${YELLOW}🔍 Verifying Linea plugins...${NC}"
 echo -e "  Current plugins in extracted image:"
 ls -la ./besu/plugins/
 
-# Replace the sequencer plugin with our custom one
-echo -e "${YELLOW}🔄 Installing custom sequencer...${NC}"
-rm -f ./besu/plugins/linea-sequencer-*.jar
-cp "$SEQUENCER_JAR" ./besu/plugins/
-echo -e "  ✅ Installed: $(basename "$SEQUENCER_JAR")"
+# Replace ONLY the sequencer plugin, keep all other Linea plugins
+echo -e "${YELLOW}🔄 Installing custom sequencer (keeping other plugins)...${NC}"
+echo -e "  Existing plugins before replacement:"
+ls -1 ./besu/plugins/ | grep -E "\.(jar|JAR)$" || true
 
-# Install missing dependency JARs in lib directory
-if ls *.jar 1> /dev/null 2>&1; then
-    echo -e "${YELLOW}📚 Installing dependency JARs...${NC}"
-    for jar in *.jar; do
-        if [[ "$jar" != "$(basename "$SEQUENCER_JAR")" ]]; then
-            cp "$jar" ./besu/lib/
-            echo -e "  ✅ Installed dependency: $jar"
+# Remove only the old sequencer plugin(s)
+rm -f ./besu/plugins/linea-sequencer*.jar
+
+# Install our custom sequencer
+cp "$SEQUENCER_JAR" ./besu/plugins/
+echo -e "  ✅ Replaced sequencer with: $(basename "$SEQUENCER_JAR")"
+echo -e "  Final plugins:"
+ls -1 ./besu/plugins/ | grep -E "\.(jar|JAR)$" || true
+
+# Install plugin dependencies in a separate directory to avoid version conflicts
+# This keeps plugin deps (gRPC 1.70.0) separate from base Besu (gRPC 1.75.0)
+if [[ -f "$SEQUENCER_DIST" ]]; then
+    echo -e "${YELLOW}📦 Installing plugin dependencies in plugins/lib/...${NC}"
+    mkdir -p ./besu/plugins/lib
+    unzip -q "$SEQUENCER_DIST" -d extracted-deps/
+
+    # Copy ALL dependencies except the main sequencer JAR
+    # Exclude JARs that should come from base Besu (tuweni, besu-specific)
+    EXCLUDE_PATTERN="(tuweni|besu-|linea-sequencer-)"
+    for jar in extracted-deps/*/*.jar; do
+        jarname=$(basename "$jar")
+        if [[ ! "$jarname" =~ $EXCLUDE_PATTERN ]]; then
+            cp "$jar" ./besu/plugins/lib/
+            echo -e "  ✅ Installed: $jarname"
         fi
     done
+    rm -rf extracted-deps/
+
+    echo -e "${YELLOW}  📋 Plugin dependencies summary:${NC}"
+    ls -la ./besu/plugins/lib/ | wc -l | xargs -I {} echo "  Total JARs: {}"
+else
+    echo -e "${YELLOW}⚠️  No distribution ZIP found - plugin may be missing dependencies${NC}"
 fi
 
 # Copy RLN native library  
@@ -217,19 +240,20 @@ mkdir -p ./besu/lib/native
 cp "$RLN_LIB_FILE" ./besu/lib/native/
 echo -e "  ✅ Installed: librln_bridge.so"
 
-# Update Besu startup scripts to include plugins in classpath (critical!)
+# Update Besu startup scripts to include plugins and plugins/lib in classpath (critical!)
 echo -e "${YELLOW}⚙️ Updating Besu startup scripts...${NC}"
 for script in besu besu.bat besu-untuned besu-untuned.bat; do
     if [[ -f "./besu/bin/$script" ]]; then
         # Create backup
         cp "./besu/bin/$script" "./besu/bin/$script.backup"
-        
+
         if [[ "$script" == *.bat ]]; then
-            # Windows batch files
-            sed -i.tmp 's|CLASSPATH=%APP_HOME%\\lib\\*|CLASSPATH=%APP_HOME%\\lib\\*;%APP_HOME%\\plugins\\*|g' "./besu/bin/$script"
+            # Windows batch files - plugin deps FIRST to take precedence
+            sed -i.tmp 's|CLASSPATH=%APP_HOME%\\lib\\*|CLASSPATH=%APP_HOME%\\plugins\\lib\\*;%APP_HOME%\\plugins\\*;%APP_HOME%\\lib\\*|g' "./besu/bin/$script"
         else
-            # Unix shell scripts  
-            sed -i.tmp 's|CLASSPATH=\$APP_HOME/lib/\*|CLASSPATH=\$APP_HOME/lib/\*:\$APP_HOME/plugins/\*|g' "./besu/bin/$script"
+            # Unix shell scripts - match the actual format: CLASSPATH=/opt/besu/lib/*:/opt/besu/plugins/*
+            # Plugin deps FIRST so they take precedence over base Besu versions
+            sed -i.tmp 's|CLASSPATH=/opt/besu/lib/\*:/opt/besu/plugins/\*|CLASSPATH=/opt/besu/plugins/lib/*:/opt/besu/plugins/*:/opt/besu/lib/*|g' "./besu/bin/$script"
         fi
         rm -f "./besu/bin/$script.tmp"
         echo -e "  ✅ Updated classpath in $script"

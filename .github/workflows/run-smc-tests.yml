@@ -1,4 +1,4 @@
-name: Smart contracts test
+name: smart-contracts-testing
 
 permissions:
   contents: read
@@ -8,9 +8,8 @@ on:
   workflow_call:
     inputs:
       commit_tag:
-        required: false
+        required: true
         type: string
-        default: 'local'
 
 env:
   GOPROXY: "https://proxy.golang.org"
@@ -19,7 +18,7 @@ env:
 jobs:
   run-contract-tests:
     # ~2 mins saved vs small
-    runs-on: ubuntu-latest
+    runs-on: gha-runner-scale-set-ubuntu-22.04-amd64-med
     name: Run smart contracts tests
     env:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -81,7 +80,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
   solidity-format-check:
-    runs-on: ubuntu-latest
+    runs-on: gha-runner-scale-set-ubuntu-22.04-amd64-med
     name: Solidity format check
     steps:
       - name: Checkout

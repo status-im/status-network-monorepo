@@ -8,13 +8,10 @@
  */
 
 plugins {
-  id 'java'
-  id 'java-library-distribution'
+  alias(libs.plugins.besuPluginDistribution)
   id 'com.google.protobuf' version '0.9.4'
   alias(libs.plugins.lombok)
   alias(libs.plugins.gradleVersions)
-  alias(libs.plugins.dependencyManagement)
-  alias(libs.plugins.download)
 }
 
 // Define versions for gRPC and Protobuf
@@ -29,27 +26,21 @@ group = 'net.consensys.linea.besu.plugin'
 def lineaSequencerProject = project(lineaSequencerProjectPath)
 apply from: lineaSequencerProject.file("gradle/java.gradle")
 apply from: lineaSequencerProject.file("gradle/dependency-management.gradle")
-apply from: lineaSequencerProject.file('gradle/common-dependencies.gradle')
 apply from: lineaSequencerProject.file("gradle/lint.gradle")
 
 dependencies {
-  // annotationProcessor generates the file META-INF/services/org.hyperledger.besu.plugin.BesuPlugin
-  annotationProcessor 'com.google.auto.service:auto-service'
-  compileOnly 'com.google.auto.service:auto-service'
+  implementation "net.consensys.linea.zktracer:arithmetization:${libs.versions.arithmetization.get()}"
+  implementation "build.linea:blob-compressor:${libs.versions.blobCompressor.get()}"
+  implementation "build.linea.internal:kotlin:${libs.versions.lineaKotlin.get()}"
 
-  api "build.linea:blob-compressor:${libs.versions.blobCompressor.get()}"
-  api "build.linea.internal:kotlin:${libs.versions.lineaKotlin.get()}"
+  testImplementation 'org.assertj:assertj-core'
 
-  implementation "${besuArtifactGroup}:besu-datatypes"
-  implementation "${besuArtifactGroup}:besu-evm"
-  implementation "${besuArtifactGroup}:besu-plugin-api"
-  implementation "${besuArtifactGroup}.internal:besu-crypto-algorithms"
-  implementation "${besuArtifactGroup}.internal:besu-ethereum-api"
-  implementation "${besuArtifactGroup}.internal:besu-ethereum-core"
-  implementation "${besuArtifactGroup}.internal:besu-ethereum-eth"
-  implementation "${besuArtifactGroup}.internal:besu-ethereum-rlp"
+  testImplementation 'org.junit.jupiter:junit-jupiter-api'
+  testImplementation 'org.junit.jupiter:junit-jupiter-params'
+  testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
 
-  implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jdk8'
+  testImplementation 'org.mockito:mockito-core'
+  testImplementation 'org.mockito:mockito-junit-jupiter'
 
   implementation 'com.github.ben-manes.caffeine:caffeine'
 
@@ -80,6 +71,7 @@ dependencies {
   testImplementation "io.grpc:grpc-testing:${grpcVersion}"
   testImplementation "io.grpc:grpc-core:${grpcVersion}"
   testImplementation "io.grpc:grpc-inprocess:${grpcVersion}"
+  testImplementation "org.wiremock:wiremock:${libs.versions.wiremock.get()}"
 }
 
 // Protobuf configuration for gRPC code generation
@@ -113,11 +105,15 @@ sourceSets {
 
 apply from: lineaSequencerProject.file("gradle/dist.gradle")
 
+distZip {
+  archiveBaseName = 'linea-sequencer'
+}
+
 // Simple artifacts task that runs jar and distPlugin
 task artifacts {
   group = 'Build'
   description = 'Creates all build artifacts (JAR and distribution ZIP)'
-  dependsOn 'jar', 'distPlugin'
+  dependsOn 'jar', 'distZip'
 }
 
 test {

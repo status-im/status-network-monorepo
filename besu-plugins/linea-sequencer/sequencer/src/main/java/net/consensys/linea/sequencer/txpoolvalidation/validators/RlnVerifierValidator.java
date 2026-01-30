@@ -983,7 +983,38 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
       return Optional.empty();
     }
 
-    // 2. RLN Proof Verification (via gRPC Cache) - with non-blocking wait
+    // 2. Pre-check: Query karma service BEFORE waiting for proof to fail fast on quota exceeded
+    // This avoids waiting 10 seconds for a proof that will never come when user exceeded quota
+    Optional<KarmaInfo> preCheckKarmaOpt = fetchKarmaInfoFromService(sender);
+    if (preCheckKarmaOpt.isPresent()) {
+      KarmaInfo karmaInfo = preCheckKarmaOpt.get();
+
+      // If user has already exceeded quota, reject immediately
+      if (karmaInfo.epochTxCount() > karmaInfo.dailyQuota()) {
+        LOG.warn(
+            "User {} already exceeded quota (count={}, quota={}). Rejecting immediately. Tx: {}",
+            sender.toHexString(),
+            karmaInfo.epochTxCount(),
+            karmaInfo.dailyQuota(),
+            txHashString);
+        return Optional.of("User transaction quota exceeded.");
+      }
+
+      // If user is at their quota limit (last allowed transaction), add to deny list
+      // This ensures linea_estimateGas will show premium gas for subsequent attempts
+      if (karmaInfo.epochTxCount() == karmaInfo.dailyQuota()) {
+        LOG.info(
+            "User {} reached quota limit (count={}, quota={}). Adding to deny list. Tx: {}",
+            sender.toHexString(),
+            karmaInfo.epochTxCount(),
+            karmaInfo.dailyQuota(),
+            txHashString);
+        addToDenyList(sender);
+        // Continue to wait for proof - this is the last allowed transaction
+      }
+    }
+
+    // 3. RLN Proof Verification (via gRPC Cache) - with non-blocking wait
     LOG.debug(
         "Attempting to fetch RLN proof for txHash: {} from cache. isLocal={}, hasPriority={}",
         txHashString,
@@ -1000,23 +1031,6 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
           transaction.getGasPrice().map(Object::toString).orElse("-"),
           transaction.getMaxFeePerGas().map(Object::toString).orElse("-"),
           transaction.getMaxPriorityFeePerGas().map(Object::toString).orElse("-"));
-
-      // Check if user exceeded quota (prover may have rejected due to RESOURCE_EXHAUSTED)
-      // If so, add to deny list even though no proof was generated
-      Optional<KarmaInfo> karmaInfoOpt = fetchKarmaInfoFromService(sender);
-      if (karmaInfoOpt.isPresent()) {
-        KarmaInfo karmaInfo = karmaInfoOpt.get();
-        if (karmaInfo.epochTxCount() > karmaInfo.dailyQuota()) {
-          LOG.warn(
-              "User {} exceeded quota (count={}, quota={}) - adding to deny list. Tx: {}",
-              sender.toHexString(),
-              karmaInfo.epochTxCount(),
-              karmaInfo.dailyQuota(),
-              txHashString);
-          addToDenyList(sender);
-          return Optional.of("User transaction quota exceeded. Added to deny list.");
-        }
-      }
 
       return Optional.of("RLN proof not found in cache after timeout.");
     }
@@ -1112,19 +1126,30 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
         karmaInfo.karmaBalance());
 
     // Check if user has exceeded their quota (karma service handles all counting internally)
-    // Note: Use > not >= because the prover increments the count BEFORE we validate,
-    // so count already includes the current transaction being validated
+    // No grace transaction - users get exactly their quota, then are denied
     if (karmaInfo.epochTxCount() > karmaInfo.dailyQuota()) {
       LOG.warn(
-          "User {} (Tier: {}) has exceeded their transaction quota for epoch {}. Count: {}, Quota: {}. Transaction {} rejected.",
+          "User {} (Tier: {}) has exceeded their quota. Count: {}, Quota: {}. Transaction {} rejected.",
           sender.toHexString(),
           karmaInfo.tier(),
-          karmaInfo.epochId(),
+          karmaInfo.epochTxCount(),
+          karmaInfo.dailyQuota(),
+          txHashString);
+      return Optional.of("User transaction quota exceeded. Transaction rejected.");
+    }
+
+    // If user is at exactly their quota limit, allow this transaction but add to deny list
+    // This ensures linea_estimateGas will show premium gas for subsequent attempts
+    if (karmaInfo.epochTxCount() == karmaInfo.dailyQuota()) {
+      LOG.info(
+          "User {} (Tier: {}) reached quota limit. Count: {}, Quota: {}. Adding to deny list. Transaction {} allowed.",
+          sender.toHexString(),
+          karmaInfo.tier(),
           karmaInfo.epochTxCount(),
           karmaInfo.dailyQuota(),
           txHashString);
       addToDenyList(sender);
-      return Optional.of("User transaction quota exceeded for current epoch. Added to deny list.");
+      // Continue to allow this transaction - it's the last one
     }
 
     // User is within quota - allow transaction (karma service handles transaction counting

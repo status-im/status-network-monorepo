@@ -17,6 +17,8 @@ import net.consensys.linea.bundles.BundlePoolService;
 import net.consensys.linea.bundles.LineaLimitedBundlePool;
 import net.consensys.linea.config.LineaBundleCliOptions;
 import net.consensys.linea.config.LineaBundleConfiguration;
+import net.consensys.linea.config.LineaLivenessServiceCliOptions;
+import net.consensys.linea.config.LineaLivenessServiceConfiguration;
 import net.consensys.linea.config.LineaProfitabilityCliOptions;
 import net.consensys.linea.config.LineaProfitabilityConfiguration;
 import net.consensys.linea.config.LineaRejectedTxReportingCliOptions;
@@ -38,6 +40,7 @@ import net.consensys.linea.plugins.AbstractLineaSharedOptionsPlugin;
 import net.consensys.linea.plugins.LineaOptionsPluginConfiguration;
 import net.consensys.linea.plugins.config.LineaTracerSharedCliOptions;
 import net.consensys.linea.plugins.config.LineaTracerSharedConfiguration;
+import net.consensys.linea.sequencer.txselection.InvalidTransactionByLineCountCache;
 import net.consensys.linea.utils.Compressor;
 import org.hyperledger.besu.plugin.ServiceManager;
 import org.hyperledger.besu.plugin.services.BesuConfiguration;
@@ -45,6 +48,7 @@ import org.hyperledger.besu.plugin.services.BesuEvents;
 import org.hyperledger.besu.plugin.services.BlockchainService;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
 import org.hyperledger.besu.plugin.services.RpcEndpointService;
+import org.hyperledger.besu.plugin.services.WorldStateService;
 import org.hyperledger.besu.plugin.services.metrics.MetricCategoryRegistry;
 
 /**
@@ -65,11 +69,13 @@ public abstract class AbstractLineaSharedPrivateOptionsPlugin
     extends AbstractLineaSharedOptionsPlugin {
   protected static BesuConfiguration besuConfiguration;
   protected static BlockchainService blockchainService;
+  protected static WorldStateService worldStateService;
   protected static MetricsSystem metricsSystem;
   protected static BesuEvents besuEvents;
   protected static BundlePoolService bundlePoolService;
   protected static MetricCategoryRegistry metricCategoryRegistry;
   protected static RpcEndpointService rpcEndpointService;
+  protected static InvalidTransactionByLineCountCache invalidTransactionByLineCountCache;
 
   private static final AtomicBoolean sharedRegisterTasksDone = new AtomicBoolean(false);
   private static final AtomicBoolean sharedStartTasksDone = new AtomicBoolean(false);
@@ -108,6 +114,9 @@ public abstract class AbstractLineaSharedPrivateOptionsPlugin
     configMap.put(
         LineaRlnValidatorCliOptions.CONFIG_KEY,
         LineaRlnValidatorCliOptions.create().asPluginConfig());
+    configMap.put(
+        LineaLivenessServiceCliOptions.CONFIG_KEY,
+        LineaLivenessServiceCliOptions.create().asPluginConfig());
     return configMap;
   }
 
@@ -162,6 +171,15 @@ public abstract class AbstractLineaSharedPrivateOptionsPlugin
   public LineaRlnValidatorConfiguration rlnValidatorConfiguration() {
     return (LineaRlnValidatorConfiguration)
         getConfigurationByKey(LineaRlnValidatorCliOptions.CONFIG_KEY).optionsConfig();
+  }
+
+  public LineaLivenessServiceConfiguration livenessServiceConfiguration() {
+    return (LineaLivenessServiceConfiguration)
+        getConfigurationByKey(LineaLivenessServiceCliOptions.CONFIG_KEY).optionsConfig();
+  }
+
+  protected InvalidTransactionByLineCountCache getInvalidTransactionByLineCountCache() {
+    return invalidTransactionByLineCountCache;
   }
 
   @Override
@@ -244,6 +262,14 @@ public abstract class AbstractLineaSharedPrivateOptionsPlugin
             .orElseThrow(
                 () -> new RuntimeException("Failed to obtain BesuEvents from the ServiceManager."));
 
+    worldStateService =
+        serviceManager
+            .getService(WorldStateService.class)
+            .orElseThrow(
+                () ->
+                    new RuntimeException(
+                        "Failed to obtain WorldStateService from the ServiceManager."));
+
     bundlePoolService =
         new LineaLimitedBundlePool(
             besuConfiguration.getDataPath(),
@@ -251,6 +277,10 @@ public abstract class AbstractLineaSharedPrivateOptionsPlugin
             besuEvents,
             blockchainService);
     bundlePoolService.loadFromDisk();
+
+    invalidTransactionByLineCountCache =
+        new InvalidTransactionByLineCountCache(
+            transactionSelectorConfiguration().overLinesLimitCacheSize());
   }
 
   @Override

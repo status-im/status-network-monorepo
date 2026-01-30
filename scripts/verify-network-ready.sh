@@ -64,10 +64,18 @@ check_rpc "http://localhost:8545" "L2 Sequencer"
 L2_CHAIN_ID=$(get_chain_id "http://localhost:8545")
 L2_BLOCK=$(get_block_number "http://localhost:8545")
 
+# Check L2 RPC node (port 9045) - used for contract deployment
+# This node may take longer to start as it needs to sync with sequencer
+check_rpc "http://localhost:9045" "L2 RPC Node"
+
+L2_RPC_CHAIN_ID=$(get_chain_id "http://localhost:9045")
+L2_RPC_BLOCK=$(get_block_number "http://localhost:9045")
+
 echo ""
 echo "📊 Network Status Summary:"
 echo "   🔗 L1 Node: Chain ID $L1_CHAIN_ID, Block $(printf "%d" $L1_BLOCK 2>/dev/null || echo "unknown")"
 echo "   🔗 L2 Sequencer: Chain ID $L2_CHAIN_ID, Block $(printf "%d" $L2_BLOCK 2>/dev/null || echo "unknown")"
+echo "   🔗 L2 RPC Node: Chain ID $L2_RPC_CHAIN_ID, Block $(printf "%d" $L2_RPC_BLOCK 2>/dev/null || echo "unknown")"
 
 # Verify L2 is producing blocks
 echo ""

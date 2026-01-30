@@ -173,7 +173,7 @@ describe("RLN Nullifier Tracking", () => {
 
       logger.info(`${NULL_001.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    MULTI_TX_TIMEOUT, // 2 TXs need more buffer for proof generation
   );
 
   it(

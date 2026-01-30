@@ -1,25 +1,30 @@
 #!/usr/bin/env ts-node
 /**
  * Initialize Karma Tiers Contract
- * 
+ *
  * This script sets up the karma tier system with the following tiers:
- * 
- * | Tier ID | Name           | Karma Range           | TX per Epoch |
- * |---------|----------------|----------------------|--------------|
- * | 0       | entry          | 0 - 1                | 2            |
- * | 1       | newbie         | 2 - 49               | 6            |
- * | 2       | basic          | 50 - 499             | 16           |
- * | 3       | active         | 500 - 4,999          | 96           |
- * | 4       | regular        | 5,000 - 19,999       | 480          |
- * | 5       | power          | 20,000 - 99,999      | 960          |
- * | 6       | pro            | 100,000 - 499,999    | 10,080       |
- * | 7       | high-throughput| 500,000 - 4,999,999  | 108,000      |
- * | 8       | s-tier         | 5,000,000 - 9,999,999| 240,000      |
- * | 9       | legendary      | 10,000,000+          | 480,000      |
- * 
+ *
+ * | Tier ID | Name           | Karma Range           | TX per Epoch | Grace TX |
+ * |---------|----------------|----------------------|--------------|----------|
+ * | 0       | entry          | 0 - 1                | 1            | 2        |
+ * | 1       | newbie         | 2 - 49               | 5            | 6        |
+ * | 2       | basic          | 50 - 499             | 15           | 16       |
+ * | 3       | active         | 500 - 4,999          | 96           | 97       |
+ * | 4       | regular        | 5,000 - 19,999       | 480          | 481      |
+ * | 5       | power          | 20,000 - 99,999      | 960          | 961      |
+ * | 6       | pro            | 100,000 - 499,999    | 10,080       | 10,081   |
+ * | 7       | high-throughput| 500,000 - 4,999,999  | 108,000      | 108,001  |
+ * | 8       | s-tier         | 5,000,000 - 9,999,999| 240,000      | 240,001  |
+ * | 9       | legendary      | 10,000,000+          | 480,000      | 480,001  |
+ *
  * Note: Users with 0 karma are NOT registered in RLN by the registrar service,
- * so they cannot use gasless transactions regardless of tier.
- * 
+ * so they cannot use gasless transactions. The entry tier covers 0-1 karma to
+ * satisfy the KarmaTiers.sol contract requirement (tiers must start at minKarma=0),
+ * but users with 0 karma cannot actually transact (not registered in RLN).
+ *
+ * Grace transaction: Sequencer allows quota + 1 transaction, giving users one extra
+ * transaction to discover they need premium gas.
+ *
  * Usage: npx ts-node scripts/initialize-karma-tiers.ts
  */
 
@@ -59,12 +64,14 @@ const PRIVATE_KEY = process.env.PRIVATE_KEY || "0x1dd171cec7e2995408b5513004e820
 
 // Tier definitions based on requirements
 // Note: Tiers must be contiguous - each tier's minKarma = previous tier's maxKarma + 1
-// Note: Users with 0 karma are NOT registered in RLN, so no "none" tier needed
-// The contract requires maxKarma > minKarma, so we start at min=0, max=1 for entry
+// Note: KarmaTiers.sol contract REQUIRES first tier to start at minKarma = 0
+// Note: Users with 0 karma are NOT registered in RLN (registrar service skips them)
+// Note: First tier covers 0-1 karma with quota=1 (users with 0 karma won't register anyway)
+// Note: First 3 tiers have reduced tx counts to account for grace transaction (quota + 1)
 const KARMA_TIERS = [
-  { name: "entry",           minKarma: 0n,          maxKarma: 1n,          txPerEpoch: 2 },
-  { name: "newbie",          minKarma: 2n,          maxKarma: 49n,         txPerEpoch: 6 },
-  { name: "basic",           minKarma: 50n,         maxKarma: 499n,        txPerEpoch: 16 },
+  { name: "entry",           minKarma: 0n,          maxKarma: 1n,          txPerEpoch: 1 },
+  { name: "newbie",          minKarma: 2n,          maxKarma: 49n,         txPerEpoch: 5 },
+  { name: "basic",           minKarma: 50n,         maxKarma: 499n,        txPerEpoch: 15 },
   { name: "active",          minKarma: 500n,        maxKarma: 4999n,       txPerEpoch: 96 },
   { name: "regular",         minKarma: 5000n,       maxKarma: 19999n,      txPerEpoch: 480 },
   { name: "power",           minKarma: 20000n,      maxKarma: 99999n,      txPerEpoch: 960 },

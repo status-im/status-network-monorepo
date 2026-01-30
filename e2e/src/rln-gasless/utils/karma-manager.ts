@@ -73,12 +73,14 @@ export async function getAdminNonce(provider: ethers.Provider, adminAddress: str
  * Handles Karma minting, tier assignment, and quota management
  */
 export class KarmaTestManager {
-  // Production tier configuration (matches initialize-karma-tiers.ts)
+  // Production tier configuration (matches prover database tier_limits)
+  // Users can send exactly 'quota' gasless transactions per epoch (no grace transactions)
+  // After using quota, they're added to deny list and must pay premium gas
   // Note: No "none" tier - users with 0 karma are not registered in RLN
   static readonly TIERS: TierConfig[] = [
-    { name: "entry", minKarma: 0n, maxKarma: 1n, quota: 2 },
-    { name: "newbie", minKarma: 2n, maxKarma: 49n, quota: 6 },
-    { name: "basic", minKarma: 50n, maxKarma: 499n, quota: 16 },
+    { name: "entry", minKarma: 0n, maxKarma: 1n, quota: 1 }, // 1 tx/epoch
+    { name: "newbie", minKarma: 2n, maxKarma: 49n, quota: 5 }, // 5 tx/epoch
+    { name: "basic", minKarma: 50n, maxKarma: 499n, quota: 15 }, // 15 tx/epoch
     { name: "active", minKarma: 500n, maxKarma: 4999n, quota: 96 },
     { name: "regular", minKarma: 5000n, maxKarma: 19999n, quota: 480 },
     { name: "power", minKarma: 20000n, maxKarma: 99999n, quota: 960 },
@@ -298,29 +300,36 @@ export class KarmaTestManager {
   /**
    * Wait for user to be registered to RLN after Karma mint.
    *
-   * The RLN prover subscribes to blockchain events and updates its internal database
-   * asynchronously. After seeing the MemberRegistered event on-chain, we add a small
-   * delay to allow the prover to sync before attempting gasless transactions.
+   * The RLN prover automatically registers users when it sees Karma Transfer events.
+   * Based on observed behavior:
+   * - Prover sees Karma Transfer event within ~1 block (2s)
+   * - Prover sends RLN registration TX within ~1s
+   * - Registration TX mined within ~1 block (2s)
+   * Total: ~5-6 seconds for reliable registration
+   *
+   * We use a fixed wait time instead of polling because:
+   * 1. The prover's HTTP API doesn't work (gRPC only)
+   * 2. Polling contract events is O(n) and slow
+   * 3. A fixed wait is simple and reliable
    */
   async waitForRlnRegistration(
     userAddress: string,
     timeout: number = RLN_CONFIG.test.registrationTimeoutMs,
   ): Promise<void> {
+    // Fixed wait time for prover to register the user
+    // Covers: karma TX mining (~2-4s) + event processing (~1-2s) +
+    // prover registration TX (~2-4s) + buffer for network variance
+    // Use the configured timeout directly (default 8s, can be overridden via env)
+    const waitTimeMs = timeout;
+
     logger.debug("Waiting for RLN registration", {
       user: userAddress,
-      timeout,
+      waitTimeMs,
     });
 
-    // Wait for the smart contract MemberRegistered event
-    await this.rlnClient.waitForRegistration(this.rlnContract, userAddress, timeout);
+    await new Promise((resolve) => setTimeout(resolve, waitTimeMs));
 
-    // Add delay for prover to sync from blockchain events to its internal DB
-    // The prover subscribes to events via WebSocket and processes them asynchronously
-    const proverSyncDelayMs = 1000;
-    logger.debug("Waiting for prover DB sync", { delayMs: proverSyncDelayMs });
-    await new Promise((resolve) => setTimeout(resolve, proverSyncDelayMs));
-
-    logger.debug("User registered to RLN", { user: userAddress });
+    logger.debug("RLN registration wait complete", { user: userAddress });
   }
 
   /**
