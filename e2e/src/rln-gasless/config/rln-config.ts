@@ -6,9 +6,32 @@
  * Tests will mint Karma, wait for registration, and verify actual quota enforcement
  */
 
-// Helper to read contract addresses from environment or use defaults
-const getContractAddress = (envVar: string, defaultAddr: string): string => {
-  return process.env[envVar] || defaultAddr;
+import * as fs from "fs";
+import * as path from "path";
+
+// Path to deployment files (relative to workspace root)
+const DEPLOYMENTS_DIR = path.resolve(__dirname, "../../../../status-network-contracts/deployments");
+
+// Read contract address from deployment file, env var, or use default
+const getContractAddress = (deploymentFile: string, envVar: string, defaultAddr: string): string => {
+  // 1. Check environment variable first (allows override)
+  if (process.env[envVar]) {
+    return process.env[envVar]!;
+  }
+
+  // 2. Try to read from deployment file
+  try {
+    const filePath = path.join(DEPLOYMENTS_DIR, deploymentFile);
+    const address = fs.readFileSync(filePath, "utf-8").trim();
+    if (address && address.startsWith("0x")) {
+      return address;
+    }
+  } catch {
+    // File doesn't exist or can't be read, use default
+  }
+
+  // 3. Fall back to default
+  return defaultAddr;
 };
 
 const getEnvNumber = (envVar: string, defaultVal: number): number => {
@@ -20,16 +43,26 @@ export const RLN_CONFIG = {
   // Mode detection - default to production mode for real testing
   isProductionMode: process.env.RLN_PRODUCTION_MODE !== "false",
 
-  // Contract addresses (deployed via make start-env-with-rln-and-contracts)
-  // NOTE: These are PROXY addresses for upgradeable contracts (Karma, RLN, StakeManager)
-  // IMPORTANT: The deployment files may have saved IMPLEMENTATION addresses instead of PROXY addresses
-  // These must be the PROXY addresses for the contracts to work correctly
+  // Contract addresses (read from deployment files, env vars, or defaults)
+  // Deployment files are written by `make start-env-with-rln-production`
   contracts: {
-    karmaTiers: getContractAddress("KARMA_TIERS_SC_ADDRESS", "0x729409fad88cafda895e41f9ed00ef4094f8d130"),
-    karma: getContractAddress("KARMA_SC_ADDRESS", "0xe537D669CA013d86EBeF1D64e40fC74CADC91987"),
-    rln: getContractAddress("RLN_SC_ADDRESS", "0x5C95Bcd50E6D1B4E3CDC478484C9030Ff0a7D493"),
-    stakeManager: getContractAddress("STAKE_MANAGER_SC_ADDRESS", "0xeb0b0a14f92e3ba35aef3a2b6a24d7ed1d11631b"),
-    karmaNFT: getContractAddress("KARMA_NFT_SC_ADDRESS", "0xcc1b08b17301e090cbb4c1f5598cbaa096d591fb"),
+    karmaTiers: getContractAddress(
+      "karma_tiers_address.txt",
+      "KARMA_TIERS_SC_ADDRESS",
+      "0x729409fad88cafda895e41f9ed00ef4094f8d130",
+    ),
+    karma: getContractAddress("karma_address.txt", "KARMA_SC_ADDRESS", "0xe537D669CA013d86EBeF1D64e40fC74CADC91987"),
+    rln: getContractAddress("rln_address.txt", "RLN_SC_ADDRESS", "0x5C95Bcd50E6D1B4E3CDC478484C9030Ff0a7D493"),
+    stakeManager: getContractAddress(
+      "stake_manager_address.txt",
+      "STAKE_MANAGER_SC_ADDRESS",
+      "0xeb0b0a14f92e3ba35aef3a2b6a24d7ed1d11631b",
+    ),
+    karmaNFT: getContractAddress(
+      "karma_nft_address.txt",
+      "KARMA_NFT_SC_ADDRESS",
+      "0xcc1b08b17301e090cbb4c1f5598cbaa096d591fb",
+    ),
   },
 
   // Service URLs
@@ -63,29 +96,29 @@ export const RLN_CONFIG = {
     // Quotas reset every epoch, enabling epoch boundary tests
     epochDurationSeconds: getEnvNumber("RLN_EPOCH_DURATION_SECONDS", 30),
     // MEASURED TIMINGS (from benchmarks with fast polling):
-    // - Block production: ~0.1-0.8s (blocks produced on-demand with txs)
-    // - Proof generation: ~380ms
-    // - Polling interval: 250ms
-    // - Expected gasless TX: ~1-2s (proof + block + poll)
-    // - Expected premium TX: ~0.5-1s (block + poll)
-    // - User setup: ~3-4s (fund TX + mint TX + registration)
-    // - Prover DB sync: Can take 1-2s after contract event
-    proofTimeoutMs: getEnvNumber("RLN_PROOF_TIMEOUT_MS", 3000),
-    registrationTimeoutMs: getEnvNumber("RLN_REGISTRATION_TIMEOUT_MS", 10000), // Includes prover sync time
-    transactionTimeoutMs: getEnvNumber("RLN_TX_TIMEOUT_MS", 5000),
+    // Timing expectations (2s block time):
+    // - Karma mint TX: ~2-4s (submit + mine)
+    // - Prover sees event + registers user: ~4-5s
+    // - Total user setup: ~8-10s (fund + mint + registration wait)
+    // - Gasless TX: ~2-4s (proof generation + mining)
+    proofTimeoutMs: getEnvNumber("RLN_PROOF_TIMEOUT_MS", 5000),
+    // Fixed wait time for prover to register user after karma mint
+    registrationTimeoutMs: getEnvNumber("RLN_REGISTRATION_TIMEOUT_MS", 8000), // 8s fixed wait
+    transactionTimeoutMs: getEnvNumber("RLN_TX_TIMEOUT_MS", 15000), // 15s for tx mining (includes proof generation)
     // Wait times for polling operations
     denyListPollIntervalMs: 200,
-    maxWaitForDenyListMs: 10000,
+    maxWaitForDenyListMs: 15000, // 15s for deny list propagation
   },
 
   // Karma tiers with quotas per epoch
-  // These match the production tier configuration
+  // These match the prover database tier configuration exactly (no grace transactions)
+  // Users can send exactly 'quota' gasless transactions per epoch, then they're added to deny list
   // Note: Users with 0 karma are not registered in RLN, so no "none" tier
   // Entry tier starts at min=0 but users need 1+ karma to be registered
   tiers: {
-    entry: { karma: 1n, quota: 2, name: "entry" },
-    newbie: { karma: 2n, quota: 6, name: "newbie" },
-    basic: { karma: 50n, quota: 16, name: "basic" },
+    entry: { karma: 1n, quota: 1, name: "entry" }, // 1 gasless tx per epoch
+    newbie: { karma: 2n, quota: 5, name: "newbie" }, // 5 gasless txs per epoch
+    basic: { karma: 50n, quota: 15, name: "basic" }, // 15 gasless txs per epoch
     active: { karma: 500n, quota: 96, name: "active" },
     regular: { karma: 5000n, quota: 480, name: "regular" },
     power: { karma: 20000n, quota: 960, name: "power" },

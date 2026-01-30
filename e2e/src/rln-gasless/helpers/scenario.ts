@@ -55,11 +55,11 @@ export function formatScenario(s: Scenario): string {
 // GASLESS TRANSACTION SCENARIOS (GAS_001 - GAS_010)
 // ============================================================================
 
-export const GAS_001 = scenario("GAS_001", "Entry tier user can send exactly 2 gasless transactions", "GASLESS");
+export const GAS_001 = scenario("GAS_001", "Entry tier user can send exactly 1 gasless transaction", "GASLESS");
 
 export const GAS_002 = scenario(
   "GAS_002",
-  "Entry tier user gets rejected on 3rd transaction (quota exceeded)",
+  "Entry tier user gets rejected on 2nd transaction (quota exceeded)",
   "GASLESS",
 );
 
@@ -67,7 +67,7 @@ export const GAS_003 = scenario("GAS_003", "User exceeding quota is added to den
 
 export const GAS_004 = scenario("GAS_004", "Non-Karma user cannot send gasless transactions", "GASLESS");
 
-export const GAS_005 = scenario("GAS_005", "Basic tier user can send 16 gasless transactions", "GASLESS");
+export const GAS_005 = scenario("GAS_005", "Basic tier user can send 15 gasless transactions", "GASLESS");
 
 export const GAS_006 = scenario("GAS_006", "Quota resets after epoch boundary", "GASLESS");
 

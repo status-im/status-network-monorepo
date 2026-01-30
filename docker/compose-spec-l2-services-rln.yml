@@ -65,7 +65,7 @@ services:
   sequencer:
     hostname: sequencer
     container_name: sequencer
-    image: linea-besu-minimal-rln:20260118183645-gasless-fix
+    image: linea-besu-minimal-rln:20260129122418-gasless-fix
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     ports:
       - "8545:8545"
@@ -104,8 +104,8 @@ services:
           --plugin-linea-rln-enabled=true \
           --plugin-linea-rln-proof-service=rln-prover:50051 \
           --plugin-linea-rln-karma-service=rln-prover:50051 \
-          --plugin-linea-rln-timeouts-ms=5000 \
-          --plugin-linea-rln-proof-wait-timeout-ms=5000 \
+          --plugin-linea-rln-timeouts-ms=10000 \
+          --plugin-linea-rln-proof-wait-timeout-ms=10000 \
           --plugin-linea-rln-epoch-mode=TEST \
           --plugin-linea-rpc-gasless-enabled=true \
           --plugin-linea-rpc-rln-prover-forwarder-enabled=false \
@@ -173,7 +173,7 @@ services:
   l2-node-besu:
     hostname: l2-node-besu
     container_name: l2-node-besu
-    image: linea-besu-minimal-rln:20260118183645-gasless-fix
+    image: linea-besu-minimal-rln:20260129122418-gasless-fix
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     depends_on:
       sequencer:
@@ -238,7 +238,7 @@ services:
   l2-node-besu-follower:
     hostname: l2-node-besu-follower
     container_name: l2-node-besu-follower
-    image: linea-besu-minimal-rln:20260118183645-gasless-fix
+    image: linea-besu-minimal-rln:20260129122418-gasless-fix
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     depends_on:
       sequencer:

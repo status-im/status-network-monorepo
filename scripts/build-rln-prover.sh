@@ -19,6 +19,7 @@ IMAGE_TAG="${RLN_PROVER_TAG:-$(date +%Y%m%d%H%M%S)}"
 FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
 UPDATE_COMPOSE="${UPDATE_COMPOSE:-true}"
 RESTART_SERVICES="${RESTART_SERVICES:-false}"
+NO_CACHE_FLAG=""
 
 print_usage() {
     cat << USAGE
@@ -31,12 +32,14 @@ Options:
   -t, --tag <tag>         Image tag (default: timestamp)
   --no-compose            Don't update docker-compose file
   --restart               Restart rln-prover and karma-service after build
+  --no-cache              Force clean build (slow, use only when needed)
   -h, --help              Show this help
 
 Examples:
-  $(basename "$0")                    # Build with timestamp tag
+  $(basename "$0")                    # Build with caching (fast)
   $(basename "$0") -t dev             # Build with 'dev' tag
   $(basename "$0") --restart          # Build and restart services
+  $(basename "$0") --no-cache         # Force clean rebuild (slow)
 
 USAGE
 }
@@ -52,6 +55,8 @@ while [[ $# -gt 0 ]]; do
             UPDATE_COMPOSE=false; shift ;;
         --restart)
             RESTART_SERVICES=true; shift ;;
+        --no-cache)
+            NO_CACHE_FLAG="--no-cache"; shift ;;
         -h|--help)
             print_usage; exit 0 ;;
         *)
@@ -82,7 +87,10 @@ fi
 echo -e "${YELLOW}🔨 Building image (this may take several minutes for Rust compilation)...${NC}"
 cd "$RLN_PROVER_DIR"
 
-if docker build --no-cache --platform linux/amd64 -t "$FULL_IMAGE" .; then
+# Use all available CPU cores for faster compilation
+export DOCKER_BUILDKIT=1
+
+if docker build $NO_CACHE_FLAG -t "$FULL_IMAGE" .; then
     echo -e "${GREEN}✅ Successfully built: ${FULL_IMAGE}${NC}"
 else
     echo -e "${RED}❌ Docker build failed${NC}"

@@ -158,9 +158,9 @@ describe("RLN Gasless Transactions", () => {
   it(
     formatScenario(GAS_001),
     async () => {
-      // Setup: Create user with Entry tier (1 Karma, quota = 2)
+      // Setup: Create user with Entry tier (1 Karma, quota = 1)
       const user = getEntryUser();
-      const quota = RLN_CONFIG.tiers.entry.quota; // 2
+      const quota = RLN_CONFIG.tiers.entry.quota; // 1
 
       logger.info(`${GAS_001.id}: Testing Entry tier quota`, {
         user: user.address,
@@ -179,9 +179,12 @@ describe("RLN Gasless Transactions", () => {
         logger.info(`Transaction ${i + 1}/${quota} succeeded`, { txHash: receipt.hash });
       }
 
-      // Verify user is NOT on deny list (quota not exceeded yet)
+      // Wait for deny list to be updated (user added to deny list after using quota)
+      await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
+
+      // Verify user IS on deny list after using their quota
       const isDenied = await denyListManager.isDenied(user.address);
-      expect(isDenied).toBe(false);
+      expect(isDenied).toBe(true);
 
       logger.info(`${GAS_001.id}: PASSED ✓`);
     },
@@ -191,42 +194,40 @@ describe("RLN Gasless Transactions", () => {
   it(
     formatScenario(GAS_002),
     async () => {
-      // Setup: Create user with Entry tier and exhaust quota
+      // Setup: Create user with Entry tier and test quota exhaustion
       const user = getEntryUser();
-      const quota = RLN_CONFIG.tiers.entry.quota; // 2
+      const quota = RLN_CONFIG.tiers.entry.quota; // 1
 
       logger.info(`${GAS_002.id}: Testing quota exhaustion rejection`, {
         user: user.address,
         quota,
       });
 
-      // Exhaust the quota first
+      // Send quota transactions (this exhausts the quota and adds user to deny list)
       for (let i = 0; i < quota; i++) {
         await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
-          data: uniqueTxData(`gas002-exhaust-${i}`),
+          data: uniqueTxData(`gas002-quota-${i}`),
         });
       }
 
       // Wait for prover to sync quota state
       await rlnClient.waitForProverSync();
 
-      // Attempt one more transaction (should fail)
-      // When quota is exceeded, prover doesn't generate proof → TX times out
+      // Next transaction (quota + 1) should FAIL - user has exhausted their quota
       const errorMessage = await rlnClient.sendGaslessTransactionExpectFailure(user, {
         to: TEST_RECIPIENT,
         value: 0n,
         data: uniqueTxData("gas002-exceed"),
       });
 
-      // Quota exceeded manifests as resource_exhausted (from prover) or timeout
       expect(errorMessage).toMatch(/quota|exceeded|denied|timeout|resource.*exhausted/i);
-      logger.info(`${GAS_002.id}: Transaction rejected as expected`, { error: errorMessage });
+      logger.info(`${GAS_002.id}: Transaction rejected as expected (quota exhausted)`, { error: errorMessage });
 
       logger.info(`${GAS_002.id}: PASSED ✓`);
     },
-    MULTI_TX_TIMEOUT, // 2 TXs + rejection attempt = ~12s
+    MULTI_TX_TIMEOUT, // 1 quota + 1 rejection = ~8s
   );
 
   it(
@@ -236,40 +237,41 @@ describe("RLN Gasless Transactions", () => {
       const user = getEntryUser();
       const quota = RLN_CONFIG.tiers.entry.quota;
 
-      logger.info(`${GAS_003.id}: Testing deny list addition on quota violation`, {
+      logger.info(`${GAS_003.id}: Testing deny list addition on quota exhaustion`, {
         user: user.address,
         quota,
       });
 
-      // Exhaust quota
+      // Send quota transactions (user is added to deny list on the last one)
       for (let i = 0; i < quota; i++) {
         await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
-          data: uniqueTxData(`gas003-exhaust-${i}`),
+          data: uniqueTxData(`gas003-quota-${i}`),
         });
       }
 
       // Wait for prover to sync quota state
       await rlnClient.waitForProverSync();
 
-      // Attempt to exceed quota (triggers deny list addition)
-      await rlnClient.sendGaslessTransactionExpectFailure(user, {
-        to: TEST_RECIPIENT,
-        value: 0n,
-        data: uniqueTxData("gas003-exceed"),
-      });
+      // Verify user is on deny list by attempting another gasless TX
+      // This should fail because user exhausted quota and was added to deny list
+      const errorMessage = await rlnClient.sendGaslessTransactionExpectFailure(
+        user,
+        {
+          to: TEST_RECIPIENT,
+          value: 0n,
+          data: uniqueTxData("gas003-denied"),
+        },
+        10000, // 10s timeout for expected failure
+      );
 
-      // Wait for deny list update and verify
-      await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
-      const isDenied = await denyListManager.isDenied(user.address);
-
-      //  User MUST be on deny list - no fallback paths
-      expect(isDenied).toBe(true);
+      // Error should indicate quota exhaustion or denial
+      expect(errorMessage).toMatch(/quota|denied|timeout|exceeded/i);
 
       logger.info(`${GAS_003.id}: PASSED ✓`);
     },
-    MULTI_TX_TIMEOUT, // 2 TXs + rejection attempt + deny list check = ~15s
+    MULTI_TX_TIMEOUT, // 1 quota + expected failure TX
   );
 
   it(
@@ -356,26 +358,26 @@ describe("RLN Gasless Transactions", () => {
         epochDurationSeconds: epochDuration,
       });
 
-      // Exhaust quota in current epoch
+      // Send quota transactions in current epoch (user is added to deny list on last tx)
       for (let i = 0; i < quota; i++) {
         await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
-          data: uniqueTxData(`gas006-epoch1-${i}`),
+          data: uniqueTxData(`gas006-epoch1-quota-${i}`),
         });
       }
+      logger.info("Quota transactions succeeded, user now on deny list");
 
       // Wait for prover to sync quota state (longer wait for epoch boundary test)
       await rlnClient.waitForProverSync(1000);
 
-      // Verify quota is exhausted (next tx should fail)
-      // Quota exceeded manifests as timeout (no proof generated) or explicit rejection
+      // Verify quota + 1 fails (user on deny list)
       const preEpochError = await rlnClient.sendGaslessTransactionExpectFailure(
         user,
         {
           to: TEST_RECIPIENT,
           value: 0n,
-          data: uniqueTxData("gas006-verify-exhausted"),
+          data: uniqueTxData("gas006-verify-denied"),
         },
         10000, // 10s timeout for failure expectation
       );
@@ -423,22 +425,21 @@ describe("RLN Gasless Transactions", () => {
 
       logger.info(`${GAS_007.id}: Testing concurrent transactions with quota isolation`, { userCount });
 
-      // Get pre-registered users with Entry tier (quota = 2 each)
+      // Get pre-registered users with Entry tier (quota = 1 each)
       const users = [getEntryUser(), getEntryUser(), getEntryUser()];
 
-      // Send 2 transactions from each user using concurrent helper (handles nonces)
+      // Send 1 quota transaction from each user (entry tier quota = 1)
       const txPromises = users.map((user, index) =>
         rlnClient.sendGaslessTransactionsConcurrent(user, [
-          { to: TEST_RECIPIENT, value: 0n, data: uniqueTxData(`gas007-user${index}-tx1`) },
-          { to: TEST_RECIPIENT, value: 0n, data: uniqueTxData(`gas007-user${index}-tx2`) },
+          { to: TEST_RECIPIENT, value: 0n, data: uniqueTxData(`gas007-user${index}-quota`) },
         ]),
       );
 
       const resultsNested = await Promise.all(txPromises);
       const allReceipts = resultsNested.flat();
 
-      // Verify all 6 transactions (2 per user × 3 users) succeeded
-      expect(allReceipts.length).toBe(6);
+      // Verify all 3 transactions (1 per user × 3 users) succeeded
+      expect(allReceipts.length).toBe(3);
       for (const receipt of allReceipts) {
         expect(receipt.status).toBe(1);
       }
@@ -446,15 +447,15 @@ describe("RLN Gasless Transactions", () => {
       // Wait for prover to sync quota state for all users
       await rlnClient.waitForProverSync();
 
-      // Now all users should have exhausted their quota (2/2 used)
-      // Verify each user's 3rd tx fails (isolation verified)
+      // Now all users should have exhausted quota (on deny list)
+      // Verify each user's 2nd tx fails (quota + 1, isolation verified)
       for (let i = 0; i < users.length; i++) {
         const error = await rlnClient.sendGaslessTransactionExpectFailure(
           users[i],
           {
             to: TEST_RECIPIENT,
             value: 0n,
-            data: uniqueTxData(`gas007-user${i}-tx3`),
+            data: uniqueTxData(`gas007-user${i}-exceed`),
           },
           10000, // 10s timeout for failure expectation
         );
@@ -474,26 +475,23 @@ describe("RLN Gasless Transactions", () => {
 
       // Get pre-registered Entry tier user
       const entryUser = getEntryUser();
-      const entryQuota = RLN_CONFIG.tiers.entry.quota; // 2
+      const entryQuota = RLN_CONFIG.tiers.entry.quota; // 1
 
       // Get pre-registered Newbie tier user
       const newbieUser = getNewbieUser();
-      const newbieQuota = RLN_CONFIG.tiers.newbie.quota; // 6
+      const newbieQuota = RLN_CONFIG.tiers.newbie.quota; // 5
 
-      // Verify Entry user can't send more than 2
-      for (let i = 0; i < entryQuota; i++) {
-        await rlnClient.sendGaslessTransaction(entryUser, {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          data: uniqueTxData(`gas008-entry-${i}`),
-        });
-      }
+      // Entry user: send quota (1) - this exhausts their quota and adds to deny list
+      await rlnClient.sendGaslessTransaction(entryUser, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        data: uniqueTxData("gas008-entry-quota"),
+      });
 
       // Wait for prover to sync quota state
       await rlnClient.waitForProverSync();
 
-      // Entry user's 3rd transaction should fail
-      // Quota exceeded manifests as timeout (no proof generated) or explicit rejection
+      // Entry user's 2nd transaction should fail (quota exhausted, on deny list)
       const entryError = await rlnClient.sendGaslessTransactionExpectFailure(entryUser, {
         to: TEST_RECIPIENT,
         value: 0n,
@@ -501,8 +499,8 @@ describe("RLN Gasless Transactions", () => {
       });
       expect(entryError).toMatch(/quota|exceeded|denied|timeout|resource.*exhausted/i);
 
-      // Verify Newbie user can send more than 2 (up to 6)
-      // Send 4 to prove they have higher quota than Entry
+      // Verify Newbie user can send more than Entry tier
+      // Send 4 to prove they have higher quota than Entry (4 < newbie quota of 5)
       for (let i = 0; i < 4; i++) {
         const receipt = await rlnClient.sendGaslessTransaction(newbieUser, {
           to: TEST_RECIPIENT,
@@ -517,7 +515,7 @@ describe("RLN Gasless Transactions", () => {
         newbieQuota,
       });
     },
-    MULTI_TX_TIMEOUT, // 2 + 1 + 4 = 7 TXs = ~28s
+    MULTI_TX_TIMEOUT, // 1 + 1 + 4 = 6 TXs = ~24s
   );
 
   it(

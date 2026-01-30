@@ -1,4 +1,4 @@
-allow-empty-blocks = false
+allow-empty-blocks = true
 
 [linea]
 contract-address = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
@@ -30,7 +30,7 @@ ban-period = "30 seconds"
 [payload-validator]
 engine-api-endpoint = { endpoint = "http://sequencer:8550" }
 eth-api-endpoint = { endpoint = "http://sequencer:8545" }
-payload-validation-enabled = false
+payload-validation-enabled = true
 
 [follower-engine-apis]
 follower-besu = { endpoint = "http://l2-node-besu:8550" }
@@ -53,13 +53,3 @@ peer-chain-height-polling-interval = "1 seconds"
 el-sync-status-refresh-interval = "1 seconds"
 use-unconditional-random-download-peer = false
 sync-target-selection = "Highest"
-# sync-target-selection = { _type = "MostFrequent", peer-chain-height-granularity = 10 }
-# desync-tolerance = 10
-
-#[syncing.download]
-#block-range-request-timeout = "10 seconds"
-#blocks-batch-size = 10
-#blocks-parallelism = 10
-#max-retries = 5
-#backoff-delay = "1 seconds"
-#use-unconditional-random-download-peer = false

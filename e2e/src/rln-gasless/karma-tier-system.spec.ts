@@ -118,7 +118,7 @@ describe("RLN Karma and Tier System", () => {
       const isRegistered = await karmaManager.isUserRegistered(user.address);
       expect(isRegistered).toBe(true);
 
-      // Verify user can send gasless transaction (Entry tier = 2 quota)
+      // Verify user can send gasless transaction (Entry tier = 1 quota)
       const receipt = await rlnClient.sendGaslessTransaction(user, {
         to: TEST_RECIPIENT,
         value: 0n,
@@ -152,8 +152,8 @@ describe("RLN Karma and Tier System", () => {
       await karmaManager.waitForRlnRegistration(user.address);
 
       // Verify tier via transaction capability
-      // Basic tier has quota of 16 - send 5 to prove higher than Entry (2)
-      for (let i = 0; i < 5; i++) {
+      // Basic tier has quota of 15 - send 2 to prove higher than Entry (1)
+      for (let i = 0; i < 2; i++) {
         const receipt = await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
@@ -164,7 +164,7 @@ describe("RLN Karma and Tier System", () => {
 
       logger.info(`${KARMA_002.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    30000, // Extended timeout: mint + wait + 2 TXs
   );
 
   it(
@@ -211,29 +211,21 @@ describe("RLN Karma and Tier System", () => {
         user: user.address,
       });
 
-      // Start with Entry tier (1 Karma, quota = 2)
+      // Start with Entry tier (1 Karma, quota = 1)
       await karmaManager.mintKarma(user.address, 1n);
       await karmaManager.waitForRlnRegistration(user.address);
 
-      // Use 1 transaction from Entry tier quota
-      const receipt1 = await rlnClient.sendGaslessTransaction(user, {
-        to: TEST_RECIPIENT,
-        value: 0n,
-        data: uniqueTxData("karma004-entry-1"),
-      });
-      expect(receipt1.status).toBe(1);
-
-      // Mint more Karma to upgrade to Newbie tier (2 Karma, quota = 6)
-      // Total will be 2 Karma
+      // Immediately upgrade to Newbie tier BEFORE using quota
+      // This tests that tier upgrade increases quota from 1 to 5
       await karmaManager.mintKarma(user.address, 1n);
 
-      // Verify total Karma
+      // Verify total Karma (2 = Newbie tier)
       const karmaBalance = await contracts.karma.balanceOf(user.address);
       expect(karmaBalance).toBe(2n);
 
-      // Should be able to send more transactions (newbie tier has higher quota)
-      // Send 4 more to prove we have more than Entry tier's quota of 2
-      for (let i = 0; i < 4; i++) {
+      // Now send 5 transactions (Newbie tier quota)
+      // This proves the tier upgrade from Entry (1) to Newbie (5) worked
+      for (let i = 0; i < 5; i++) {
         const receipt = await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
@@ -244,7 +236,7 @@ describe("RLN Karma and Tier System", () => {
 
       logger.info(`${KARMA_004.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    40000, // Extended timeout: mint + wait + 5 transactions
   );
 
   it(
@@ -256,9 +248,9 @@ describe("RLN Karma and Tier System", () => {
       const tierNames = Object.keys(tiers) as TierName[];
 
       // STRONG ASSERTIONS: Verify exact tier configuration
-      expect(tiers.entry.quota).toBe(2);
-      expect(tiers.newbie.quota).toBe(6);
-      expect(tiers.basic.quota).toBe(16);
+      expect(tiers.entry.quota).toBe(1);
+      expect(tiers.newbie.quota).toBe(5);
+      expect(tiers.basic.quota).toBe(15);
       expect(tiers.active.quota).toBe(96);
       expect(tiers.regular.quota).toBe(480);
       expect(tiers.power.quota).toBe(960);
@@ -306,17 +298,18 @@ describe("RLN Karma and Tier System", () => {
       const balance1 = await contracts.karma.balanceOf(user1.address);
       expect(balance1).toBe(1n);
 
-      // Entry tier has quota 2 - verify by sending 2 tx
-      for (let i = 0; i < 2; i++) {
-        const receipt = await rlnClient.sendGaslessTransaction(user1, {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          data: uniqueTxData(`karma006-entry-${i}`),
-        });
-        expect(receipt.status).toBe(1);
-      }
+      // Entry tier has quota 1 - send 1 tx (uses entire quota, user added to deny list)
+      const receipt1 = await rlnClient.sendGaslessTransaction(user1, {
+        to: TEST_RECIPIENT,
+        value: 0n,
+        data: uniqueTxData("karma006-entry-1"),
+      });
+      expect(receipt1.status).toBe(1);
 
-      // 3rd tx should fail (quota exhausted)
+      // Wait for prover to sync quota state
+      await rlnClient.waitForProverSync();
+
+      // 2nd tx should fail (quota exhausted, user now on deny list)
       const entryError = await rlnClient.sendGaslessTransactionExpectFailure(
         user1,
         {
@@ -330,7 +323,7 @@ describe("RLN Karma and Tier System", () => {
 
       logger.info(`${KARMA_006.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    30000, // Extended timeout: mint + wait + tx + prover sync + failure tx
   );
 
   it(

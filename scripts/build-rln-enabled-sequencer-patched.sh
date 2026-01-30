@@ -1,8 +1,9 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Building RLN-Enabled Sequencer with Gasless Block Fix"
+echo "🚀 Building RLN-Enabled Sequencer with Gasless Block Fix (ARM64)"
 echo "   Using exact Linea besu source from Consensys/linea-besu"
+echo "   Building for ARM64 architecture (Apple Silicon Macs)"
 
 # Colors for output
 RED='\033[0;31m'
@@ -358,31 +359,63 @@ echo -e "   Size: $(ls -lh "$PATCHED_MERGE_JAR" | awk '{print $5}')"
 
 cd "$REPO_ROOT"
 
-# Step 4: Build RLN Bridge library for Linux
-echo -e "${BLUE}🦀 Step 4: Building RLN Bridge Rust Library for Linux...${NC}"
+# Step 4: Build RLN Bridge library for ARM64 Linux
+echo -e "${BLUE}🦀 Step 4: Building RLN Bridge Rust Library for ARM64 Linux...${NC}"
 cd "${LINEA_SEQUENCER_DIR}/sequencer/src/main/rust/rln_bridge"
 
-RLN_LIB_FILE="${LINEA_SEQUENCER_DIR}/sequencer/src/main/rust/rln_bridge/target/x86_64-unknown-linux-gnu/release/librln_bridge.so"
+RLN_LIB_FILE="${LINEA_SEQUENCER_DIR}/sequencer/src/main/rust/rln_bridge/target/aarch64-unknown-linux-gnu/release/librln_bridge.so"
 
 if [[ ! -f "$RLN_LIB_FILE" ]]; then
-    echo -e "${YELLOW}🐳 Cross-compiling Rust library for Linux x86-64...${NC}"
-    docker run --rm --platform linux/arm64 \
-        -v "$(pwd)":/workspace \
-        -w /workspace \
-        rust:1.85-bookworm bash -c "
-            set -e
-            apt-get update -qq
-            apt-get install -y -qq pkg-config libssl-dev build-essential
-            rustup target add x86_64-unknown-linux-gnu
-            cargo build --release --target x86_64-unknown-linux-gnu
-        "
+    echo -e "${YELLOW}🐳 Building native ARM64 library using Docker...${NC}"
+
+    # Create temporary Dockerfile for ARM64 build
+    cat > Dockerfile.arm64-build << 'DOCKEREOF'
+FROM rust:1.85-bookworm
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    clang \
+    llvm \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy source
+COPY Cargo.toml Cargo.lock* ./
+COPY src ./src
+
+# Build for ARM64
+RUN cargo build --release
+
+# Verify output
+RUN ls -la target/release/librln_bridge.so
+DOCKEREOF
+
+    # Build using native ARM64 Docker container (no cross-compilation)
+    docker build --platform linux/arm64 -t rln-bridge-arm64-builder -f Dockerfile.arm64-build .
+
+    # Extract the library
+    echo -e "${YELLOW}📦 Extracting librln_bridge.so...${NC}"
+    mkdir -p target/aarch64-unknown-linux-gnu/release
+    docker create --name rln-extract rln-bridge-arm64-builder
+    docker cp rln-extract:/build/target/release/librln_bridge.so target/aarch64-unknown-linux-gnu/release/
+    docker rm rln-extract
+
+    # Cleanup
+    rm -f Dockerfile.arm64-build
+
+    # Verify the library
+    echo -e "${YELLOW}🔍 Verifying library architecture...${NC}"
+    file "$RLN_LIB_FILE"
 fi
 
 if [[ ! -f "$RLN_LIB_FILE" ]]; then
-    echo -e "${RED}❌ Error: Linux RLN library not found: $RLN_LIB_FILE${NC}"
+    echo -e "${RED}❌ Error: ARM64 RLN library not found: $RLN_LIB_FILE${NC}"
     exit 1
 fi
-echo -e "${GREEN}✅ RLN Bridge library ready${NC}"
+echo -e "${GREEN}✅ RLN Bridge library ready (ARM64)${NC}"
 
 # Step 5: Build Custom Sequencer JAR
 echo -e "${BLUE}☕ Step 5: Building Custom Sequencer JAR...${NC}"
@@ -640,11 +673,11 @@ echo -e "  • putPayloadById: Now prefers blocks with more txs when values equa
 echo -e "  • retrievePayloadById: Filters corrupted blocks, prefers blocks with more txs"
 echo -e "  • Gasless blocks (value=0 with txs) now beat empty blocks (value=0)"
 echo ""
-echo -e "${BLUE}📋 Built Components:${NC}"
+echo -e "${BLUE}📋 Built Components (ARM64):${NC}"
 echo -e "  Patched Merge JAR: $(basename "$PATCHED_MERGE_JAR")"
 echo -e "  Custom Sequencer JAR: $(basename "$SEQUENCER_JAR")"
-echo -e "  RLN Library: librln_bridge.so"
-echo -e "  Besu Image: $BESU_IMAGE_REMOTE"
+echo -e "  RLN Library: librln_bridge.so (aarch64)"
+echo -e "  Besu Image: $BESU_IMAGE_REMOTE (arm64)"
 if [[ -n "$RLN_PROVER_TAG" ]]; then
     echo -e "  RLN Prover Image: $RLN_PROVER_IMAGE_REMOTE"
 fi

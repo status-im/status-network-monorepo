@@ -156,44 +156,31 @@ describe("RLN Deny List and Premium Gas", () => {
       const user = getRegisteredUser(); // Use pre-registered user - no waiting!
       const quota = RLN_CONFIG.tiers.entry.quota;
 
-      logger.info(`${DENY_001.id}: Testing deny list addition`, {
+      logger.info(`${DENY_001.id}: Testing deny list addition on quota exhaustion`, {
         user: user.address,
         quota,
       });
 
-      // Exhaust quota
+      // Send quota transactions (user is added to deny list on the last one)
       for (let i = 0; i < quota; i++) {
         await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
-          data: uniqueTxData(`deny001-exhaust-${i}`),
+          data: uniqueTxData(`deny001-quota-${i}`),
         });
       }
-
-      // Wait for prover to sync quota state (longer for first test - cold start)
-      await rlnClient.waitForProverSync(3000);
-
-      // Attempt to exceed quota
-      await rlnClient.sendGaslessTransactionExpectFailure(
-        user,
-        {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          data: uniqueTxData("deny001-exceed"),
-        },
-        10000, // 10s timeout for failure expectation
-      );
+      logger.info(`${DENY_001.id}: Quota transactions succeeded, user now on deny list`);
 
       // Wait for and verify deny list addition
       await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
       const isDenied = await denyListManager.isDenied(user.address);
 
-      //  User MUST be on deny list
+      // User MUST be on deny list after exhausting quota
       expect(isDenied).toBe(true);
 
       logger.info(`${DENY_001.id}: PASSED ✓`);
     },
-    DENY_TEST_TIMEOUT, // 2 TXs + rejection (~7s) + deny wait (~20s) = ~35s
+    DENY_TEST_TIMEOUT, // 1 TX + deny wait (~20s) = ~25s
   );
 
   it(
@@ -204,24 +191,14 @@ describe("RLN Deny List and Premium Gas", () => {
 
       logger.info(`${DENY_002.id}: Testing denial rejection`, { user: user.address });
 
-      // Exhaust quota and get denied
+      // Send quota transactions (user is added to deny list on the last one)
       for (let i = 0; i < quota; i++) {
         await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
-          data: uniqueTxData(`deny002-exhaust-${i}`),
+          data: uniqueTxData(`deny002-quota-${i}`),
         });
       }
-
-      // Wait for prover to sync quota state
-      await rlnClient.waitForProverSync();
-
-      // Trigger deny list
-      await rlnClient.sendGaslessTransactionExpectFailure(user, {
-        to: TEST_RECIPIENT,
-        value: 0n,
-        data: uniqueTxData("deny002-trigger"),
-      });
 
       await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
 
@@ -233,12 +210,12 @@ describe("RLN Deny List and Premium Gas", () => {
         data: uniqueTxData("deny002-denied"),
       });
 
-      //  Must be rejected - either denied (if deny list synced) or resource_exhausted (quota check)
+      // Must be rejected - either denied (if deny list synced) or resource_exhausted (quota check)
       expect(errorMessage).toMatch(/denied|reject|quota|timeout|resource.*exhausted/i);
 
       logger.info(`${DENY_002.id}: PASSED ✓`);
     },
-    DENY_TEST_TIMEOUT, // 2 TXs + rejection + deny wait + rejection = ~45s
+    DENY_TEST_TIMEOUT, // 1 TX + deny wait + rejection = ~35s
   );
 
   it(
@@ -249,27 +226,18 @@ describe("RLN Deny List and Premium Gas", () => {
 
       logger.info(`${DENY_003.id}: Testing premium gas recovery`, { user: user.address });
 
-      // Get denied
+      // Send quota transactions (user is added to deny list on the last one)
       for (let i = 0; i < quota; i++) {
         await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
-          data: uniqueTxData(`deny003-exhaust-${i}`),
+          data: uniqueTxData(`deny003-quota-${i}`),
         });
       }
 
-      // Wait for prover to sync quota state
-      await rlnClient.waitForProverSync();
-
-      await rlnClient.sendGaslessTransactionExpectFailure(user, {
-        to: TEST_RECIPIENT,
-        value: 0n,
-        data: uniqueTxData("deny003-trigger"),
-      });
-
       await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
 
-      //  User IS denied before premium gas
+      // User IS denied after exhausting quota
       expect(await denyListManager.isDenied(user.address)).toBe(true);
 
       // Pay premium gas to recover
@@ -302,23 +270,14 @@ describe("RLN Deny List and Premium Gas", () => {
         user: user.address,
       });
 
-      // Get denied
+      // Send quota transactions (user is added to deny list on the last one)
       for (let i = 0; i < quota; i++) {
         await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
-          data: uniqueTxData(`deny004-exhaust-${i}`),
+          data: uniqueTxData(`deny004-quota-${i}`),
         });
       }
-
-      // Wait for prover to sync quota state
-      await rlnClient.waitForProverSync();
-
-      await rlnClient.sendGaslessTransactionExpectFailure(user, {
-        to: TEST_RECIPIENT,
-        value: 0n,
-        data: uniqueTxData("deny004-trigger"),
-      });
 
       await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
 
@@ -348,27 +307,18 @@ describe("RLN Deny List and Premium Gas", () => {
         user: user.address,
       });
 
-      // Get denied
+      // Send quota transactions (user is added to deny list on the last one)
       for (let i = 0; i < quota; i++) {
         await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
-          data: uniqueTxData(`deny005-exhaust-${i}`),
+          data: uniqueTxData(`deny005-quota-${i}`),
         });
       }
 
-      // Wait for prover to sync quota state
-      await rlnClient.waitForProverSync();
-
-      await rlnClient.sendGaslessTransactionExpectFailure(user, {
-        to: TEST_RECIPIENT,
-        value: 0n,
-        data: uniqueTxData("deny005-trigger"),
-      });
-
       await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
 
-      //  User is denied
+      // User is denied after exhausting quota
       expect(await denyListManager.isDenied(user.address)).toBe(true);
 
       // Pay premium gas
@@ -403,27 +353,14 @@ describe("RLN Deny List and Premium Gas", () => {
         epochDurationSeconds: epochDuration,
       });
 
-      // Get denied
+      // Send quota transactions (user is added to deny list on the last one)
       for (let i = 0; i < quota; i++) {
         await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
-          data: uniqueTxData(`deny006-exhaust-${i}`),
+          data: uniqueTxData(`deny006-quota-${i}`),
         });
       }
-
-      // Wait for prover to sync quota state
-      await rlnClient.waitForProverSync();
-
-      await rlnClient.sendGaslessTransactionExpectFailure(
-        user,
-        {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          data: uniqueTxData("deny006-trigger"),
-        },
-        10000, // 10s timeout for failure expectation
-      );
 
       await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
 
@@ -468,24 +405,16 @@ describe("RLN Deny List and Premium Gas", () => {
       const users = [getRegisteredUser(), getRegisteredUser(), getRegisteredUser()];
       const quota = RLN_CONFIG.tiers.entry.quota;
 
-      // Get all users denied
+      // Get all users denied by exhausting quota
       for (const user of users) {
+        // Send quota transactions (user is added to deny list on the last one)
         for (let i = 0; i < quota; i++) {
           await rlnClient.sendGaslessTransaction(user, {
             to: TEST_RECIPIENT,
             value: 0n,
-            data: uniqueTxData(`deny007-${user.address.slice(-4)}-${i}`),
+            data: uniqueTxData(`deny007-${user.address.slice(-4)}-quota-${i}`),
           });
         }
-
-        // Wait for prover to sync quota state for this user
-        await rlnClient.waitForProverSync();
-
-        await rlnClient.sendGaslessTransactionExpectFailure(user, {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          data: uniqueTxData(`deny007-${user.address.slice(-4)}-trigger`),
-        });
       }
 
       // Wait for all to be denied
@@ -512,23 +441,14 @@ describe("RLN Deny List and Premium Gas", () => {
 
       logger.info(`${DENY_008.id}: Testing deny list consistency`, { user: user.address });
 
-      // Get denied
+      // Send quota transactions (user is added to deny list on the last one)
       for (let i = 0; i < quota; i++) {
         await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
-          data: uniqueTxData(`deny008-exhaust-${i}`),
+          data: uniqueTxData(`deny008-quota-${i}`),
         });
       }
-
-      // Wait for prover to sync quota state
-      await rlnClient.waitForProverSync();
-
-      await rlnClient.sendGaslessTransactionExpectFailure(user, {
-        to: TEST_RECIPIENT,
-        value: 0n,
-        data: uniqueTxData("deny008-trigger"),
-      });
 
       await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
 
@@ -556,30 +476,16 @@ describe("RLN Deny List and Premium Gas", () => {
       const users = [getRegisteredUser(), getRegisteredUser(), getRegisteredUser()];
       const quota = RLN_CONFIG.tiers.entry.quota;
 
-      // Exhaust quotas first
+      // Send quota transactions for all users (each user is added to deny list on last tx)
       for (const user of users) {
         for (let i = 0; i < quota; i++) {
           await rlnClient.sendGaslessTransaction(user, {
             to: TEST_RECIPIENT,
             value: 0n,
-            data: uniqueTxData(`deny009-${user.address.slice(-4)}-${i}`),
+            data: uniqueTxData(`deny009-${user.address.slice(-4)}-quota-${i}`),
           });
         }
       }
-
-      // Wait for prover to sync quota state for all users
-      await rlnClient.waitForProverSync();
-
-      // Trigger denial concurrently
-      const triggerPromises = users.map((user) =>
-        rlnClient.sendGaslessTransactionExpectFailure(user, {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          data: uniqueTxData(`deny009-${user.address.slice(-4)}-trigger`),
-        }),
-      );
-
-      await Promise.all(triggerPromises);
 
       // Wait for all to be denied
       await Promise.all(

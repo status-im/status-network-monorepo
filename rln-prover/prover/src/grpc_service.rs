@@ -142,24 +142,8 @@ where
             return Err(Status::not_found("Sender not registered"));
         };
 
-        // Check deny list BEFORE proof generation to prevent denied users from getting proofs
-        match self.user_db.is_denied(&sender).await {
-            Ok(true) => {
-                info!(
-                    "[gRPC] Rejecting transaction from denied sender: {}",
-                    sender
-                );
-                return Err(Status::permission_denied(
-                    "Sender is on deny list, no proof will be generated",
-                ));
-            }
-            Ok(false) => {} // Not denied, proceed
-            Err(e) => {
-                warn!("[gRPC] Failed to check deny list for {}: {:?}", sender, e);
-                // On error, we allow the transaction to proceed (fail-open)
-                // The sequencer will still check the deny list
-            }
-        }
+        // No deny list operations here - prover only checks quota
+        // Deny list is managed exclusively by the sequencer
 
         let tx_counter_incr = if req.estimated_gas_used <= self.tx_gas_quota.get() {
             None
@@ -196,27 +180,15 @@ where
         );
 
         if counter > effective_limit {
-            // Add user to deny list when rate limit is exceeded
-            // This is critical because by the time the sequencer queries getUserTierInfo,
-            // the epoch may have changed, causing get_tx_counter to return 0.
-            // The prover has the accurate counter right now, so we add to deny list here.
-            let deny_reason = format!(
-                "Rate limit exceeded: {} transactions, limit: {}",
+            // Quota exceeded - reject proof generation
+            // NOTE: Deny list management is handled by the sequencer, not the prover.
+            // This prevents retroactive rejection of valid transactions.
+            info!(
+                "[gRPC] Rate limit exceeded for {}: counter={}, limit={}. Rejecting proof generation.",
+                sender,
                 u64::from(counter),
                 u64::from(effective_limit)
             );
-            if let Err(e) = self
-                .user_db
-                .add_to_deny_list(&sender, Some(deny_reason.clone()), None)
-                .await
-            {
-                warn!(
-                    "[gRPC] Failed to add {} to deny list after rate limit exceeded: {:?}",
-                    sender, e
-                );
-            } else {
-                info!("[gRPC] Added {} to deny list: {}", sender, deny_reason);
-            }
             return Err(Status::resource_exhausted(
                 "Too many transactions sent by this user",
             ));

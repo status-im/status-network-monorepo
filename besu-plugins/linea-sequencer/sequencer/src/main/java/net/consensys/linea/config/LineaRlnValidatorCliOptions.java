@@ -109,11 +109,13 @@ public class LineaRlnValidatorCliOptions implements LineaCliOptions {
 
     // Create shared gasless config with simplified settings
     // Note: Deny list is now stored in the RLN prover's PostgreSQL database and accessed via gRPC
+    // Note: For test environments with 30s epochs, 1 min TTL = 2 epochs (can't set to 0.5 min due to minute granularity)
+    // TODO: For production with 24h epochs, this should be configurable via CLI option
     LineaSharedGaslessConfiguration sharedConfig =
         new LineaSharedGaslessConfiguration(
             60L, // denyListCacheRefreshSeconds - 1 minute (local cache cleanup interval)
             premiumGasThresholdGWei,
-            60L, // denyListEntryMaxAgeMinutes - 1 hour TTL for deny list entries
+            1L, // denyListEntryMaxAgeMinutes - 1 minute TTL (minimum due to minute granularity, ~2 epochs for 30s test epochs)
             nullifierStoragePath);
 
     return new LineaRlnValidatorConfiguration(
