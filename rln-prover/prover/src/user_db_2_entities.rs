@@ -8,6 +8,7 @@ use sqlx::postgres::types::Oid;
 // internal
 use crate::tier::TierLimits;
 
+#[derive(Debug)]
 #[derive(sqlx::FromRow)]
 pub struct UserIdSqlx {
     pub id: i64,
@@ -30,6 +31,7 @@ pub struct TierLimitsSqlx {
     pub tier_limits: Option<sqlx::types::Json<TierLimits>>,
 }
 
+#[derive(Debug)]
 #[derive(sqlx::FromRow)]
 pub struct TxCounterSqlx {
     pub id: i64,
@@ -40,8 +42,8 @@ pub struct TxCounterSqlx {
 
 #[derive(sqlx::FromRow)]
 pub struct MerkleTreeConfigSqlx {
-    pub id: i32,
-    pub tree_index: i32, // unique
+    pub id: i64,
+    pub tree_index: i16, // unique
     pub depth: i64,
     pub next_index: i64,
 }

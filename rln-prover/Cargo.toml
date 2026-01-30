@@ -4,7 +4,7 @@ members = [
     "smart_contract",
     "prover",
     "prover_cli",
-    "prover_client",
+    "prover_client", "prover_db_migration_sqlx",
     # "prover_db_migration",
     # "prover_db_entity",
     # "prover_pmtree",

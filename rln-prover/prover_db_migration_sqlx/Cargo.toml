@@ -1,0 +1,11 @@
+[package]
+name = "prover_db_migration_sqlx"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "prover_db_migration_sqlx"
+path = "src/lib.rs"
+
+[dependencies]
+sqlx.workspace = true

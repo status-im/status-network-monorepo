@@ -3,44 +3,33 @@
 
 use sqlx::error::Error as SqlxError;
 use sqlx::{Pool, Postgres};
+use prover_db_migration_sqlx::{MigrationConfig, Migrator};
+use crate::user_db_2::UserDb2Config;
 
 pub async fn create_database_connection_1(
     // f_name: &str,
     // test_name: &str,
     db_name: &str,
     db_refresh: bool,
+    config: UserDb2Config,
 ) -> Result<(String, Pool<Postgres>), SqlxError> {
 
     // Drop / Create db_name then return a connection to it
 
-    /*
-    let db_name = format!(
-        "{}_{}",
-        std::path::Path::new(f_name)
-            .file_stem()
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        test_name
-    );
-
-    println!("db_name: {db_name}");
-    */
-
-    let db_url_base = "postgres://myuser:mysecretpassword@localhost";
-    // let db_url = format!("{db_url_base}/mydatabase");
+    let db_url_base = "postgres://postgres:postgres@localhost";
+    let db_url_0 = format!("{db_url_base}/postgres");
     let db_url = format!("{}/{}", db_url_base, db_name);
 
     if db_refresh {
-        let db = sqlx::PgPool::connect(db_url.as_str()).await?;
+        let db = sqlx::PgPool::connect(db_url_0.as_str()).await?;
 
-        sqlx::query("DROP DATABASE IF EXISTS $1")
-            .bind(db_name)
+        let query_drop = format!("DROP DATABASE IF EXISTS {}", db_name);
+        sqlx::query(query_drop.as_str())
             .execute(&db)
             .await?;
 
-        sqlx::query("CREATE DATABASE $1")
-            .bind(db_name)
+        let query_crate = format!("CREATE DATABASE {}", db_name);
+        sqlx::query(query_crate.as_str())
             .execute(&db)
             .await?;
 
@@ -48,8 +37,20 @@ pub async fn create_database_connection_1(
     }
 
     let db = sqlx::PgPool::connect(db_url.as_str()).await?;
-    // MigratorCreate::up(&db, None).await?;
-    unimplemented!("migration");
+
+    if db_refresh {
+        // Migration
+        let migrator = Migrator();
+        migrator.down(db.clone()).await?;
+
+        let cfg = MigrationConfig {
+            tree_count: config.tree_count as i64,
+            max_tree_count: config.max_tree_count as i64,
+            tree_depth: config.tree_depth as i16,
+        };
+
+        migrator.up(db.clone(), cfg).await?;
+    }
 
     Ok((db_url, db))
 }

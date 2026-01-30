@@ -56,6 +56,7 @@ rayon = "1.11"
 #     "debug-print"
 # ]}
 sqlx.workspace = true
+prover_db_migration_sqlx = { path = "../prover_db_migration_sqlx" }
 
 [build-dependencies]
 tonic-prost-build.workspace = true

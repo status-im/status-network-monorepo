@@ -94,6 +94,7 @@ impl UserDb2 {
         tier_limits: TierLimits,
         rate_limit: RateLimit,
     ) -> Result<Self, SqlxError> {
+
         debug_assert!(config.tree_count <= config.max_tree_count);
 
         //
@@ -101,36 +102,18 @@ impl UserDb2 {
             .fetch_one(&db)
             .await?;
 
-        PGFR_OID.set(row.0).expect("Failed to set PGFR_OID");
-        PGFR_ARRAY_OID.set(row.1).expect("Failed to set array OID");
+        let _ = PGFR_OID.set(row.0);
+        let _ = PGFR_ARRAY_OID.set(row.1);
 
         // tier limits
         debug_assert!(tier_limits.validate().is_ok());
-        /*
-        let _res_delete = tier_limits::Entity::delete_many()
-            .filter(tier_limits::Column::Name.eq(TIER_LIMITS_KEY))
-            .exec(&db)
-            .await?;
-        */
-        let res_delete = sqlx::query("DELETE FROM tier_limits WHERE name = ?")
+
+        let res_delete = sqlx::query("DELETE FROM tier_limits WHERE name = $1")
             .bind(TIER_LIMITS_KEY)
             .execute(&db)
             .await?;
-        debug_assert!(res_delete.rows_affected() == 1);
 
-        /*
-        let tier_limits_value = serde_json::to_value(tier_limits).unwrap();
-        let tier_limits_active_model = tier_limits::ActiveModel {
-            name: Set(TIER_LIMITS_KEY.to_string()),
-            tier_limits: Set(Some(tier_limits_value)),
-            ..Default::default()
-        };
-        tier_limits::Entity::insert(tier_limits_active_model)
-            .exec(&db)
-            .await?;
-        */
-
-        let res_insert = sqlx::query("INSERT INTO tier_limits VALUES ($1, $2)")
+        let res_insert = sqlx::query("INSERT INTO tier_limits (name, tier_limits) VALUES ($1, $2)")
             .bind(TIER_LIMITS_KEY)
             .bind(Json(tier_limits))
             .execute(&db)
@@ -138,69 +121,18 @@ impl UserDb2 {
 
         debug_assert!(res_insert.rows_affected() == 1);
 
-        // merkle trees
-        let merkle_tree_count = Self::get_merkle_tree_count_from_db(&db).await?;
-        // let mut merkle_trees = Vec::with_capacity(merkle_tree_count as usize);
-
-        if merkle_tree_count == 0 {
-
-            /*
-            // FIXME: 'as'
-            for i in 0..(config.tree_count as i16) {
-                let persistent_db_config = PersistentDbConfig {
-                    db_conn: db.clone(),
-                    tree_index: i,
-                    insert_batch_size: 10_000, // TODO: no hardcoded value
-                };
-
-                let mt = ProverMerkleTree::new(
-                    config.tree_depth as usize, // FIXME: no 'as'
-                    MemoryDbConfig,
-                    persistent_db_config.clone(),
-                )
-                .await
-                .unwrap();
-
-                merkle_trees.push(mt);
-            }
-            */
-
-            todo!()
-
-        } else {
-            /*
-            for i in 0..(merkle_tree_count as i16) {
-                let persistent_db_config = PersistentDbConfig {
-                    db_conn: db.clone(),
-                    tree_index: i,
-                    insert_batch_size: 10_000, // TODO: no hardcoded value
-                };
-
-                let mt = ProverMerkleTree::load(MemoryDbConfig, persistent_db_config.clone())
-                    .await
-                    .unwrap();
-
-                merkle_trees.push(mt);
-            }
-            */
-
-            // TODO: nothing to do here? Merkle trees are already created in the DB
-
-        }
-
         Ok(Self {
             db,
             config,
             rate_limit,
             epoch_store,
-            // merkle_trees: Arc::new(TokioRwLock::new(merkle_trees)),
         })
     }
 
     // (Internal) Simple Db related methods
 
     pub(crate) async fn has_user(&self, address: &Address) -> Result<bool, SqlxError> {
-        let res: Option<UserIdSqlx> = sqlx::query_as("SELECT id FROM user WHERE address=? LIMIT 1")
+        let res: Option<UserIdSqlx> = sqlx::query_as("SELECT id FROM users WHERE address=$1 LIMIT 1")
             .bind(address.to_string())
             .fetch_optional(&self.db)
             .await?;
@@ -209,7 +141,7 @@ impl UserDb2 {
     }
 
     pub(crate) async fn get_user(&self, address: &Address) -> Result<Option<UserSqlx>, SqlxError> {
-        let res: Option<UserSqlx> = sqlx::query_as("SELECT * FROM user WHERE address=? LIMIT 1")
+        let res: Option<UserSqlx> = sqlx::query_as("SELECT * FROM users WHERE address=$1 LIMIT 1")
             .bind(address.to_string())
             .fetch_optional(&self.db)
             .await?;
@@ -223,7 +155,7 @@ impl UserDb2 {
     }
 
     async fn get_tier_limits(&self) -> Result<TierLimits, SqlxError> {
-        let res: Option<TierLimitsSqlx> = sqlx::query_as("SELECT * FROM tier_limits WHERE name = ? LIMIT 1")
+        let res: Option<TierLimitsSqlx> = sqlx::query_as("SELECT * FROM tier_limits WHERE name = $1 LIMIT 1")
             .bind(TIER_LIMITS_KEY)
             .fetch_optional(&self.db)
             .await?;
@@ -238,24 +170,6 @@ impl UserDb2 {
 
     async fn set_tier_limits(&self, tier_limits: TierLimits) -> Result<(), SqlxError> {
 
-        /*
-        let tier_limits_active_model = tier_limits::ActiveModel {
-            name: Set(TIER_LIMITS_NEXT_KEY.to_string()),
-            tier_limits: Set(Some(serde_json::to_value(tier_limits).unwrap())),
-            ..Default::default()
-        };
-
-        // upsert
-        tier_limits::Entity::insert(tier_limits_active_model)
-            .on_conflict(
-                OnConflict::column(tier_limits::Column::Name)
-                    .update_column(tier_limits::Column::TierLimits)
-                    .to_owned(),
-            )
-            .exec(&self.db)
-            .await?;
-        */
-
         sqlx::query("INSERT INTO tier_limits (name, tier_limits) VALUES ($1, $2) ON CONFLICT (name) DO UPDATE SET tier_limits = EXCLUDED.tier_limits")
             .bind(TIER_LIMITS_NEXT_KEY)
             .bind(Json(tier_limits))
@@ -266,7 +180,6 @@ impl UserDb2 {
     }
 
     async fn get_merkle_tree_count_from_db(db: &Pool<Postgres>) -> Result<u64, SqlxError> {
-        // m_tree_config::Entity::find().count(db).await
         let res: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM m_tree_config")
             .fetch_one(db)
             .await?;
@@ -292,57 +205,19 @@ impl UserDb2 {
 
         let mut txn = self.db.begin().await?;
 
-        // Use SELECT FOR UPDATE to prevent race conditions with concurrent transactions
-        // This locks the row until the transaction commits, ensuring atomic read-modify-write
-        /*
-        let res = tx_counter::Entity::find()
-            .filter(tx_counter::Column::Address.eq(address.to_string()))
-            .lock(LockType::Update)
-            .one(&txn)
-            .await?;
-        */
-
-        let res: Option<TxCounterSqlx> = sqlx::query_as("SELECT * FROM tx_counter WHERE address = ? LIMIT 1")
+        let res: Option<TxCounterSqlx> = sqlx::query_as("SELECT * FROM tx_counter WHERE address = $1 LIMIT 1")
             .bind(address.to_string())
             .fetch_optional(&mut *txn)
             .await?;
 
         let new_tx_counter = if let Some(res) = res {
-            /*
-            let mut res_active = res.into_active_model();
-
-            // unwrap safe: res_active.epoch/epoch_slice cannot be null
-            let model_epoch = res_active.epoch.clone().unwrap();
-            let model_epoch_counter = res_active.epoch_counter.clone().unwrap();
-            // let model_epoch_slice = res_active.epoch_slice.clone().unwrap();
-            // let model_epoch_slice_counter = res_active.epoch_slice_counter.clone().unwrap();
-
-            if model_epoch == 0 {
-                res_active.epoch = Set(epoch.into());
-                res_active.epoch_counter = Set(incr_value);
-                // res_active.epoch_slice = Set(epoch_slice.into());
-                // res_active.epoch_slice_counter = Set(incr_value);
-            } else if epoch != Epoch::from(model_epoch) {
-                // New epoch
-                res_active.epoch = Set(epoch.into());
-                res_active.epoch_counter = Set(incr_value);
-                // res_active.epoch_slice = Set(0);
-                // res_active.epoch_slice_counter = Set(incr_value);
-            } else {
-                // Same epoch
-                res_active.epoch_counter = Set(model_epoch_counter.saturating_add(incr_value));
-            }
-
-            // res_active.update(&txn).await?;
-            tx_counter::Entity::update(res_active).exec(&txn).await?
-            */
 
             let model_epoch = res.epoch;
             let model_epoch_counter = res.epoch_counter;
 
             if model_epoch == 0 {
 
-                let res: TxCounterSqlx = sqlx::query_as("UPDATE tx_counter SET epoch = $1, epoch_counter = $1 WHERE address = $3 RETURNING *")
+                let res: TxCounterSqlx = sqlx::query_as("UPDATE tx_counter SET epoch = $1, epoch_counter = $2 WHERE address = $3 RETURNING *")
                     .bind(i64::from(epoch))
                     .bind(incr_value)
                     .bind(address.to_string())
@@ -351,14 +226,17 @@ impl UserDb2 {
                 res
 
             } else if epoch != Epoch::from(model_epoch) {
-                let res: TxCounterSqlx = sqlx::query_as("UPDATE tx_counter SET epoch = $1, epoch_counter = $1 WHERE address = $3 RETURNING *")
+
+                let res: TxCounterSqlx = sqlx::query_as("UPDATE tx_counter SET epoch = $1, epoch_counter = $2 WHERE address = $3 RETURNING *")
                     .bind(i64::from(epoch))
                     .bind(incr_value)
                     .bind(address.to_string())
                     .fetch_one(&mut *txn)
                     .await?;
                 res
+
             } else {
+
                 let res: TxCounterSqlx = sqlx::query_as("UPDATE tx_counter SET epoch_counter = $1 WHERE address = $2 RETURNING *")
                     .bind(model_epoch_counter.saturating_add(incr_value))
                     .bind(address.to_string())
@@ -368,31 +246,15 @@ impl UserDb2 {
             }
 
             } else {
-            /*
-            // first time - need to create a new entry
-            let new_tx_counter = tx_counter::ActiveModel {
-                address: Set(address.to_string()),
-                epoch: Set(epoch.into()),
-                epoch_counter: Set(incr_value),
-                // epoch_slice: Set(epoch_slice.into()),
-                // epoch_slice_counter: Set(incr_value),
-                ..Default::default()
-            };
 
-            // new_tx_counter.insert(&txn).await?;
-            tx_counter::Entity::insert(new_tx_counter)
-                .exec_with_returning(&txn)
-                .await?
-            */
+                let res: TxCounterSqlx = sqlx::query_as("INSERT INTO tx_counter (address, epoch, epoch_counter) VALUES ($1, $2, $3) RETURNING *")
+                    .bind(address.to_string())
+                    .bind(i64::from(epoch))
+                    .bind(incr_value)
+                    .fetch_one(&mut *txn)
+                    .await?;
 
-            let res: TxCounterSqlx = sqlx::query_as("INSERT INTO tx_counter (address, epoch, epoch_counter) VALUES ($1, $2, $3) RETURNING *")
-                .bind(address.to_string())
-                .bind(i64::from(epoch))
-                .bind(incr_value)
-                .fetch_one(&mut *txn)
-                .await?;
-
-            res
+                res
         };
 
         txn.commit().await?;
@@ -405,7 +267,8 @@ impl UserDb2 {
         address: &Address,
     ) -> Result<EpochCounter, TxCounterError2> {
 
-        let res: Option<TxCounterSqlx> = sqlx::query_as("SELECT * FROM tx_counter WHERE address = ? LIMIT 1")
+        let res: Option<TxCounterSqlx> = sqlx::query_as("SELECT * FROM tx_counter WHERE address = $1 LIMIT 1")
+            .bind(address.to_string())
             .fetch_optional(&self.db)
             .await?;
 
@@ -504,6 +367,20 @@ impl UserDb2 {
                     .bind(&v)
                     .execute(&mut *txn)
                     .await?;
+
+                let _res = sqlx::query("INSERT INTO users (address, rln_id, tree_index, index_in_merkle_tree) VALUES ($1, $2, $3, $4)")
+                    .bind(address.to_string())
+                    .bind(serde_json::to_value(rln_identity).unwrap())
+                    .bind(tree_config.tree_index)
+                    .bind(tree_config.next_index)
+                    .execute(&mut *txn)
+                    .await?;
+
+                let _res = sqlx::query("INSERT INTO tx_counter (address) VALUES ($1)")
+                    .bind(address.to_string())
+                    .execute(&mut *txn)
+                    .await?;
+
             },
             None => {
                 return Err(RegisterError2::TooManyUsers);
@@ -575,13 +452,13 @@ impl UserDb2 {
         let v = PgFrStruct { inner: Fr::ZERO };
         let _res = sqlx::query("SELECT pgfr_mtree_set_leaf($1, $2, $3, $4)")
             .bind(i16::from(self.config.tree_depth))
-            .bind(tree_index as i64)// depth
+            .bind(tree_index as i16)// depth
             .bind(index_in_merkle_tree as i64)
             .bind(&v)
             .execute(&mut *txn)
             .await?;
 
-        sqlx::query("DELETE FROM user WHERE address = $1")
+        sqlx::query("DELETE FROM users WHERE address = $1")
             .bind(address.to_string())
             .execute(&mut *txn)
             .await?;
@@ -923,15 +800,30 @@ impl UserDb2 {
         Self::get_merkle_tree_count_from_db(&self.db).await
     }
 
+    /*
     pub(crate) async fn get_vec_tree_count(&self) -> usize {
         // self.merkle_trees.read().await.len()
         todo!()
     }
+    */
 
     pub(crate) async fn get_user_indexes(&self, address: &Address) -> (i64, i64) {
         let user_model = self.get_user(address).await.unwrap().unwrap();
 
         (user_model.tree_index, user_model.index_in_merkle_tree)
+    }
+
+    pub(crate) async fn get_merkle_tree_leave_set(&self, tree_index: i64) -> i64 {
+
+        let res: i64 = sqlx::query_scalar(r#"
+            SELECT next_index FROM m_tree_config WHERE tree_index = $1 LIMIT 1
+        "#)
+            .bind(tree_index)
+            .fetch_one(&self.db)
+            .await
+            .unwrap();
+
+        res
     }
 }
 
@@ -956,6 +848,7 @@ mod tests {
     use claims::assert_matches;
     use derive_more::Display;
     use tracing_test::traced_test;
+    use prover_db_migration_sqlx::MigrationConfig;
     // internal
     // use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
     use crate::tests_common::create_database_connection_1;
@@ -978,37 +871,6 @@ mod tests {
     const ADDR_2: Address = address!("0xb20a608c624Ca5003905aA834De7156C68b2E1d0");
     pub(crate) const MERKLE_TREE_HEIGHT: u8 = 20;
 
-    /*
-    async fn create_database_connection(db_name: &str) -> Result<Pool<Postgres>, SqlxError> {
-        // Drop / Create db_name then return a connection to it
-
-        let db_url_base = "postgres://myuser:mysecretpassword@localhost";
-        let db_url = format!("{}/{}", db_url_base, "mydatabase");
-        let db = sqlx::PgPool::connect(db_url.as_str()).await?;
-
-        db.execute_raw(Statement::from_string(
-            db.get_database_backend(),
-            format!("DROP DATABASE IF EXISTS \"{}\";", db_name),
-        ))
-        .await?;
-        db.execute_raw(Statement::from_string(
-            db.get_database_backend(),
-            format!("CREATE DATABASE \"{}\";", db_name),
-        ))
-        .await?;
-
-        db.close().await?;
-
-        let db_url_final = format!("{}/{}", db_url_base, db_name);
-        let db = Database::connect(db_url_final)
-            .await
-            .expect("Database connection failed");
-        MigratorCreate::up(&db, None).await?;
-
-        Ok(db)
-    }
-    */
-
     #[tokio::test]
     // #[traced_test]
     async fn test_user_register() {
@@ -1024,9 +886,10 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let (_, db_conn) = create_database_connection_1("user_db_test_user_register", true)
+
+        let (_, db_conn) = create_database_connection_1("user_db_test_user_register", true, config.clone())
             .await
-            .unwrap();
+            .expect("create_database_connection_1 failed");
 
         let user_db = UserDb2::new(
             db_conn,
@@ -1074,7 +937,7 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let (_, db_conn) = create_database_connection_1("user_db_test_tx_counter", true)
+        let (_, db_conn) = create_database_connection_1("user_db_test_tx_counter", true, config.clone())
             .await
             .unwrap();
 
@@ -1109,7 +972,7 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let (_, db_conn) = create_database_connection_1("user_db_test_incr_tx_counter", true)
+        let (_, db_conn) = create_database_connection_1("user_db_test_incr_tx_counter", true, config.clone())
             .await
             .unwrap();
 
@@ -1152,7 +1015,6 @@ mod tests {
         // assert_eq!(tier_info.epoch_slice_tx_count, 1);
     }
 
-    /*
     #[tokio::test]
     async fn test_user_remove() {
         let epoch_store = Arc::new(RwLock::new(Default::default()));
@@ -1161,9 +1023,9 @@ mod tests {
             max_tree_count: 1,
             tree_depth: crate::user_db::MERKLE_TREE_HEIGHT,
         };
-        let db_conn = create_database_connection("user_db_test_user_remove")
+        let db_conn = create_database_connection_1("user_db_test_user_remove", true, config.clone())
             .await
-            .unwrap();
+            .unwrap().1;
 
         let user_db = UserDb2::new(
             db_conn,
@@ -1172,32 +1034,33 @@ mod tests {
             Default::default(),
             Default::default(),
         )
-        .await
-        .expect("Cannot create UserDb");
+            .await
+            .expect("Cannot create UserDb");
 
         user_db.register_user(ADDR_1).await.unwrap();
-        let guard = user_db.merkle_trees.read().await;
-        let mtree_index_add_addr_1 = guard[0].leaves_set();
-        // Note: need to drop read guard before registering user as register_user tries to acquire
-        // write lock on merkle trees (and will wait indefinitely if a read lock is held)
-        drop(guard);
+        let leaves_set_1 = user_db.get_merkle_tree_leave_set(0).await;
+
         user_db.register_user(ADDR_2).await.unwrap();
-        let guard = user_db.merkle_trees.read().await;
-        let mtree_index_add_addr_2 = guard[0].leaves_set();
-        drop(guard);
-        assert_ne!(mtree_index_add_addr_1, mtree_index_add_addr_2);
-        println!("index addr 1: {}", mtree_index_add_addr_1);
-        println!("index addr 2: {}", mtree_index_add_addr_2);
+        let leaves_set_2 = user_db.get_merkle_tree_leave_set(0).await;
+        assert_ne!(leaves_set_1, leaves_set_2);
+        println!("index addr 1: {}", leaves_set_1);
+        println!("index addr 2: {}", leaves_set_2);
 
         user_db.remove_user(&ADDR_2).await.unwrap();
-        let guard = user_db.merkle_trees.read().await;
-        let mtree_index_after_rm_addr_2 = guard[0].leaves_set();
-        drop(guard);
-        assert_eq!(user_db.has_user(&ADDR_1).await, Ok(true));
-        assert_eq!(user_db.has_user(&ADDR_2).await, Ok(false));
-        // No reuse of index in PmTree (as this is a generic impl and could lead to security issue:
-        // like replay attack...)
-        assert_eq!(mtree_index_after_rm_addr_2, mtree_index_add_addr_2);
+        {
+            /*
+            let guard = user_db.merkle_trees.read().await;
+            let mtree_index_after_rm_addr_2 = guard[0].leaves_set();
+            drop(guard);
+            */
+            let leaves_set_after_rm = user_db.get_merkle_tree_leave_set(0).await;
+
+            assert_eq!(user_db.has_user(&ADDR_1).await.unwrap(), true);
+            assert_eq!(user_db.has_user(&ADDR_2).await.unwrap(), false);
+            // No reuse of index in PmTree (as this is a generic impl and could lead to security issue:
+            // like replay attack...)
+            assert_eq!(leaves_set_after_rm, leaves_set_2);
+        }
     }
 
     #[tokio::test]
@@ -1212,9 +1075,9 @@ mod tests {
             max_tree_count: 1,
             tree_depth: 1,
         };
-        let db_conn = create_database_connection("user_db_test_user_reg_merkle_tree_fail")
+        let db_conn = create_database_connection_1("user_db_test_user_reg_merkle_tree_fail", true, config.clone())
             .await
-            .unwrap();
+            .unwrap().1;
 
         let user_db = UserDb2::new(
             db_conn,
@@ -1228,33 +1091,42 @@ mod tests {
 
         let addr = Address::new([0; 20]);
         {
+            /*
             let guard = user_db.merkle_trees.read().await;
             let mt = guard.first().unwrap();
             assert_eq!(mt.leaves_set(), 0);
+            */
+
+            assert_eq!( user_db.get_merkle_tree_leave_set(0).await, 0);
         }
         user_db.register_user(addr).await.unwrap();
+        assert_eq!(user_db.has_user(&addr).await.unwrap(), true);
         {
+            /*
             let guard = user_db.merkle_trees.read().await;
             let mt = guard.first().unwrap();
             assert_eq!(mt.leaves_set(), 1);
+            */
+            assert_eq!( user_db.get_merkle_tree_leave_set(0).await, 1);
         }
         user_db.register_user(ADDR_1).await.unwrap();
         {
-            let guard = user_db.merkle_trees.read().await;
-            let mt = guard.first().unwrap();
-            assert_eq!(mt.leaves_set(), 2);
+            // let guard = user_db.merkle_trees.read().await;
+            // let mt = guard.first().unwrap();
+            // assert_eq!(mt.leaves_set(), 2);
+            assert_eq!( user_db.get_merkle_tree_leave_set(0).await, 2);
         }
 
         let res = user_db.register_user(ADDR_2).await;
         assert_matches!(res, Err(RegisterError2::TooManyUsers));
-        assert_eq!(user_db.has_user(&ADDR_1).await, Ok(true));
-        assert_eq!(user_db.has_user(&ADDR_2).await, Ok(false));
+        assert_eq!(user_db.has_user(&ADDR_1).await.unwrap(), true);
+        assert_eq!(user_db.has_user(&ADDR_2).await.unwrap(), false);
         {
-            let guard = user_db.merkle_trees.read().await;
-            let mt = guard.first().unwrap();
-            assert_eq!(mt.leaves_set(), 2);
+            // let guard = user_db.merkle_trees.read().await;
+            // let mt = guard.first().unwrap();
+            // assert_eq!(mt.leaves_set(), 2);
+            assert_eq!( user_db.get_merkle_tree_leave_set(0).await, 2);
         }
     }
 
-    */
 }

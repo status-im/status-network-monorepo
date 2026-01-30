@@ -59,39 +59,6 @@ mod tests {
         RecoveredSecret(IdSecret),
     }
 
-    /*
-    async fn create_database_connection(db_name: &str) -> Result<DatabaseConnection, DbErr> {
-        // Drop / Create db_name then return a connection to it
-
-        let db_url_base = "postgres://myuser:mysecretpassword@localhost";
-        let db_url = format!("{}/{}", db_url_base, "mydatabase");
-        let db = Database::connect(db_url)
-            .await
-            .expect("Database connection 0 failed");
-
-        db.execute_raw(Statement::from_string(
-            db.get_database_backend(),
-            format!("DROP DATABASE IF EXISTS \"{}\";", db_name),
-        ))
-        .await?;
-        db.execute_raw(Statement::from_string(
-            db.get_database_backend(),
-            format!("CREATE DATABASE \"{}\";", db_name),
-        ))
-        .await?;
-
-        db.close().await?;
-
-        let db_url_final = format!("{}/{}", db_url_base, db_name);
-        let db = Database::connect(db_url_final)
-            .await
-            .expect("Database connection failed");
-        MigratorCreate::up(&db, None).await?;
-
-        Ok(db)
-    }
-    */
-
     async fn proof_sender(
         sender: Address,
         proof_tx: &mut async_channel::Sender<ProofGenerationData>,
@@ -181,7 +148,7 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
-        let db_conn = create_database_connection_1("proof_service_tests_test_user_not_registered", true)
+        let db_conn = create_database_connection_1("proof_service_tests_test_user_not_registered", true, config.clone())
             .await
             .unwrap()
             .1;
@@ -334,7 +301,7 @@ mod tests {
 
     #[tokio::test]
     #[tracing_test::traced_test]
-    async fn test_user_spamming() {
+    async fn test_user_spamming_1() {
         // Recover secret from a user spamming the system
 
         // Queues
@@ -356,7 +323,7 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let db_conn = create_database_connection_1("proof_service_tests_test_user_spamming", true)
+        let db_conn = create_database_connection_1("proof_service_tests_test_user_spamming_1", true, config.clone())
             .await
             .unwrap().1;
         let user_db_service = UserDbService::new(
@@ -437,7 +404,7 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
         let db_conn =
-            create_database_connection_1("proof_service_tests_test_user_spamming_same_signal", true)
+            create_database_connection_1("proof_service_tests_test_user_spamming_same_signal", true, config.clone())
                 .await
                 .unwrap().1;
         let user_db_service = UserDbService::new(

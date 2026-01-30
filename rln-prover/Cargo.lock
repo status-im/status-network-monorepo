@@ -3938,6 +3938,7 @@ dependencies = [
  "num-bigint",
  "parking_lot 0.12.5",
  "prost",
+ "prover_db_migration_sqlx",
  "rayon",
  "rln",
  "rln_proof",
@@ -3993,6 +3994,13 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+]
+
+[[package]]
+name = "prover_db_migration_sqlx"
+version = "0.1.0"
+dependencies = [
+ "sqlx",
 ]
 
 [[package]]
