@@ -10,53 +10,58 @@ mod tests {
     use alloy::primitives::{Address, address};
     use claims::assert_matches;
     use parking_lot::RwLock;
-    use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
+    // use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
+    // sqlx
+    use sqlx::{
+        error::Error as SqlxError,
+        Pool,
+        Postgres,
+    };
+    use crate::tests_common::create_database_connection_1;
     // internal
     use crate::user_db_error::RegisterError2;
     use crate::user_db_types::{EpochCounter, EpochSliceCounter};
-    use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
+    // use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
 
     const ADDR_1: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
     const ADDR_2: Address = address!("0xb20a608c624Ca5003905aA834De7156C68b2E1d0");
     const ADDR_3: Address = address!("0x6d2e03b7EfFEae98BD302A9F836D0d6Ab0002766");
     const ADDR_4: Address = address!("0x7A4d20b913B97aD2F30B30610e212D7db11B4BC3");
 
-    async fn create_database_connection(
+    /*
+    pub async fn create_database_connection(
         db_name: &str,
         db_refresh: bool,
-    ) -> Result<DatabaseConnection, DbErr> {
+    ) -> Result<Pool<Postgres>, SqlxError> {
         // Drop / Create db_name then return a connection to it
 
         let db_url_base = "postgres://myuser:mysecretpassword@localhost";
         let db_url = format!("{}/{}", db_url_base, "mydatabase");
 
         if db_refresh {
-            let db = Database::connect(db_url)
-                .await
-                .expect("Database connection 0 failed");
+            let db = sqlx::PgPool::connect(db_url.as_str()).await?;
 
-            db.execute_raw(Statement::from_string(
-                db.get_database_backend(),
-                format!("DROP DATABASE IF EXISTS \"{}\";", db_name),
-            ))
-            .await?;
-            db.execute_raw(Statement::from_string(
-                db.get_database_backend(),
-                format!("CREATE DATABASE \"{}\";", db_name),
-            ))
-            .await?;
+            sqlx::query("DROP DATABASE IF EXISTS $1")
+                .bind(db_name)
+                .execute(&db)
+                .await?;
 
-            db.close().await?;
+            sqlx::query("CREATE DATABASE $1")
+                .bind(db_name)
+                .execute(&db)
+                .await?;
+
+            db.close().await;
         }
 
         let db_url_final = format!("{}/{}", db_url_base, db_name);
-        let db = Database::connect(db_url_final)
-            .await
-            .expect("Database connection failed");
-        MigratorCreate::up(&db, None).await?;
+        let db = sqlx::PgPool::connect(db_url.as_str()).await?;
+        // MigratorCreate::up(&db, None).await?;
+        todo!();
 
         Ok(db)
     }
+    */
 
     #[tokio::test]
     async fn test_incr_tx_counter_2() {
@@ -73,7 +78,7 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
-        let db_conn = create_database_connection("user_db_tests_test_incr_tx_counter_2", true)
+        let (_, db_conn) = create_database_connection_1("user_db_tests_test_incr_tx_counter_2", true)
             .await
             .unwrap();
 
@@ -92,46 +97,46 @@ mod tests {
         user_db.register_user(ADDR_2).await.unwrap();
 
         assert_eq!(
-            user_db.get_tx_counter(&ADDR_1).await,
-            Ok(EpochCounter::from(0))
+            user_db.get_tx_counter(&ADDR_1).await.unwrap(),
+            EpochCounter::from(0)
         );
         assert_eq!(
-            user_db.get_tx_counter(&ADDR_2).await,
-            Ok(EpochCounter::from(0))
+            user_db.get_tx_counter(&ADDR_2).await.unwrap(),
+            EpochCounter::from(0)
         );
 
         // Now update user tx counter
         assert_eq!(
-            user_db.on_new_tx(&ADDR_1, None).await,
-            Ok(EpochCounter::from(1))
+            user_db.on_new_tx(&ADDR_1, None).await.unwrap(),
+            EpochCounter::from(1)
         );
         assert_eq!(
-            user_db.on_new_tx(&ADDR_1, None).await,
-            Ok(EpochCounter::from(2))
+            user_db.on_new_tx(&ADDR_1, None).await.unwrap(),
+            EpochCounter::from(2)
         );
         assert_eq!(
-            user_db.on_new_tx(&ADDR_1, Some(2)).await,
-            Ok(EpochCounter::from(4))
-        );
-
-        assert_eq!(
-            user_db.on_new_tx(&ADDR_2, None).await,
-            Ok(EpochCounter::from(1))
+            user_db.on_new_tx(&ADDR_1, Some(2)).await.unwrap(),
+            EpochCounter::from(4)
         );
 
         assert_eq!(
-            user_db.on_new_tx(&ADDR_2, None).await,
-            Ok(EpochCounter::from(2))
+            user_db.on_new_tx(&ADDR_2, None).await.unwrap(),
+            EpochCounter::from(1)
         );
 
         assert_eq!(
-            user_db.get_tx_counter(&ADDR_1).await,
-            Ok(EpochCounter::from(4))
+            user_db.on_new_tx(&ADDR_2, None).await.unwrap(),
+            EpochCounter::from(2)
         );
 
         assert_eq!(
-            user_db.get_tx_counter(&ADDR_2).await,
-            Ok(EpochCounter::from(2))
+            user_db.get_tx_counter(&ADDR_1).await.unwrap(),
+            EpochCounter::from(4)
+        );
+
+        assert_eq!(
+            user_db.get_tx_counter(&ADDR_2).await.unwrap(),
+            EpochCounter::from(2)
         );
     }
 
@@ -146,7 +151,7 @@ mod tests {
 
         let addr = Address::new([0; 20]);
         {
-            let db_conn = create_database_connection("user_db_tests_test_persistent_storage", true)
+            let (_, db_conn) = create_database_connection_1("user_db_tests_test_persistent_storage", true)
                 .await
                 .unwrap();
 
@@ -178,23 +183,23 @@ mod tests {
             );
 
             assert_eq!(
-                user_db.on_new_tx(&ADDR_1, Some(2)).await,
-                Ok(EpochCounter::from(2))
+                user_db.on_new_tx(&ADDR_1, Some(2)).await.unwrap(),
+                EpochCounter::from(2)
             );
             assert_eq!(
-                user_db.on_new_tx(&ADDR_2, Some(1000)).await,
-                Ok(EpochCounter::from(1000))
+                user_db.on_new_tx(&ADDR_2, Some(1000)).await.unwrap(),
+                EpochCounter::from(1000)
             );
 
-            db_conn.close().await.unwrap();
+            db_conn.close().await;
             // user_db is dropped at the end of the scope, but let's make it explicit
             drop(user_db);
         }
 
         {
             // Reopen Db and check that is inside
-            let db_conn =
-                create_database_connection("user_db_tests_test_persistent_storage", false)
+            let (_, db_conn) =
+                create_database_connection_1("user_db_tests_test_persistent_storage", false)
                     .await
                     .unwrap();
 
@@ -244,7 +249,7 @@ mod tests {
         };
 
         {
-            let db_conn = create_database_connection("user_db_tests_test_multi_tree", true)
+            let (_, db_conn) = create_database_connection_1("user_db_tests_test_multi_tree", true)
                 .await
                 .unwrap();
 
@@ -277,7 +282,7 @@ mod tests {
         {
             // reload UserDb from disk and check indexes
 
-            let db_conn = create_database_connection("user_db_tests_test_multi_tree", false)
+            let (_, db_conn) = create_database_connection_1("user_db_tests_test_multi_tree", false)
                 .await
                 .unwrap();
 
@@ -318,7 +323,7 @@ mod tests {
             tree_depth,
         };
 
-        let db_conn = create_database_connection("user_db_tests_test_new_multi_tree", true)
+        let (_, db_conn) = create_database_connection_1("user_db_tests_test_new_multi_tree", true)
             .await
             .unwrap();
 
@@ -365,7 +370,7 @@ mod tests {
         drop(user_db);
 
         {
-            let db_conn = create_database_connection("user_db_tests_test_new_multi_tree", false)
+            let (_, db_conn) = create_database_connection_1("user_db_tests_test_new_multi_tree", false)
                 .await
                 .unwrap();
 

@@ -253,7 +253,7 @@ mod tests {
         //
 
         // Setup db
-        let (db_url, _db_conn) = create_database_connection_1("grpc_e2e", "test_grpc_gen_proof")
+        let (db_url, _db_conn) = create_database_connection_1("grpc_e2e_test_grpc_gen_proof", true)
             .await
             .unwrap();
         // End Setup db
@@ -399,7 +399,7 @@ mod tests {
         //
         // Setup db
         let (db_url, _db_conn) =
-            create_database_connection_1("grpc_e2e", "test_grpc_user_spamming")
+            create_database_connection_1("grpc_e2e_test_grpc_user_spamming", true)
                 .await
                 .unwrap();
         // End Setup db
@@ -497,7 +497,7 @@ mod tests {
         //
         // Setup db
         let (db_url, _db_conn) =
-            create_database_connection_1("grpc_e2e", "test_grpc_tx_exceed_gas_quota")
+            create_database_connection_1("grpc_e2e_test_grpc_tx_exceed_gas_quota", true)
                 .await
                 .unwrap();
         // End Setup db

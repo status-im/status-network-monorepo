@@ -13,6 +13,7 @@ pub struct UserIdSqlx {
     pub id: i64,
 }
 
+#[derive(Debug)]
 #[derive(sqlx::FromRow)]
 pub struct UserSqlx {
     pub id: i64, // primary key

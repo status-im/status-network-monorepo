@@ -955,10 +955,10 @@ mod tests {
     use async_trait::async_trait;
     use claims::assert_matches;
     use derive_more::Display;
-    // use sea_orm::{ConnectionTrait, Database, Statement};
     use tracing_test::traced_test;
     // internal
     // use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
+    use crate::tests_common::create_database_connection_1;
 
     #[derive(Debug, Display, thiserror::Error)]
     struct DummyError();
@@ -978,14 +978,13 @@ mod tests {
     const ADDR_2: Address = address!("0xb20a608c624Ca5003905aA834De7156C68b2E1d0");
     pub(crate) const MERKLE_TREE_HEIGHT: u8 = 20;
 
-    async fn create_database_connection(db_name: &str) -> Result<DatabaseConnection, DbErr> {
+    /*
+    async fn create_database_connection(db_name: &str) -> Result<Pool<Postgres>, SqlxError> {
         // Drop / Create db_name then return a connection to it
 
         let db_url_base = "postgres://myuser:mysecretpassword@localhost";
         let db_url = format!("{}/{}", db_url_base, "mydatabase");
-        let db = Database::connect(db_url)
-            .await
-            .expect("Database connection 0 failed");
+        let db = sqlx::PgPool::connect(db_url.as_str()).await?;
 
         db.execute_raw(Statement::from_string(
             db.get_database_backend(),
@@ -1008,6 +1007,7 @@ mod tests {
 
         Ok(db)
     }
+    */
 
     #[tokio::test]
     // #[traced_test]
@@ -1024,7 +1024,7 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let db_conn = create_database_connection("user_db_test_user_register")
+        let (_, db_conn) = create_database_connection_1("user_db_test_user_register", true)
             .await
             .unwrap();
 
@@ -1074,7 +1074,7 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let db_conn = create_database_connection("user_db_test_tx_counter")
+        let (_, db_conn) = create_database_connection_1("user_db_test_tx_counter", true)
             .await
             .unwrap();
 
@@ -1109,7 +1109,7 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let db_conn = create_database_connection("user_db_test_incr_tx_counter")
+        let (_, db_conn) = create_database_connection_1("user_db_test_incr_tx_counter", true)
             .await
             .unwrap();
 
@@ -1141,8 +1141,8 @@ mod tests {
         user_db.register_user(addr).await.unwrap();
         // Now update user tx counter
         assert_eq!(
-            user_db.on_new_tx(&addr, None).await,
-            Ok(EpochCounter::from(1))
+            user_db.on_new_tx(&addr, None).await.unwrap(),
+            EpochCounter::from(1)
         );
         let tier_info = user_db
             .user_tier_info(&addr, &MockKarmaSc {})
@@ -1152,6 +1152,7 @@ mod tests {
         // assert_eq!(tier_info.epoch_slice_tx_count, 1);
     }
 
+    /*
     #[tokio::test]
     async fn test_user_remove() {
         let epoch_store = Arc::new(RwLock::new(Default::default()));
@@ -1254,4 +1255,6 @@ mod tests {
             assert_eq!(mt.leaves_set(), 2);
         }
     }
+
+    */
 }

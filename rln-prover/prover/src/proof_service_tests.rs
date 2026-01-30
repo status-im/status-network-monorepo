@@ -15,7 +15,7 @@ mod tests {
     use rln::error::ComputeIdSecretError;
     use rln::protocol::{compute_id_secret, deserialize_proof_values, verify_proof};
     use rln::utils::IdSecret;
-    use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
+    // use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
     use tokio::sync::broadcast;
     use tracing::{debug, info};
     // internal
@@ -28,8 +28,9 @@ mod tests {
     use crate::user_db_2::{UserDb2, UserDb2Config};
     use crate::user_db_service::UserDbService;
     use crate::user_db_types::RateLimit;
-    use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
+    // use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
     use rln_proof::RlnIdentifier;
+    use crate::tests_common::create_database_connection_1;
 
     const ADDR_1: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
     const ADDR_2: Address = address!("0xb20a608c624Ca5003905aA834De7156C68b2E1d0");
@@ -58,6 +59,7 @@ mod tests {
         RecoveredSecret(IdSecret),
     }
 
+    /*
     async fn create_database_connection(db_name: &str) -> Result<DatabaseConnection, DbErr> {
         // Drop / Create db_name then return a connection to it
 
@@ -88,6 +90,7 @@ mod tests {
 
         Ok(db)
     }
+    */
 
     async fn proof_sender(
         sender: Address,
@@ -178,9 +181,10 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
-        let db_conn = create_database_connection("proof_service_tests_test_user_not_registered")
+        let db_conn = create_database_connection_1("proof_service_tests_test_user_not_registered", true)
             .await
-            .unwrap();
+            .unwrap()
+            .1;
 
         let user_db_service = UserDbService::new(
             db_conn,
@@ -352,9 +356,9 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let db_conn = create_database_connection("proof_service_tests_test_user_spamming")
+        let db_conn = create_database_connection_1("proof_service_tests_test_user_spamming", true)
             .await
-            .unwrap();
+            .unwrap().1;
         let user_db_service = UserDbService::new(
             db_conn,
             config,
@@ -433,9 +437,9 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
         let db_conn =
-            create_database_connection("proof_service_tests_test_user_spamming_same_signal")
+            create_database_connection_1("proof_service_tests_test_user_spamming_same_signal", true)
                 .await
-                .unwrap();
+                .unwrap().1;
         let user_db_service = UserDbService::new(
             db_conn,
             config,

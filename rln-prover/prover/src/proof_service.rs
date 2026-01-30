@@ -406,7 +406,7 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
-        let (_, db_conn) = create_database_connection_1(file!(), function_name!())
+        let (_, db_conn) = create_database_connection_1("proof_service_test_proof_generation", true)
             .await
             .unwrap();
         let user_db_service = UserDbService::new(
