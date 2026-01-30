@@ -42,7 +42,8 @@ import org.slf4j.LoggerFactory;
 
 /** Represents a factory for creating transaction pool validators. */
 public class LineaTransactionPoolValidatorFactory implements PluginTransactionPoolValidatorFactory {
-  private static final Logger LOG = LoggerFactory.getLogger(LineaTransactionPoolValidatorFactory.class);
+  private static final Logger LOG =
+      LoggerFactory.getLogger(LineaTransactionPoolValidatorFactory.class);
 
   private final BesuConfiguration besuConfiguration;
   private final BlockchainService blockchainService;
@@ -128,7 +129,8 @@ public class LineaTransactionPoolValidatorFactory implements PluginTransactionPo
 
     // Conditionally add RLN Validator (for proof verification)
     // Only add RlnVerifierValidator on SEQUENCER nodes, not RPC nodes
-    // RPC nodes need RLN enabled for shared services (WorldStateService, etc.) but should NOT reject transactions
+    // RPC nodes need RLN enabled for shared services (WorldStateService, etc.) but should NOT
+    // reject transactions
     if (rlnValidatorConf.rlnValidationEnabled() && nodeType == LineaNodeType.SEQUENCER) {
       validatorsList.add(
           new RlnVerifierValidator(

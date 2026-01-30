@@ -988,7 +988,7 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
     Optional<KarmaInfo> preCheckKarmaOpt = fetchKarmaInfoFromService(sender);
     if (preCheckKarmaOpt.isPresent()) {
       KarmaInfo karmaInfo = preCheckKarmaOpt.get();
-      
+
       // If user has already exceeded quota, reject immediately
       if (karmaInfo.epochTxCount() > karmaInfo.dailyQuota()) {
         LOG.warn(
@@ -999,7 +999,7 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
             txHashString);
         return Optional.of("User transaction quota exceeded.");
       }
-      
+
       // If user is at their quota limit (last allowed transaction), add to deny list
       // This ensures linea_estimateGas will show premium gas for subsequent attempts
       if (karmaInfo.epochTxCount() == karmaInfo.dailyQuota()) {

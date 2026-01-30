@@ -458,7 +458,8 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
       final var pendingBlockHeader = transactionSimulationService.simulatePendingBlockHeader();
       final var chainId = blockchainService.getChainId().orElse(BigInteger.ZERO);
       final var tracer = createLineCountingTracer(pendingBlockHeader, chainId);
-      LOG.debug("Starting gas estimation simulation for tx {}", transaction.getHash().toHexString());
+      LOG.debug(
+          "Starting gas estimation simulation for tx {}", transaction.getHash().toHexString());
       final var maybeSimulationResults =
           transactionSimulationService.simulate(
               transaction,
@@ -468,7 +469,8 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
               java.util.EnumSet.of(
                   org.hyperledger.besu.plugin.services.TransactionSimulationService
                       .SimulationParameters.ALLOW_FUTURE_NONCE));
-      LOG.debug("Gas estimation simulation completed for tx {}", transaction.getHash().toHexString());
+      LOG.debug(
+          "Gas estimation simulation completed for tx {}", transaction.getHash().toHexString());
 
       if (maybeSimulationResults.isPresent()) {
         final var sim = maybeSimulationResults.get();
