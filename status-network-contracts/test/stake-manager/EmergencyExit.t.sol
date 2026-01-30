@@ -57,13 +57,7 @@ contract EmergencyExitTest is StakeManagerTest {
         // emergency exit will not perform any internal accounting
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 10e18,
-                totalMPStaked: 10e18,
-                totalMPAccrued: 10e18,
-                totalMaxMP: 50e18,
-                stakingBalance: 0,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 10e18, totalMPStaked: 10e18, stakingBalance: 0, rewardBalance: 0, rewardIndex: 0
             })
         );
 
@@ -98,8 +92,6 @@ contract EmergencyExitTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: 10e18,
                 totalMPStaked: 10e18,
-                totalMPAccrued: 10e18,
-                totalMaxMP: 50e18,
                 stakingBalance: 10e18,
                 rewardBalance: 1000e18,
                 rewardIndex: 50e18
@@ -145,8 +137,6 @@ contract EmergencyExitTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: 40e18,
                 totalMPStaked: 40e18,
-                totalMPAccrued: 40e18,
-                totalMaxMP: 200e18,
                 stakingBalance: 40e18,
                 rewardBalance: 1000e18,
                 rewardIndex: 125e17
@@ -161,8 +151,6 @@ contract EmergencyExitTest is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: 40e18,
                 totalMPStaked: 40e18,
-                totalMPAccrued: 40e18,
-                totalMaxMP: 200e18,
                 stakingBalance: 40e18,
                 rewardBalance: 1000e18,
                 rewardIndex: 125e17
@@ -244,13 +232,7 @@ contract EmergencyExitTest is StakeManagerTest {
         _stake(alice, 100e18, 0);
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 100e18,
-                totalMPStaked: 100e18,
-                totalMPAccrued: 100e18,
-                totalMaxMP: 500e18,
-                stakingBalance: 100e18,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 100e18, totalMPStaked: 100e18, stakingBalance: 100e18, rewardBalance: 0, rewardIndex: 0
             })
         );
 
@@ -275,13 +257,7 @@ contract EmergencyExitTest is StakeManagerTest {
         _stake(alice, 100e18, 0);
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 100e18,
-                totalMPStaked: 100e18,
-                totalMPAccrued: 100e18,
-                totalMaxMP: 500e18,
-                stakingBalance: 100e18,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 100e18, totalMPStaked: 100e18, stakingBalance: 100e18, rewardBalance: 0, rewardIndex: 0
             })
         );
 

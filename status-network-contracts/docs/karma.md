@@ -10,6 +10,9 @@
   - [Virtual vs Actual Karma](#virtual-vs-actual-karma)
   - [Why This Design?](#why-this-design)
   - [Balance Calculation Example](#balance-calculation-example)
+- [Removing Reward Distributors](#removing-reward-distributors)
+  - [What Happens During Removal](#what-happens-during-removal)
+  - [Implications](#implications)
 - [Slashing](#slashing)
 - [Supply and Balance Calculation](#supply-and-balance-calculation)
 - [Sources of Karma Tokens](#sources-of-karma-tokens)
@@ -110,6 +113,24 @@ Consider an account that has:
 The account's total Karma balance will show 180 (100 + 50 + 30), but only the 100 actual tokens can be used for voting.
 The contract provides separate functions to query actual token balances versus total balances including virtual rewards.
 
+## Removing Reward Distributors
+
+The Karma contract allows the owner to remove reward distributors from the system. When a reward distributor is removed,
+an important cleanup operation occurs to maintain the integrity of the Karma supply.
+
+### What Happens During Removal
+
+When a reward distributor is removed all remaining Karma tokens held by the distributor are permanently burned. This
+includes any rewards that were minted to the distributor but not yet converted to virtual rewards or claimed by users.
+
+### Implications
+
+When planning to remove a reward distributor, operators should be aware that:
+
+- Any Karma tokens held by the distributor that haven't been converted to virtual rewards will be permanently burned.
+- Users should be given adequate notice to claim their virtual rewards before a distributor is removed.
+- The removal operation is irreversible once executed.
+
 ## Slashing
 
 The Karma contract includes a slashing mechanism that allows authorized accounts to reduce an account's Karma balance as
@@ -132,9 +153,10 @@ When an account with the slasher role initiates a slash:
 1. **Balance Calculation**: The system calculates the account's total balance, including both actual tokens and virtual
    rewards from all registered reward distributors.
 
-2. **Virtual Reward Redemption**: Before slashing, the system automatically redeems all virtual rewards from all reward
-   distributors, converting them into actual Karma tokens. This is necessary as virtual Karma cannot be burned
-   otherwise.
+2. **Virtual Reward Redemption**: Before slashing, the system automatically redeems all virtual rewards from all
+   **non-paused** reward distributors, converting them into actual Karma tokens. This is necessary as virtual Karma
+   cannot be burned otherwise. **Paused distributors are skipped** during this redemption process, meaning their virtual
+   rewards remain unredeemed and are not included in the slash calculation.
 
 3. **Slash Amount Calculation**: The slash amount is calculated as a percentage of the total balance (configurable by
    the admin, defaulting to 50%). There is a minimum slash amount of 1 KARMA to ensure meaningful penalties.

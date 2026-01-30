@@ -10,17 +10,12 @@ import { RLN } from "../src/rln/RLN.sol";
 import { PoseidonHasher } from "../src/rln/PoseidonHasher.sol";
 
 contract DeployRLNScript is BaseScript {
-    error InvalidDepth();
     error InvalidAddress();
 
     function run() public returns (RLN, DeploymentConfig) {
         DeploymentConfig deploymentConfig = new DeploymentConfig(broadcaster);
         (address deployer,) = deploymentConfig.activeNetworkConfig();
 
-        uint256 depth = vm.envUint("DEPTH");
-        if (depth == 0) {
-            revert InvalidDepth();
-        }
         address karmaAddress = vm.envAddress("KARMA_ADDRESS");
         if (karmaAddress == address(0)) {
             revert InvalidAddress();
@@ -32,7 +27,7 @@ contract DeployRLNScript is BaseScript {
 
         // Deploy RLN logic contract
         bytes memory initializeData =
-            abi.encodeCall(RLN.initialize, (deployer, deployer, deployer, depth, karmaAddress, poseidonHasher));
+            abi.encodeCall(RLN.initialize, (deployer, deployer, deployer, karmaAddress, poseidonHasher));
         address impl = address(new RLN());
         // Create upgradeable proxy
         address proxy = address(new ERC1967Proxy(impl, initializeData));

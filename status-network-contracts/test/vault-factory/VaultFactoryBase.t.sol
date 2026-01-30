@@ -7,7 +7,6 @@ import { DeploymentConfig } from "../../script/DeploymentConfig.s.sol";
 import { DeployStakeManagerScript } from "../../script/DeployStakeManager.s.sol";
 import { DeployVaultFactoryScript } from "../../script/DeployVaultFactory.s.sol";
 import { VaultFactory } from "../../src/VaultFactory.sol";
-import { MockStakeManager } from "../mocks/MockStakeManager.sol";
 import { StakeManager } from "../../src/StakeManager.sol";
 import { StakeVault } from "../../src/StakeVault.sol";
 import { MockToken } from "../mocks/MockToken.sol";

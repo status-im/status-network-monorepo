@@ -6,6 +6,8 @@
 - [Purpose and Design Goals](#purpose-and-design-goals)
 - [Virtual vs Actual Karma](#virtual-vs-actual-karma)
   - [Redeeming rewards](#redeeming-rewards)
+- [Removing Reward Distributors](#removing-reward-distributors)
+- [Paused distributors](#paused-distributors)
 
 ## Overview
 
@@ -46,8 +48,8 @@ By redeeming rewards users convert their virtual Karma to actual Karma. This is 
 rewards for voting or transfers.
 
 A critical design requirement is that **redeeming rewards must never revert**. This is essential because the Karma
-contract's slashing mechanism calls `redeemRewards()` on all registered distributors before burning tokens from a
-slashed account.
+contract's slashing mechanism calls `redeemRewards()` on all registered non-paused distributors before burning tokens
+from a slashed account.
 
 If a distributor's `redeemRewards()` function reverts:
 
@@ -61,3 +63,27 @@ gracefully and never reverts, even when:
 - The account has no rewards to redeem (should return 0)
 - Internal state is inconsistent (should handle gracefully)
 - External calls fail (should not propagate reverts)
+
+## Removing Reward Distributors
+
+When a reward distributor is removed from the Karma system, the Karma contract performs a cleanup operation. All actual
+Karma tokens held by the distributor contract are permanently burned. This includes any rewards that were minted to the
+distributor but not yet converted to virtual rewards or claimed by users.
+
+Operators should ensure users have adequate notice to claim their virtual rewards before a distributor is removed, as
+any unclaimed backing tokens will be burned during the removal process. For more details, see the
+[Removing Reward Distributors](karma.md#removing-reward-distributors) section in the Karma documentation.
+
+### Paused distributors
+
+Reward distributors may implement pause functionality to temporarily halt operations during upgrades, emergencies, or
+maintenance. The `IRewardDistributor` interface includes an `isPaused()` function that allows distributors to signal
+their pause state.
+
+When a distributor is paused, the Karma contract's slashing mechanism will skip that distributor during the redemption
+phase. This means:
+
+- Virtual rewards from paused distributors are not redeemed during a slash
+- The slash amount is calculated based only on actual tokens plus rewards from non-paused distributors
+- Users retain their virtual balance from paused distributors after being slashed
+- Once the distributor is unpaused, users can redeem those rewards normally

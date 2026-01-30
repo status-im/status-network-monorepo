@@ -22,13 +22,7 @@ contract LeaveTest is StakeManagerTest {
 
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 100e18,
-                totalMPStaked: 100e18,
-                totalMPAccrued: 100e18,
-                totalMaxMP: 500e18,
-                stakingBalance: 100e18,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 100e18, totalMPStaked: 100e18, stakingBalance: 100e18, rewardBalance: 0, rewardIndex: 0
             })
         );
 
@@ -38,13 +32,7 @@ contract LeaveTest is StakeManagerTest {
         // stake manager properly updates accounting
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 0,
-                totalMPStaked: 0,
-                totalMPAccrued: 0,
-                totalMaxMP: 0,
-                stakingBalance: 0,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 0, totalMPStaked: 0, stakingBalance: 0, rewardBalance: 0, rewardIndex: 0
             })
         );
 
@@ -118,13 +106,7 @@ contract LeaveTest is StakeManagerTest {
 
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 100e18,
-                totalMPStaked: 100e18,
-                totalMPAccrued: 100e18,
-                totalMaxMP: 500e18,
-                stakingBalance: 100e18,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 100e18, totalMPStaked: 100e18, stakingBalance: 100e18, rewardBalance: 0, rewardIndex: 0
             })
         );
 
@@ -135,7 +117,7 @@ contract LeaveTest is StakeManagerTest {
         assertEq(aliceRewardsBeforePause, 500e18, "Alice should have half the rewards (5 days)");
 
         // Update global state to reflect accrued rewards
-        streamer.updateGlobalState();
+        streamer.updateRewards();
         // Pause the system
         vm.prank(guardian);
         streamer.pause();
@@ -183,13 +165,7 @@ contract LeaveTest is StakeManagerTest {
         _stake(alice, 100e18, 0);
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 100e18,
-                totalMPStaked: 100e18,
-                totalMPAccrued: 100e18,
-                totalMaxMP: 500e18,
-                stakingBalance: 100e18,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 100e18, totalMPStaked: 100e18, stakingBalance: 100e18, rewardBalance: 0, rewardIndex: 0
             })
         );
 
@@ -213,13 +189,7 @@ contract LeaveTest is StakeManagerTest {
         _stake(alice, 100e18, 0);
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 100e18,
-                totalMPStaked: 100e18,
-                totalMPAccrued: 100e18,
-                totalMaxMP: 500e18,
-                stakingBalance: 100e18,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 100e18, totalMPStaked: 100e18, stakingBalance: 100e18, rewardBalance: 0, rewardIndex: 0
             })
         );
 

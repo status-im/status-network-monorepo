@@ -37,5 +37,43 @@ contract PauseTest is StakeManagerTest {
         // ensure staking works again
         _stake(alice, 10e18, 0);
     }
+
+    function test_IsPausedReturnsFalseWhenNotPaused() public {
+        assertFalse(streamer.isPaused(), "isPaused should return false initially");
+    }
+
+    function test_IsPausedReturnsTrueWhenPaused() public {
+        vm.prank(admin);
+        streamer.pause();
+
+        assertTrue(streamer.isPaused(), "isPaused should return true when paused");
+    }
+
+    function test_IsPausedReturnsFalseAfterUnpause() public {
+        vm.prank(admin);
+        streamer.pause();
+
+        vm.prank(admin);
+        streamer.unpause();
+
+        assertFalse(streamer.isPaused(), "isPaused should return false after unpause");
+    }
+
+    function test_IsPausedReturnsTrueWhenEmergencyModeEnabled() public {
+        vm.prank(admin);
+        streamer.enableEmergencyMode();
+
+        assertTrue(streamer.isPaused(), "isPaused should return true when emergency mode is enabled");
+    }
+
+    function test_IsPausedReturnsTrueWhenBothPausedAndEmergencyMode() public {
+        vm.prank(admin);
+        streamer.pause();
+
+        vm.prank(admin);
+        streamer.enableEmergencyMode();
+
+        assertTrue(streamer.isPaused(), "isPaused should return true when both paused and emergency mode");
+    }
 }
 

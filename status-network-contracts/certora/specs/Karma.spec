@@ -6,6 +6,7 @@ methods {
     function allowedToTransfer(address) external returns (bool) envfree;
     function _.setReward(uint256, uint256) external => DISPATCHER(true);
     function _.rewardsBalanceOfAccount(address) external => DISPATCHER(true);
+    function _.isPaused() external => DISPATCHER(true);
     function hasRole(bytes32, address) external returns (bool) envfree;
     function DEFAULT_ADMIN_ROLE() external returns (bytes32) envfree;
     function OPERATOR_ROLE() external returns (bytes32) envfree;

@@ -61,12 +61,8 @@ contract StakeManager is
     uint256 public totalStaked;
     /// @notice Total amount of staked multiplier points
     uint256 public totalMPStaked;
-    /// @notice Total multiplier points accrued.
-    uint256 public totalMPAccrued;
     /// @notice Total rewards accrued in the system.
     uint256 public totalRewardsAccrued;
-    /// @notice Total maximum multiplier points that can be accrued.
-    uint256 public totalMaxMP;
     /// @notice Time of the last multiplier points update.
     uint256 public lastMPUpdatedTime;
     /// @notice Index of the current reward period.
@@ -251,7 +247,7 @@ contract StakeManager is
             revert StakeManager__AmountCannotBeZero();
         }
 
-        _updateGlobalState();
+        _updateRewardIndex();
         _updateVault(msg.sender, true);
 
         VaultData storage vault = vaultData[msg.sender];
@@ -265,10 +261,8 @@ contract StakeManager is
         totalMPStaked += _deltaMpTotal;
 
         vault.mpAccrued += _deltaMpTotal;
-        totalMPAccrued += _deltaMpTotal;
 
         vault.maxMP += _deltaMPMax;
-        totalMaxMP += _deltaMPMax;
 
         vault.rewardIndex = lastRewardIndex;
 
@@ -301,7 +295,7 @@ contract StakeManager is
             revert StakeManager__DurationCannotBeZero();
         }
 
-        _updateGlobalState();
+        _updateRewardIndex();
         _updateVault(msg.sender, false);
         (uint256 deltaMp, uint256 newLockEnd) =
             _calculateLock(vault.stakedBalance, vault.maxMP, currentLockUntil, block.timestamp, lockPeriod);
@@ -312,9 +306,7 @@ contract StakeManager is
         vault.maxMP += deltaMp;
 
         // Update global state
-        totalMPAccrued += deltaMp;
         totalMPStaked += deltaMp;
-        totalMaxMP += deltaMp;
 
         vault.rewardIndex = lastRewardIndex;
 
@@ -336,7 +328,7 @@ contract StakeManager is
         onlyTrustedCodehash
         onlyRegisteredVault
     {
-        _updateGlobalState();
+        _updateRewardIndex();
         _updateVault(msg.sender, false);
 
         VaultData storage vault = vaultData[msg.sender];
@@ -362,12 +354,12 @@ contract StakeManager is
     }
 
     /**
-     * @notice Allows the owner to update the global state.
+     * @notice Allows anyone to update the reward index.
      * @dev This function is only callable when emergency mode is disabled.
-     * @dev Takes care of updating the global MP and reward index.
+     * @dev Updates the global reward index based on time elapsed.
      */
-    function updateGlobalState() external onlyNotEmergencyMode whenNotPaused {
-        _updateGlobalState();
+    function updateRewards() external onlyNotEmergencyMode whenNotPaused {
+        _updateRewardIndex();
     }
 
     /**
@@ -394,7 +386,7 @@ contract StakeManager is
         }
 
         // this will call updateRewardIndex and update the totalRewardsAccrued
-        _updateGlobalState();
+        _updateRewardIndex();
 
         uint256 remainingRewards = 0;
 
@@ -422,7 +414,7 @@ contract StakeManager is
      * @param account The address of the account to update.
      */
     function updateAccount(address account) external onlyNotEmergencyMode whenNotPaused {
-        _updateGlobalState();
+        _updateRewardIndex();
         address[] memory accountVaults = vaults[account];
         for (uint256 i = 0; i < accountVaults.length; i++) {
             _updateVault(accountVaults[i], false);
@@ -437,7 +429,7 @@ contract StakeManager is
      * @return The amount of rewards redeemed.
      */
     function redeemRewards(address account) external onlyNotEmergencyMode whenNotPaused returns (uint256) {
-        _updateGlobalState();
+        _updateRewardIndex();
         address[] memory accountVaults = vaults[account];
         uint256 redeemed = 0;
         for (uint256 i = 0; i < accountVaults.length; i++) {
@@ -465,7 +457,7 @@ contract StakeManager is
      * @param vaultAddress The address of the vault to update.
      */
     function updateVault(address vaultAddress) external onlyNotEmergencyMode whenNotPaused {
-        _updateGlobalState();
+        _updateRewardIndex();
         _updateVault(vaultAddress, false);
     }
 
@@ -514,11 +506,11 @@ contract StakeManager is
             revert StakeManager__InvalidVault();
         }
 
-        if (vaultData[migrateTo].stakedBalance > 0) {
+        if (vaultData[migrateTo].stakedBalance > 0 || vaultData[migrateTo].rewardsAccrued > 0) {
             revert StakeManager__MigrationTargetHasFunds();
         }
 
-        _updateGlobalState();
+        _updateRewardIndex();
         _updateVault(msg.sender, false);
 
         VaultData storage oldVault = vaultData[msg.sender];
@@ -573,19 +565,6 @@ contract StakeManager is
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    function _updateGlobalState() internal virtual {
-        _updateGlobalMP();
-        _updateRewardIndex();
-    }
-
-    function _updateGlobalMP() internal {
-        uint256 newTotalMPAccrued = _totalMP();
-        if (newTotalMPAccrued > totalMPAccrued) {
-            totalMPAccrued = newTotalMPAccrued;
-            lastMPUpdatedTime = block.timestamp;
-        }
-    }
-
     function _updateVault(address vaultAddress, bool forceMPUpdate) internal virtual {
         VaultData storage vault = vaultData[vaultAddress];
 
@@ -627,8 +606,6 @@ contract StakeManager is
         vault.mpAccrued -= _deltaMpTotal;
 
         totalMPStaked -= _deltaMpTotal;
-        totalMPAccrued -= _deltaMpTotal;
-        totalMaxMP -= _deltaMpMax;
         totalStaked -= amount;
     }
 
@@ -656,27 +633,6 @@ contract StakeManager is
     function _vaultShares(address vaultAddress) internal view returns (uint256) {
         VaultData storage vault = vaultData[vaultAddress];
         return vault.stakedBalance + vault.mpAccrued;
-    }
-
-    function _totalMP() internal view returns (uint256) {
-        if (totalMaxMP == 0) {
-            return totalMPAccrued;
-        }
-
-        uint256 currentTime = block.timestamp;
-        uint256 timeDiff = currentTime - lastMPUpdatedTime;
-        if (timeDiff == 0) {
-            return totalMPAccrued;
-        }
-
-        uint256 accruedMP = _accrueMP(totalStaked, timeDiff);
-        if (totalMPAccrued + accruedMP > totalMaxMP) {
-            accruedMP = totalMaxMP - totalMPAccrued;
-        }
-
-        uint256 newTotalMPAccrued = totalMPAccrued + accruedMP;
-
-        return newTotalMPAccrued;
     }
 
     function _rewardIndex() internal view returns (uint256, uint256) {
@@ -810,14 +766,6 @@ contract StakeManager is
      */
     function getAccountVaults(address account) external view returns (address[] memory) {
         return vaults[account];
-    }
-
-    /**
-     * @notice Returns the total multiplier points accrued in the system.
-     * @return The total multiplier points accrued in the system.
-     */
-    function totalMP() external view returns (uint256) {
-        return _totalMP();
     }
 
     /**
@@ -955,5 +903,13 @@ contract StakeManager is
             accountTotalRewards += rewardsBalanceOf(accountVaults[i]);
         }
         return accountTotalRewards;
+    }
+
+    /**
+     * @notice Returns whether the distributor is currently paused.
+     * @return True if the distributor is paused or in emergency mode, false otherwise.
+     */
+    function isPaused() external view returns (bool) {
+        return paused() || emergencyModeEnabled;
     }
 }

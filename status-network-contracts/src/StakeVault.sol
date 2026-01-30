@@ -8,6 +8,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IStakeManager } from "./interfaces/IStakeManager.sol";
 import { IStakeVault } from "./interfaces/IStakeVault.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { ExcessivelySafeCall } from "ExcessivelySafeCall/ExcessivelySafeCall.sol";
 
 /**
  * @title StakeVault
@@ -18,6 +19,7 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
  * to create stake vault instances. Hence, we need to use `Initializeable` to set the owner.
  */
 contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
+    using ExcessivelySafeCall for address;
     /// @notice Emitted when not enough balance to withdraw
     error StakeVault__NotEnoughAvailableBalance();
     /// @notice Emitted when destination address is invalid
@@ -179,7 +181,8 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
         // either doesn't exist on the new stake manager or reverts for some reason.
         // If it was a good upgrade, it will cause the stake manager to properly update
         // its internal accounting before we move the funds out.
-        (bool ok,) = address(stakeManager).call(abi.encodeWithSignature("leave()"));
+        // We use ExcessivelySafeCall to protect against return bombs.
+        address(stakeManager).excessivelySafeCall(gasleft(), 0, 0, abi.encodeWithSignature("leave()"));
         if (lockUntil <= block.timestamp) {
             depositedBalance = 0;
             bool success = STAKING_TOKEN.transfer(_destination, STAKING_TOKEN.balanceOf(address(this)));
@@ -435,9 +438,17 @@ contract StakeVault is IStakeVault, Initializable, OwnableUpgradeable {
      */
     function emergencyExit(address _destination) external onlyOwner validDestination(_destination) {
         depositedBalance = 0;
-        (bool ok, bytes memory returndata) =
-            address(stakeManager).call(abi.encodeWithSignature("emergencyModeEnabled()"));
-        if (ok && returndata.length == 32 && returndata[31] != 0x01) {
+        // Use ExcessivelySafeCall to protect against return bombs
+        (bool ok, bytes memory returndata) = address(stakeManager)
+            .excessivelySafeCall(
+                gasleft(),
+                0,
+                32, // We only need 32 bytes for the bool return value
+                abi.encodeWithSignature("emergencyModeEnabled()")
+            );
+        // Only block exit if we get a clear bool(false) return (32 bytes with last byte == 0x00)
+        // Allow exit for: call failures, unexpected data, or bool(true)
+        if (ok && returndata.length == 32 && returndata[31] == 0x00) {
             revert StakeVault__NotAllowedToExit();
         } else {
             bool success = STAKING_TOKEN.transfer(_destination, STAKING_TOKEN.balanceOf(address(this)));

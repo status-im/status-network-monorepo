@@ -29,13 +29,7 @@ contract UpgradeTest is StakeManagerTest {
         // check initial state
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 10e18,
-                totalMPStaked: 10e18,
-                totalMPAccrued: 10e18,
-                totalMaxMP: 50e18,
-                stakingBalance: 10e18,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 10e18, totalMPStaked: 10e18, stakingBalance: 10e18, rewardBalance: 0, rewardIndex: 0
             })
         );
 
@@ -45,13 +39,7 @@ contract UpgradeTest is StakeManagerTest {
         // ensure state is available in upgraded contract
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 10e18,
-                totalMPStaked: 10e18,
-                totalMPAccrued: 10e18,
-                totalMaxMP: 50e18,
-                stakingBalance: 10e18,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 10e18, totalMPStaked: 10e18, stakingBalance: 10e18, rewardBalance: 0, rewardIndex: 0
             })
         );
     }
@@ -69,13 +57,7 @@ contract MaliciousUpgradeTest is StakeManagerTest {
         _stake(alice, 100e18, 0);
         checkStreamer(
             CheckStreamerParams({
-                totalStaked: 100e18,
-                totalMPStaked: 100e18,
-                totalMPAccrued: 100e18,
-                totalMaxMP: 500e18,
-                stakingBalance: 100e18,
-                rewardBalance: 0,
-                rewardIndex: 0
+                totalStaked: 100e18, totalMPStaked: 100e18, stakingBalance: 100e18, rewardBalance: 0, rewardIndex: 0
             })
         );
 

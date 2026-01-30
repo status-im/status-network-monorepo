@@ -60,14 +60,6 @@ contract MockStakeManager is ITrustedCodehashAccess, IStakeManager {
         return 0;
     }
 
-    function totalMPAccrued() external view returns (uint256) {
-        return 0;
-    }
-
-    function totalMaxMP() external view returns (uint256) {
-        return 0;
-    }
-
     function stakedBalanceOf(address) external view returns (uint256) {
         return 0;
     }

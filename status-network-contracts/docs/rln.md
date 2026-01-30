@@ -27,7 +27,7 @@ Network protocol. commit-reveal scheme that prevents front-running attacks.
 
 - **Identity Registry:**
 
-  - Maintains a fixed-size registry of identity commitments determined by merkle tree depth.
+  - Maintains a registry of identity commitments.
   - Registrations are sequential and tracked with unique indices.
   - Prevents duplicate registrations of the same identity commitment.
   - Supports privacy by storing only cryptographic commitments, not actual identities.
@@ -68,16 +68,6 @@ Accounts with REGISTER_ROLE can register new identity commitments by calling the
 ### Identity Commitment Generation
 
 Identity commitments are generated off-chain.
-
-### Registry Capacity
-
-The registry size is fixed based on the merkle tree depth parameter:
-
-- **Depth 16**: 2^16 = 65,536 identities
-- **Depth 20**: 2^20 = 1,048,576 identities
-
-Once the registry reaches capacity, new registrations are rejected until space is available. When accounts are slashed,
-their identity commitments are removed from the registry, freeing up space for new registrations.
 
 ## Commit-Reveal Slashing Mechanism
 

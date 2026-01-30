@@ -21,15 +21,8 @@ contract FuzzTests is StakeManagerTest {
     error FuzzTests__UndefinedError();
 
     bytes4 expectedRevert = FuzzTests__UndefinedError.selector;
-    CheckStreamerParams expectedSystemState = CheckStreamerParams({
-        totalStaked: 0,
-        totalMPStaked: 0,
-        totalMPAccrued: 0,
-        totalMaxMP: 0,
-        stakingBalance: 0,
-        rewardBalance: 0,
-        rewardIndex: 0
-    });
+    CheckStreamerParams expectedSystemState =
+        CheckStreamerParams({ totalStaked: 0, totalMPStaked: 0, stakingBalance: 0, rewardBalance: 0, rewardIndex: 0 });
     mapping(address userAddress => CheckVaultParams params) public expectedAccountState;
     mapping(address vaultAddress => CheckVaultLockParams params) public expectedVaultLockState;
 
@@ -45,8 +38,6 @@ contract FuzzTests is StakeManagerTest {
     function check(string memory text, CheckStreamerParams storage p) internal view {
         assertEq(streamer.totalStaked(), p.totalStaked, string(abi.encodePacked(text, "wrong total staked")));
         assertEq(streamer.totalMPStaked(), p.totalMPStaked, string(abi.encodePacked(text, "wrong total staked MP")));
-        assertEq(streamer.totalMPAccrued(), p.totalMPAccrued, string(abi.encodePacked(text, "wrong total accrued MP")));
-        assertEq(streamer.totalMaxMP(), p.totalMaxMP, string(abi.encodePacked(text, "wrong totalMaxMP MP")));
         // assertEq(rewardToken.balanceOf(address(streamer)), p.rewardBalance, "wrong reward balance");
         // assertEq(streamer.rewardIndex(), p.rewardIndex, "wrong reward index");
     }
@@ -151,9 +142,7 @@ contract FuzzTests is StakeManagerTest {
         expectedSystemState.totalStaked -= amount;
         expectedSystemState.totalMPStaked -= expectedReducedMP;
         expectedAccountParams.mpAccrued -= expectedReducedMP;
-        expectedSystemState.totalMPAccrued -= expectedReducedMP;
         expectedAccountParams.maxMP -= expectedReducedMaxMP;
-        expectedSystemState.totalMaxMP -= expectedReducedMaxMP;
     }
 
     function _expectAccrue(address account, uint256 accruedTime) internal {
@@ -161,13 +150,11 @@ contract FuzzTests is StakeManagerTest {
         expectedAccountParams.account = vaults[account];
         if (expectedAccountParams.vaultBalance > 0) {
             uint256 rawAccruedMP = _accrueMP(expectedAccountParams.vaultBalance, accruedTime);
+            uint256 previousMpAccrued = expectedAccountParams.mpAccrued;
             expectedAccountParams.mpAccrued =
                 Math.min(expectedAccountParams.mpAccrued + rawAccruedMP, expectedAccountParams.maxMP);
-            expectedSystemState.totalMPStaked =
-                Math.min(expectedSystemState.totalMPStaked + rawAccruedMP, expectedSystemState.totalMaxMP);
-
-            expectedSystemState.totalMPAccrued =
-                Math.min(expectedSystemState.totalMPAccrued + rawAccruedMP, expectedSystemState.totalMaxMP);
+            uint256 actualAccruedMP = expectedAccountParams.mpAccrued - previousMpAccrued;
+            expectedSystemState.totalMPStaked += actualAccruedMP;
         }
     }
 
@@ -205,9 +192,7 @@ contract FuzzTests is StakeManagerTest {
                 expectedSystemState.totalStaked += stakeAmount;
                 expectedSystemState.totalMPStaked += stakeAmount + expectedBonusMP;
                 expectedAccountParams.mpAccrued = stakeAmount + expectedBonusMP;
-                expectedSystemState.totalMPAccrued += stakeAmount + expectedBonusMP;
                 expectedAccountParams.maxMP = expectedMaxTotalMP;
-                expectedSystemState.totalMaxMP += expectedMaxTotalMP;
             }
         } else {
             expectedRevert = FuzzTests__UndefinedError.selector;
@@ -249,8 +234,6 @@ contract FuzzTests is StakeManagerTest {
             expectedVaultLockState[expectedAccountParams.account].totalLockUp += lockUpPeriod;
             expectedVaultLockState[expectedAccountParams.account].lockEnd = calcLockEnd;
             expectedSystemState.totalMPStaked += additionalBonusMP;
-            expectedSystemState.totalMPAccrued += additionalBonusMP;
-            expectedSystemState.totalMaxMP += additionalBonusMP;
             expectedAccountParams.mpAccrued += additionalBonusMP;
             expectedAccountParams.maxMP += additionalBonusMP;
         }
@@ -421,8 +404,6 @@ contract FuzzTests is StakeManagerTest {
             CheckStreamerParams({
                 totalStaked: stakeAmount,
                 totalMPStaked: stakeAmount + expectedBonusMP,
-                totalMPAccrued: stakeAmount + expectedBonusMP,
-                totalMaxMP: expectedMaxTotalMP,
                 stakingBalance: 0,
                 rewardBalance: 0,
                 rewardIndex: 0
