@@ -48,6 +48,7 @@ use sqlx::{postgres::{
     PgValueRef,
     Postgres
 }, Type, Encode, Decode, Pool};
+use prover_db_migration_sqlx::{MigrationConfig, Migrator};
 // internal
 pub use crate::args::{ARGS_DEFAULT_GENESIS, AppArgs, AppArgsConfig};
 use crate::epoch_service::EpochService;
@@ -158,11 +159,21 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
         .map_err(UserDb2OpenError::from)?;
 
     // Run database migrations
-    // info!("Running database migrations...");
+    info!("Running database migrations...");
+    let migrator = Migrator();
+    let migration_config = MigrationConfig {
+        tree_count: user_db_config.tree_count as i64,
+        max_tree_count: user_db_config.max_tree_count as i64,
+        tree_depth: user_db_config.tree_depth as i16,
+    };
+    migrator.up(db_conn.clone(), migration_config)
+        .await
+        .map_err(UserDb2OpenError::from)?;
+
     // Migrator::up(&db_conn, None)
     //     .await
     //     .map_err(|e| AppError2::MigrationError(e.to_string()))?;
-    // info!("Database migrations complete");
+    info!("Database migrations complete");
 
     let user_db_service = UserDbService::new(
         db_conn,
