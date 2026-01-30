@@ -440,7 +440,10 @@ services:
       - linea
 
   postgres:
-    image: postgres:16.0
+    # image: postgres:16.0
+    build:
+      context: ..
+      dockerfile: pgrx_merkle_tree/docker/Dockerfile
     hostname: postgres
     container_name: postgres
     profiles: [ "l2", "debug", "external-to-monorepo", "staterecovery" ]
