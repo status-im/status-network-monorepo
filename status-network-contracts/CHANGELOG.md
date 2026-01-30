@@ -2,6 +2,62 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## 0.3.0
+
+
+### ⚠ BREAKING CHANGES
+
+* **StakeManager:** `registerVault()` now takes the vault address as argument. `StakeVault.register()` has been removed — registration is now entirely done via `VaultFactory`.
+* **StakeManager:** `registerVault()` now only allows for `maxVaultsPerUser()` vaults per user and reverts otherwise. `migrateTo()` and `leave()` now deregister the vault.
+* **StakeManager:** `leave()` no longer reverts when the system is paused. Users that leave during pause will lose unsettled rewards.
+* **StakeManager:** `totalMaxMP()` has been removed
+* **StakeManager:** `updateGlobalState()` has been renamed to `updateRewards()`
+* **StakeManager:** `totalMPAccrued` has been removed
+* **RLN:** `slash` function is now internal to avoid front-running
+* **RLN:** the slasher address is now used to compute the slash commitment ID — commitment hashes created with the old contract are no longer valid
+
+* !fix(StakeManager): don't allow registration of vaults with incorrect owners ([5e93ecbf](https://github.com/status-im/status-network-monorepo/commit/5e93ecbf)), closes [#72](https://github.com/status-im/status-network-monorepo/issues/72)
+* !feat(StakeManager): introduce a per user vault limit ([6697432b](https://github.com/status-im/status-network-monorepo/commit/6697432b)), closes [#73](https://github.com/status-im/status-network-monorepo/issues/73)
+* !fix(StakeManager): don't revert in `leave()` when the system is paused ([d8134493](https://github.com/status-im/status-network-monorepo/commit/d8134493)), closes [#78](https://github.com/status-im/status-network-monorepo/issues/78)
+* !refactor(StakeManager): remove totalMaxMP() ([56a7b64a](https://github.com/status-im/status-network-monorepo/commit/56a7b64a))
+* !refactor(StakeManager): rename `updateGlobalState()` to `updateRewards()` ([d74c666c](https://github.com/status-im/status-network-monorepo/commit/d74c666c))
+* !refactor(StakeManager): remove `totalMPAccrued` ([3cf0d1f7](https://github.com/status-im/status-network-monorepo/commit/3cf0d1f7))
+* !feat(RLN): make the slash function internal to avoid front-running ([0644175c](https://github.com/status-im/status-network-monorepo/commit/0644175c)), closes [status-im/status-network-monorepo/issues/81](https://github.com/status-im/status-network-monorepo/issues/81)
+* !feat(RLN): use the slasher address to compute the slash commitment id ([f15f5e99](https://github.com/status-im/status-network-monorepo/commit/f15f5e99)), closes [status-im/status-network-monorepo/issues/80](https://github.com/status-im/status-network-monorepo/issues/80)
+
+
+### Features
+
+* **IRewardDistributor:** introduce `isPaused()` ([99b73b0d](https://github.com/status-im/status-network-monorepo/commit/99b73b0d))
+* **RLN:** remove registry max size ([2c73d4d6](https://github.com/status-im/status-network-monorepo/commit/2c73d4d6))
+
+
+### Bug Fixes
+
+* **DeployProtocol:** ensure simple Karma distributor is whitelisted ([025f790f](https://github.com/status-im/status-network-monorepo/commit/025f790f))
+* **Karma:** call `__ERC20Permit_init` during initialization ([7d447fd6](https://github.com/status-im/status-network-monorepo/commit/7d447fd6)), closes [status-im/status-network-monorepo/issues/90](https://github.com/status-im/status-network-monorepo/issues/90)
+* **Karma:** don't overslash in cases balances are < `MIN_SLASH_AMOUNT` ([cc00600d](https://github.com/status-im/status-network-monorepo/commit/cc00600d)), closes [#76](https://github.com/status-im/status-network-monorepo/issues/76)
+* **KarmaAirdrop:** ensure claiming isn't possible during pause ([ebbf84b6](https://github.com/status-im/status-network-monorepo/commit/ebbf84b6)), closes [#79](https://github.com/status-im/status-network-monorepo/issues/79)
+* **KarmaAirdrop:** ensure valid delegatees on first claim ([10a94044](https://github.com/status-im/status-network-monorepo/commit/10a94044))
+* **KarmaAirdrop:** fix potential attack that prevents account from claiming ([f9b97ab9](https://github.com/status-im/status-network-monorepo/commit/f9b97ab9))
+* **KarmaNFT:** fix the "from" field of the Transfer event to be `address(0)` during minting ([72cd30d6](https://github.com/status-im/status-network-monorepo/commit/72cd30d6))
+* **PoseidonHasher:** apply modulo Q to input ([4ead4169](https://github.com/status-im/status-network-monorepo/commit/4ead4169))
+* **RLN:** check that the slashed account is the same of the one used in the commitment phase ([62021fce](https://github.com/status-im/status-network-monorepo/commit/62021fce))
+* **StakeManager:** prevent migrating to non-empty vaults ([e038ece7](https://github.com/status-im/status-network-monorepo/commit/e038ece7))
+* **StakeManager:** signal paused state when emergency mode is enabled ([a5d51d55](https://github.com/status-im/status-network-monorepo/commit/a5d51d55))
+* **StakeVault:** disallow migrate to itself ([08ada301](https://github.com/status-im/status-network-monorepo/commit/08ada301)), closes [#82](https://github.com/status-im/status-network-monorepo/issues/82)
+* **StakeVault:** prohibit StakeVault to migrate to a StakeVault that has left ([fb6c8ef1](https://github.com/status-im/status-network-monorepo/commit/fb6c8ef1))
+* **StakeVault:** use low-level call in `emergencyExit()` and `leave()` instead of try-catch to circumvent wrong return types ([7401475b](https://github.com/status-im/status-network-monorepo/commit/7401475b))
+
+
+### Refactors
+
+* **Karma:** rename `onlySlasher` to `onlyAdminOrSlasher` modifier ([030efdd](https://github.com/status-im/status-network-monorepo/commit/030efdd)), closes [#75](https://github.com/status-im/status-network-monorepo/issues/75)
+* **KarmaTiers:** remove unnecessary constructor ([606e3d14](https://github.com/status-im/status-network-monorepo/commit/606e3d14)), closes [#77](https://github.com/status-im/status-network-monorepo/issues/77)
+* **MultiplierPointsMath:** round MPs up when users unstake ([ff85b3a7](https://github.com/status-im/status-network-monorepo/commit/ff85b3a7)), closes [#94](https://github.com/status-im/status-network-monorepo/issues/94)
+* **StakeMath/MultiplierPointMath:** remove `MP_APY` from formulas ([16c5b3c6](https://github.com/status-im/status-network-monorepo/commit/16c5b3c6))
+* **StakeVault:** use `ExcessivelySafeCall` to prevent returnbombs ([0aa6010b](https://github.com/status-im/status-network-monorepo/commit/0aa6010b))
+
 ## [0.2.1](https://github.com/vacp2p/staking-reward-streamer/compare/v0.2.0...v0.2.1) (2025-04-03)
 
 
