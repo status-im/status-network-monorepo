@@ -1,8 +1,0 @@
-net.consensys.linea.bundles.ForwardBundlesPlugin
-net.consensys.linea.extradata.LineaExtraDataPlugin
-net.consensys.linea.rpc.services.LineaBundleEndpointsPlugin
-net.consensys.linea.rpc.services.LineaEstimateGasEndpointPlugin
-net.consensys.linea.rpc.services.LineaSetExtraDataEndpointPlugin
-net.consensys.linea.sequencer.txpoolvalidation.LineaTransactionPoolValidatorPlugin
-net.consensys.linea.sequencer.txselection.LineaTransactionSelectorPlugin
-net.consensys.linea.sequencer.txvalidation.LineaTransactionValidatorPlugin
