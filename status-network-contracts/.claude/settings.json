@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(forge *)"
+    ]
+  },
+  "enabledPlugins": {
+    "insecure-defaults@trailofbits": true,
+    "sharp-edges@trailofbits": true,
+    "building-secure-contracts@trailofbits": true,
+    "entry-point-analyzer@trailofbits": true,
+    "property-based-testing@trailofbits": true,
+    "audit-context-building@trailofbits": true,
+    "status-network-audit@status-network": true
+  }
+}

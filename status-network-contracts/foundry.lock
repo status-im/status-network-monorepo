@@ -8,6 +8,9 @@
   "../go-corset": {
     "rev": "ee34d9eb60bf369958fcaae6b97a0c53502092fc"
   },
+  "lib/ExcessivelySafeCall": {
+    "rev": "81cd99ce3e69117d665d7601c330ea03b97acce0"
+  },
   "lib/forge-std": {
     "rev": "035de35f5e366c8d6ed142aec4ccb57fe2dd87d4"
   },

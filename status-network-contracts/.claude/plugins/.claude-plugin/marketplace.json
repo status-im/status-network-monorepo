@@ -1,0 +1,22 @@
+{
+  "name": "status-network",
+  "owner": {
+    "name": "Status Network",
+    "email": "dev@status.im"
+  },
+  "metadata": {
+    "version": "1.0.0",
+    "description": "Local Claude Code plugins for Status Network smart contract development and security auditing"
+  },
+  "plugins": [
+    {
+      "name": "status-network-audit",
+      "version": "1.0.0",
+      "description": "Security audit toolkit for Status Network smart contracts. Provides commands for vulnerability scanning, entry point analysis, invariant test generation, and comprehensive audits.",
+      "author": {
+        "name": "Status Network"
+      },
+      "source": "./status-network-audit"
+    }
+  ]
+}

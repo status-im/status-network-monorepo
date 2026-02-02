@@ -90,6 +90,44 @@ MNEMONIC=$YOUR_MNEMONIC forge script script/DeployProtocol.s.sol --rpc-url $RPC_
 
 For detailed deployment instructions, including verification and network configuration, see the [Deployment Guide](docs/deployment.md).
 
+## Claude Code (AI-Assisted Development)
+
+This project includes Claude Code integration for AI-assisted security auditing.
+
+### Setup
+
+```bash
+# Install local Status Network audit plugin
+/plugin marketplace add ./.claude/plugins
+/plugin install status-network-audit
+
+# Install Trail of Bits plugins
+/plugin marketplace add trailofbits/skills
+/plugin install building-secure-contracts entry-point-analyzer property-based-testing insecure-defaults audit-context-building sharp-edges
+```
+
+### Available Audit Commands
+
+**Local orchestration skills (this repo):**
+
+| Command | Description |
+|---------|-------------|
+| `/status-network-audit-help` | List all audit commands and workflow |
+| `/status-network-full-audit` | Comprehensive audit using all ToB plugins |
+| `/status-network-pr-review` | Security review of PR changes |
+
+**Trail of Bits plugins (direct use):**
+
+| Command | Description |
+|---------|-------------|
+| `/entry-point-analyzer` | Map state-changing entry points |
+| `/solidity-vulnerability-scanner` | 30+ Solidity vulnerability patterns |
+| `/sharp-edges` | Find API footguns |
+| `/insecure-defaults` | Detect dangerous configs |
+| `/property-based-testing` | Generate Echidna/Medusa tests |
+
+Audit reports are saved to `local-audit/`.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.

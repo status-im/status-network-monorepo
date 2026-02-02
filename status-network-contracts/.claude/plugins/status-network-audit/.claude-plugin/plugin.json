@@ -1,0 +1,9 @@
+{
+  "name": "status-network-audit",
+  "version": "1.0.0",
+  "description": "Security audit toolkit for Status Network smart contracts. Provides commands for vulnerability scanning, entry point analysis, invariant test generation, and comprehensive audits.",
+  "author": {
+    "name": "Status Network",
+    "url": "https://github.com/status-im"
+  }
+}

@@ -2,6 +2,22 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Required Plugins Setup
+
+**IMPORTANT FOR CLAUDE:** At the start of any security-related conversation (audits, vulnerability checks, security reviews), remind the user to install the required plugins if they haven't already:
+
+```bash
+# Install local Status Network audit plugin
+/plugin marketplace add ./.claude/plugins
+/plugin install status-network-audit
+
+# Install Trail of Bits plugins
+/plugin marketplace add trailofbits/skills
+/plugin install building-secure-contracts entry-point-analyzer property-based-testing insecure-defaults audit-context-building sharp-edges
+```
+
+These plugins are required for the `/status-network-*` audit commands to work properly.
+
 ## Build & Test Commands
 
 ```bash
@@ -107,3 +123,58 @@ Individual deployment scripts in `script/Deploy*.s.sol`, upgrade scripts in `scr
 - Solidity 0.8.26, Paris EVM
 - Optimizer: 10,000 runs
 - Fuzz testing: 1,000 runs (10,000 in CI)
+
+## Security Audit Tools
+
+This project includes a local Claude Code plugin for security auditing. Use `/status-network-audit-help` to see all available commands.
+
+### Local Orchestration Skills
+
+These skills orchestrate Trail of Bits plugins with Status Network-specific context:
+
+| Command | Description |
+|---------|-------------|
+| `/status-network-audit-help` | Lists all audit commands and recommended workflow |
+| `/status-network-full-audit` | Comprehensive audit using all ToB plugins |
+| `/status-network-pr-review` | Security review of PR changes |
+
+### Trail of Bits Plugins (Direct Use)
+
+| Command | Description |
+|---------|-------------|
+| `/entry-point-analyzer` | Map state-changing entry points by access level |
+| `/solidity-vulnerability-scanner` | Scan for 30+ Solidity vulnerability patterns |
+| `/sharp-edges` | Find API footguns and dangerous defaults |
+| `/insecure-defaults` | Detect fail-open configurations |
+| `/property-based-testing` | Generate Echidna/Medusa invariant tests |
+| `/code-maturity-assessor` | Assess code quality across 9 categories |
+| `/audit-context-building` | Deep line-by-line code analysis |
+
+### Recommended Workflows
+
+**Full Audit (before deployment):**
+```
+/status-network-full-audit
+```
+
+**PR Review (before merge):**
+```
+/status-network-pr-review
+```
+
+**Quick Checks (individual plugins):**
+```bash
+/entry-point-analyzer           # Map attack surface
+/solidity-vulnerability-scanner # Check for vulnerabilities
+/sharp-edges                    # Review configurations
+/insecure-defaults
+/property-based-testing         # Generate fuzz tests
+```
+
+### Audit Output
+
+All audit reports are saved to `local-audit/`:
+- `full-audit-YYYY-MM-DD.md` - Comprehensive audit report
+- `pr-review-{branch}.md` - PR-specific review
+- `sharp-edges.md` - Configuration issues
+- `entry-points.md` - Attack surface map
