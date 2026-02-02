@@ -294,7 +294,7 @@ mod tests {
         protocol::{deserialize_proof_values, verify_proof},
     };
     // internal
-    use crate::tests_common::create_database_connection_1;
+    use crate::tests_common::create_database_connection;
     use crate::user_db::MERKLE_TREE_HEIGHT;
     use crate::user_db_2::UserDb2Config;
     use crate::user_db_service::UserDbService;
@@ -406,7 +406,7 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
-        let (_, db_conn) = create_database_connection_1("proof_service_test_proof_generation", true, config.clone())
+        let (_, db_conn) = create_database_connection("proof_service_test_proof_generation", true, config.clone())
             .await
             .unwrap();
         let user_db_service = UserDbService::new(

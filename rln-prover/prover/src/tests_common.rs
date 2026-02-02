@@ -6,7 +6,7 @@ use sqlx::{Pool, Postgres};
 use prover_db_migration_sqlx::{MigrationConfig, Migrator};
 use crate::user_db_2::UserDb2Config;
 
-pub async fn create_database_connection_1(
+pub async fn create_database_connection(
     // f_name: &str,
     // test_name: &str,
     db_name: &str,
@@ -17,6 +17,7 @@ pub async fn create_database_connection_1(
     // Drop / Create db_name then return a connection to it
 
     let db_url_base = "postgres://postgres:postgres@localhost";
+    // Connect first to a default db (cause we need to create a new database for our test)
     let db_url_0 = format!("{db_url_base}/postgres");
     let db_url = format!("{}/{}", db_url_base, db_name);
 

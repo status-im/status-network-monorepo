@@ -320,7 +320,7 @@ mod tests {
     use crate::epoch_service::{Epoch, EpochSlice};
     use crate::user_db::MERKLE_TREE_HEIGHT;
     // use crate::user_db::{MERKLE_TREE_HEIGHT, UserDbConfig};
-    use crate::tests_common::create_database_connection_1;
+    use crate::tests_common::create_database_connection;
     use crate::user_db_2::UserDb2Config;
     use crate::user_db_service::UserDbService;
     // use function_name::named;
@@ -369,7 +369,7 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
-        let (_, db_conn) = create_database_connection_1( function_name!(), true, config.clone())
+        let (_, db_conn) = create_database_connection(function_name!(), true, config.clone())
             .await
             .unwrap();
         let user_db_service = UserDbService::new(

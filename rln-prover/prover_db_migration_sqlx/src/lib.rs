@@ -59,6 +59,22 @@ impl Migrator {
             .execute(&db)
             .await?;
 
+        // Deny list
+
+        sqlx::query(r#"
+            CREATE TABLE  IF NOT EXISTS deny_list (
+                id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                address CHAR(42) NOT NULL,
+                expires_at BIGINT,
+                denied_at BIGINT,
+                CONSTRAINT deny_list_prod UNIQUE(address)
+            )
+        "#)
+            .execute(&db)
+            .await?;
+
+        // Nullifiers
+
         // Merkle tree config
 
         sqlx::query(r#"

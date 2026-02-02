@@ -17,7 +17,7 @@ mod tests {
         Pool,
         Postgres,
     };
-    use crate::tests_common::create_database_connection_1;
+    use crate::tests_common::create_database_connection;
     // internal
     use crate::user_db_error::RegisterError2;
     use crate::user_db_types::{EpochCounter, EpochSliceCounter};
@@ -78,7 +78,7 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
-        let db_conn = create_database_connection_1("user_db_tests_test_incr_tx_counter_2", true, config.clone())
+        let db_conn = create_database_connection("user_db_tests_test_incr_tx_counter_2", true, config.clone())
             .await
             .unwrap().1;
 
@@ -89,8 +89,8 @@ mod tests {
             Default::default(),
             Default::default(),
         )
-        .await
-        .expect("Cannot create UserDb");
+            .await
+            .expect("Cannot create UserDb");
 
         // Register users
         user_db.register_user(ADDR_1).await.unwrap();
@@ -151,7 +151,7 @@ mod tests {
 
         let addr = Address::new([0; 20]);
         {
-            let (_, db_conn) = create_database_connection_1("user_db_tests_test_persistent_storage", true, config.clone())
+            let (_, db_conn) = create_database_connection("user_db_tests_test_persistent_storage", true, config.clone())
                 .await
                 .unwrap();
 
@@ -162,8 +162,8 @@ mod tests {
                 Default::default(),
                 Default::default(),
             )
-            .await
-            .expect("Cannot create UserDb");
+                .await
+                .expect("Cannot create UserDb");
 
             // Register user
             user_db.register_user(ADDR_1).await.unwrap();
@@ -199,7 +199,7 @@ mod tests {
         {
             // Reopen Db and check that is inside
             let (_, db_conn) =
-                create_database_connection_1("user_db_tests_test_persistent_storage", false, config.clone())
+                create_database_connection("user_db_tests_test_persistent_storage", false, config.clone())
                     .await
                     .unwrap();
 
@@ -210,8 +210,8 @@ mod tests {
                 Default::default(),
                 Default::default(),
             )
-            .await
-            .expect("Cannot create UserDb");
+                .await
+                .expect("Cannot create UserDb");
 
             assert!(!user_db.has_user(&addr).await.unwrap());
             assert!(user_db.has_user(&ADDR_1).await.unwrap());
@@ -249,7 +249,7 @@ mod tests {
         };
 
         {
-            let (_, db_conn) = create_database_connection_1("user_db_tests_test_multi_tree", true, config.clone())
+            let (_, db_conn) = create_database_connection("user_db_tests_test_multi_tree", true, config.clone())
                 .await
                 .unwrap();
 
@@ -260,8 +260,8 @@ mod tests {
                 Default::default(),
                 Default::default(),
             )
-            .await
-            .expect("Cannot create UserDb");
+                .await
+                .expect("Cannot create UserDb");
 
             assert_eq!(user_db.get_db_tree_count().await.unwrap(), tree_count);
             // assert_eq!(user_db.get_vec_tree_count().await as u64, tree_count);
@@ -282,7 +282,7 @@ mod tests {
         {
             // reload UserDb from disk and check indexes
 
-            let (_, db_conn) = create_database_connection_1("user_db_tests_test_multi_tree", false, config.clone())
+            let (_, db_conn) = create_database_connection("user_db_tests_test_multi_tree", false, config.clone())
                 .await
                 .unwrap();
 
@@ -293,8 +293,8 @@ mod tests {
                 Default::default(),
                 Default::default(),
             )
-            .await
-            .expect("Cannot create UserDb");
+                .await
+                .expect("Cannot create UserDb");
 
             assert_eq!(user_db.get_db_tree_count().await.unwrap(), tree_count);
             // assert_eq!(user_db.get_vec_tree_count().await as u64, tree_count);
@@ -323,7 +323,7 @@ mod tests {
             tree_depth,
         };
 
-        let (_, db_conn) = create_database_connection_1("user_db_tests_test_new_multi_tree", true, config.clone())
+        let (_, db_conn) = create_database_connection("user_db_tests_test_new_multi_tree", true, config.clone())
             .await
             .unwrap();
 
@@ -334,8 +334,8 @@ mod tests {
             Default::default(),
             Default::default(),
         )
-        .await
-        .expect("Cannot create UserDb");
+            .await
+            .expect("Cannot create UserDb");
 
         assert_eq!(
             user_db.get_db_tree_count().await.unwrap(),
@@ -370,7 +370,7 @@ mod tests {
         drop(user_db);
 
         {
-            let (_, db_conn) = create_database_connection_1("user_db_tests_test_new_multi_tree", false, config.clone())
+            let (_, db_conn) = create_database_connection("user_db_tests_test_new_multi_tree", false, config.clone())
                 .await
                 .unwrap();
 
@@ -381,8 +381,8 @@ mod tests {
                 Default::default(),
                 Default::default(),
             )
-            .await
-            .expect("Cannot create UserDb");
+                .await
+                .expect("Cannot create UserDb");
 
             assert_eq!(
                 user_db.get_db_tree_count().await.unwrap(),
@@ -394,5 +394,56 @@ mod tests {
             // );
         }
     }
+
+    #[tokio::test]
+    async fn test_deny_list_1() -> Result<(), SqlxError> {
+
+        // Check if UserDb + deny list functionalities
+
+        let epoch_store = Arc::new(RwLock::new(Default::default()));
+        let tree_depth = 1;
+        let tree_count_initial = 1;
+        let config = UserDb2Config {
+            tree_count: tree_count_initial,
+            max_tree_count: 1,
+            tree_depth,
+        };
+
+        println!("Creating db...");
+        let (_, db_conn) = create_database_connection("user_db_tests_test_deny_list_1", true, config.clone())
+            .await?;
+
+        println!("Creating db DONE");
+        let user_db = UserDb2::new(
+            db_conn.clone(),
+            config.clone(),
+            epoch_store.clone(),
+            Default::default(),
+            Default::default(),
+        ).await?;
+
+        assert_eq!(user_db.is_denied(&ADDR_1).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_2).await?, false);
+
+        user_db.add_to_deny_list(&ADDR_3, None, Some(5)).await?;
+
+        // FIXME: pass now() to add_to_deny_list / is_denied
+        assert_eq!(user_db.is_denied(&ADDR_3).await?, true);
+        assert_eq!(user_db.is_denied(&ADDR_1).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_2).await?, false);
+
+        user_db.remove_from_deny_list(&ADDR_3).await?;
+        assert_eq!(user_db.is_denied(&ADDR_3).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_1).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_2).await?, false);
+
+        user_db.add_to_deny_list(&ADDR_3, None, Some(5)).await?;
+        let deny_list_entry = user_db.get_deny_list_entry(&ADDR_3).await?;
+
+        println!("deny_list_entry: {:?}", deny_list_entry);
+
+        Ok(())
+    }
+
 
 }

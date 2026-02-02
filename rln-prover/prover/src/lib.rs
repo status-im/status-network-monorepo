@@ -28,13 +28,15 @@ mod user_db_tests;
 mod user_db_2_entities;
 
 // std
-use alloy::network::EthereumWallet;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
 // third-party
-use alloy::providers::{ProviderBuilder, WsConnect};
-use alloy::signers::local::PrivateKeySigner;
+use alloy::{
+    network::EthereumWallet,
+    providers::{ProviderBuilder, WsConnect},
+    signers::local::PrivateKeySigner
+};
 // use prover_db_migration::{Migrator, MigratorTrait};
 // use sea_orm::Database;
 use tokio::task::JoinSet;
@@ -66,8 +68,10 @@ use crate::user_db_error::{RegisterError2, UserDb2OpenError};
 use crate::user_db_service::UserDbService;
 use crate::user_db_types::RateLimit;
 use rln_proof::RlnIdentifier;
-use smart_contract::KarmaTiers::KarmaTiersInstance;
-use smart_contract::{KarmaTiersError, TIER_LIMITS};
+use smart_contract::{
+    KarmaTiers::KarmaTiersInstance,
+    KarmaTiersError, TIER_LIMITS
+};
 
 pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
     // Epoch service with configurable epoch and slice duration

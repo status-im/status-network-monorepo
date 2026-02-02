@@ -48,7 +48,7 @@ pub struct MerkleTreeConfigSqlx {
     pub next_index: i64,
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(sqlx::FromRow, Debug)]
 pub struct DenyListSqlx {
     pub address: String, // primary key, unique
     pub expires_at: Option<i64>,

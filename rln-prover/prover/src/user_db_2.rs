@@ -8,12 +8,6 @@ use parking_lot::RwLock;
 use tokio::sync::RwLock as TokioRwLock;
 // RLN
 use rln::{hashers::poseidon_hash, protocol::keygen};
-// db
-// use sea_orm::sea_query::{LockType, OnConflict};
-// use sea_orm::{
-//     ColumnTrait, DatabaseConnection, DbErr, EntityTrait, ExprTrait, IntoActiveModel,
-//     PaginatorTrait, QueryFilter, QuerySelect, Set, TransactionTrait,
-// };
 // sqlx
 // use sqlx::{Pool, Postgres, FromRow};
 use sqlx::{postgres::{
@@ -23,8 +17,9 @@ use sqlx::{postgres::{
     PgArgumentBuffer,
     PgValueRef,
     Postgres
-}, Type, Encode, Decode, Pool, error::Error as SqlxError, Row};
-use sqlx::types::Json;
+}, Type, Encode, Decode, Pool, error::Error as SqlxError, Row,
+    types::Json,
+};
 // internal
 use crate::epoch_service::{Epoch, EpochSlice};
 use crate::tier::{TierLimit, TierLimits, TierMatch, TierName};
@@ -34,20 +29,12 @@ use crate::user_db_error::{
     UserTierInfoError2,
 };
 use crate::user_db_types::{EpochCounter, EpochSliceCounter, RateLimit};
-// use prover_db_entity::{deny_list, m_tree_config, tier_limits, tx_counter, user};
-// use prover_merkle_tree::{
-//     MemoryDb, MemoryDbConfig, PersistentDb, PersistentDbConfig, PersistentDbError,
-// };
-// use prover_pmtree::tree::MerkleProof;
-// use prover_pmtree::{MerkleTree, PmtreeErrorKind};
 use rln_proof::{ProverPoseidonHash, RlnUserIdentity};
 use smart_contract::KarmaAmountExt;
 use crate::user_db_2_entities::{DenyListSqlx, MerkleProof, MerkleTreeConfigSqlx, PgFrStruct, TierLimitsSqlx, TxCounterSqlx, UserIdSqlx, UserSqlx, PGFR_ARRAY_OID, PGFR_OID};
 
 const TIER_LIMITS_KEY: &str = "CURRENT";
 const TIER_LIMITS_NEXT_KEY: &str = "NEXT";
-
-// type ProverMerkleTree = MerkleTree<MemoryDb, ProverPoseidonHash, PersistentDb, MerkleTreeError>;
 
 #[derive(Debug, PartialEq)]
 pub struct UserTierInfo2 {
@@ -72,7 +59,6 @@ pub(crate) struct UserDb2 {
     config: UserDb2Config,
     rate_limit: RateLimit,
     pub(crate) epoch_store: Arc<RwLock<(Epoch, EpochSlice)>>,
-    // merkle_trees: Arc<TokioRwLock<Vec<ProverMerkleTree>>>,
 }
 
 impl std::fmt::Debug for UserDb2 {
@@ -406,42 +392,6 @@ impl UserDb2 {
         let user = user.unwrap(); // Unwrap safe: just checked above
         let tree_index = user.tree_index as usize;
         let index_in_merkle_tree = user.index_in_merkle_tree as usize;
-
-        /*
-        let mut guard = self.merkle_trees.write().await;
-        // FIXME: unwrap safe?
-        let mt = guard.get_mut(tree_index).unwrap();
-        // Only delete it if this is the last index
-        // Note: No reuse of index in PmTree (as this is a generic impl and could lead to security issue:
-        // like replay attack...)
-        if mt.leaves_set().saturating_sub(1) == index_in_merkle_tree {
-            mt.delete(index_in_merkle_tree).await?;
-        } else {
-            // FIXME
-            println!("Not the last {} {}", index_in_merkle_tree, mt.leaves_set());
-        }
-
-        // TODO: delete in merkle tree in txn
-        // FIXME: map_err repetitions?
-        let txn = self
-            .db
-            .begin()
-            .await
-            .map_err(|e| MerkleTreeError::PDb(e.into()))?;
-        user::Entity::delete_many()
-            .filter(user::Column::Address.eq(address.to_string()))
-            .exec(&txn)
-            .await
-            .map_err(|e| MerkleTreeError::PDb(e.into()))?;
-        tx_counter::Entity::delete_many()
-            .filter(tx_counter::Column::Address.eq(address.to_string()))
-            .exec(&txn)
-            .await
-            .map_err(|e| MerkleTreeError::PDb(e.into()))?;
-        txn.commit()
-            .await
-            .map_err(|e| MerkleTreeError::PDb(e.into()))?;
-        */
 
         let mut txn = self
             .db
@@ -827,16 +777,6 @@ impl UserDb2 {
     }
 }
 
-/*
-#[derive(thiserror::Error, Debug)]
-pub enum MerkleTreeError {
-    #[error(transparent)]
-    PmtreeError(#[from] PmtreeErrorKind),
-    #[error(transparent)]
-    PDb(#[from] PersistentDbError),
-}
-*/
-
 #[cfg(feature = "postgres")]
 #[cfg(test)]
 mod tests {
@@ -851,7 +791,7 @@ mod tests {
     use prover_db_migration_sqlx::MigrationConfig;
     // internal
     // use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
-    use crate::tests_common::create_database_connection_1;
+    use crate::tests_common::create_database_connection;
 
     #[derive(Debug, Display, thiserror::Error)]
     struct DummyError();
@@ -887,7 +827,7 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
-        let (_, db_conn) = create_database_connection_1("user_db_test_user_register", true, config.clone())
+        let (_, db_conn) = create_database_connection("user_db_test_user_register", true, config.clone())
             .await
             .expect("create_database_connection_1 failed");
 
@@ -937,7 +877,7 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let (_, db_conn) = create_database_connection_1("user_db_test_tx_counter", true, config.clone())
+        let (_, db_conn) = create_database_connection("user_db_test_tx_counter", true, config.clone())
             .await
             .unwrap();
 
@@ -972,7 +912,7 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let (_, db_conn) = create_database_connection_1("user_db_test_incr_tx_counter", true, config.clone())
+        let (_, db_conn) = create_database_connection("user_db_test_incr_tx_counter", true, config.clone())
             .await
             .unwrap();
 
@@ -1023,7 +963,7 @@ mod tests {
             max_tree_count: 1,
             tree_depth: crate::user_db::MERKLE_TREE_HEIGHT,
         };
-        let db_conn = create_database_connection_1("user_db_test_user_remove", true, config.clone())
+        let db_conn = create_database_connection("user_db_test_user_remove", true, config.clone())
             .await
             .unwrap().1;
 
@@ -1075,7 +1015,7 @@ mod tests {
             max_tree_count: 1,
             tree_depth: 1,
         };
-        let db_conn = create_database_connection_1("user_db_test_user_reg_merkle_tree_fail", true, config.clone())
+        let db_conn = create_database_connection("user_db_test_user_reg_merkle_tree_fail", true, config.clone())
             .await
             .unwrap().1;
 

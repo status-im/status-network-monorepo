@@ -30,7 +30,7 @@ mod tests {
     use crate::user_db_types::RateLimit;
     // use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
     use rln_proof::RlnIdentifier;
-    use crate::tests_common::create_database_connection_1;
+    use crate::tests_common::create_database_connection;
 
     const ADDR_1: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
     const ADDR_2: Address = address!("0xb20a608c624Ca5003905aA834De7156C68b2E1d0");
@@ -148,7 +148,7 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
-        let db_conn = create_database_connection_1("proof_service_tests_test_user_not_registered", true, config.clone())
+        let db_conn = create_database_connection("proof_service_tests_test_user_not_registered", true, config.clone())
             .await
             .unwrap()
             .1;
@@ -323,7 +323,7 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let db_conn = create_database_connection_1("proof_service_tests_test_user_spamming_1", true, config.clone())
+        let db_conn = create_database_connection("proof_service_tests_test_user_spamming_1", true, config.clone())
             .await
             .unwrap().1;
         let user_db_service = UserDbService::new(
@@ -404,7 +404,7 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
         let db_conn =
-            create_database_connection_1("proof_service_tests_test_user_spamming_same_signal", true, config.clone())
+            create_database_connection("proof_service_tests_test_user_spamming_same_signal", true, config.clone())
                 .await
                 .unwrap().1;
         let user_db_service = UserDbService::new(

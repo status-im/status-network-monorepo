@@ -24,7 +24,7 @@ mod tests {
         // Include generated code (see build.rs)
         tonic::include_proto!("prover");
     }
-    use crate::tests_common::create_database_connection_1;
+    use crate::tests_common::create_database_connection;
     use prover_proto::get_user_tier_info_reply::Resp;
     use prover_proto::{
         Address as GrpcAddress, GetUserTierInfoReply, GetUserTierInfoRequest, RlnProofFilter,
@@ -260,7 +260,7 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let (db_url, _db_conn) = create_database_connection_1("grpc_e2e_test_grpc_gen_proof", true, config.clone())
+        let (db_url, _db_conn) = create_database_connection("grpc_e2e_test_grpc_gen_proof", true, config.clone())
             .await
             .unwrap();
         // End Setup db
@@ -511,7 +511,7 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
         let (db_url, _db_conn) =
-            create_database_connection_1("grpc_e2e_test_grpc_tx_exceed_gas_quota", true, config.clone())
+            create_database_connection("grpc_e2e_test_grpc_tx_exceed_gas_quota", true, config.clone())
                 .await
                 .unwrap();
         // End Setup db
