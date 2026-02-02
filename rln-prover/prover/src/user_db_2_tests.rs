@@ -3,6 +3,7 @@
 mod tests {
     // std
     use std::sync::Arc;
+    use std::time::Duration;
     // third-party
     use crate::epoch_service::{Epoch, EpochSlice};
     use crate::user_db::MERKLE_TREE_HEIGHT;
@@ -409,11 +410,9 @@ mod tests {
             tree_depth,
         };
 
-        println!("Creating db...");
         let (_, db_conn) = create_database_connection("user_db_tests_test_deny_list_1", true, config.clone())
             .await?;
 
-        println!("Creating db DONE");
         let user_db = UserDb2::new(
             db_conn.clone(),
             config.clone(),
@@ -422,28 +421,73 @@ mod tests {
             Default::default(),
         ).await?;
 
-        assert_eq!(user_db.is_denied(&ADDR_1).await?, false);
-        assert_eq!(user_db.is_denied(&ADDR_2).await?, false);
+        // Define some custom 'now' functions so we are in control
+        let now_v = 10;
+        let now = || Duration::from_secs(now_v);
+        let now2 = || Duration::from_secs(12);
 
-        user_db.add_to_deny_list(&ADDR_3, None, Some(5)).await?;
+        assert_eq!(user_db.is_denied(&ADDR_1, &now).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_2, &now).await?, false);
 
-        // FIXME: pass now() to add_to_deny_list / is_denied
-        assert_eq!(user_db.is_denied(&ADDR_3).await?, true);
-        assert_eq!(user_db.is_denied(&ADDR_1).await?, false);
-        assert_eq!(user_db.is_denied(&ADDR_2).await?, false);
+        let ttl = 5;
+        user_db.add_to_deny_list(&ADDR_3, None, Some(ttl), &now).await?;
+
+        assert_eq!(user_db.is_denied(&ADDR_3, &now).await?, true);
+        // Check that in the future, ADDR_3 is not denied anymore
+        assert_eq!(user_db.is_denied(&ADDR_3, &|| Duration::from_secs(now_v) + Duration::from_secs(ttl as u64)).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_1, &now).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_2, &now).await?, false);
 
         user_db.remove_from_deny_list(&ADDR_3).await?;
-        assert_eq!(user_db.is_denied(&ADDR_3).await?, false);
-        assert_eq!(user_db.is_denied(&ADDR_1).await?, false);
-        assert_eq!(user_db.is_denied(&ADDR_2).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_3, &now).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_1, &now).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_2, &now).await?, false);
 
-        user_db.add_to_deny_list(&ADDR_3, None, Some(5)).await?;
-        let deny_list_entry = user_db.get_deny_list_entry(&ADDR_3).await?;
+        user_db.add_to_deny_list(&ADDR_3, None, Some(5), &now2).await?;
+        assert_eq!(user_db.is_denied(&ADDR_3, &now2).await?, true);
+        let deny_list_entry = user_db.get_deny_list_entry(&ADDR_3, &now2)
+            .await?
+            .unwrap()
+            ;
 
-        println!("deny_list_entry: {:?}", deny_list_entry);
+        assert_eq!(deny_list_entry.address, ADDR_3.to_string().to_lowercase());
+        assert_eq!(deny_list_entry.expires_at.unwrap(), (now2() + Duration::from_secs(5)).as_secs() as i64);
 
         Ok(())
     }
 
+    #[tokio::test]
+    async fn test_deny_list_2() -> Result<(), SqlxError> {
 
+        // Check if UserDb + deny list functionalities
+
+        let epoch_store = Arc::new(RwLock::new(Default::default()));
+        let tree_depth = 1;
+        let tree_count_initial = 1;
+        let config = UserDb2Config {
+            tree_count: tree_count_initial,
+            max_tree_count: 1,
+            tree_depth,
+        };
+
+        let (_, db_conn) = create_database_connection("user_db_tests_test_deny_list_2", true, config.clone())
+            .await?;
+
+        let user_db = UserDb2::new(
+            db_conn.clone(),
+            config.clone(),
+            epoch_store.clone(),
+            Default::default(),
+            Default::default(),
+        ).await?;
+
+        let now = || Duration::from_secs(10);
+        // Check this is an INSERT
+        assert_eq!(user_db.add_to_deny_list(&ADDR_3, None, Some(5), &now).await?, true);
+        // Check this is an UPDATE
+        assert_eq!(user_db.add_to_deny_list(&ADDR_3, None, Some(7), &now).await?, false);
+
+        Ok(())
+    }
 }
+

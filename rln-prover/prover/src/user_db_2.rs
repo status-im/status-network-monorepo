@@ -1,9 +1,11 @@
 use std::fmt::Formatter;
 use std::sync::Arc;
+use std::time::Duration;
 // third-party
 use alloy::primitives::{Address, U256};
 use ark_bn254::Fr;
 use ark_ff::AdditiveGroup;
+use chrono::Utc;
 use parking_lot::RwLock;
 use tokio::sync::RwLock as TokioRwLock;
 // RLN
@@ -535,18 +537,15 @@ impl UserDb2 {
     /// Check if an address is on the deny list and not expired
     ///
     /// Returns true if the address is denied (and not expired), false otherwise
-    pub async fn is_denied(&self, address: &Address) -> Result<bool, SqlxError> {
+    pub async fn is_denied<F: Fn() -> Duration>(&self, address: &Address, now: &F) -> Result<bool, SqlxError> {
 
         let address_str = address.to_string().to_lowercase();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
+        let now_ = now().as_secs() as i64;
 
         // Single query: check if exists AND (no expiry OR not expired)
         let res: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM deny_list WHERE address = $1 AND (expires_at IS NULL OR expires_at > $2)")
             .bind(address_str)
-            .bind(now)
+            .bind(now_)
             .fetch_one(&self.db)
             .await?;
 
@@ -559,22 +558,20 @@ impl UserDb2 {
     /// - `address`: The address to deny
     /// - `reason`: Optional reason for denial (logged but not stored for performance)
     /// - `ttl_seconds`: Optional time-to-live in seconds (None means no expiry)
+    /// - `now`: Function returning the current Duration till UNIX_EPOCH
     ///
     /// Returns true if the address was newly added, false if it was already present
-    pub async fn add_to_deny_list(
+    pub async fn add_to_deny_list<F: Fn() -> Duration>(
         &self,
         address: &Address,
         reason: Option<String>,
         ttl_seconds: Option<i64>,
+        now: &F,
     ) -> Result<bool, SqlxError> {
 
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-
-        let expires_at = ttl_seconds.map(|ttl| now + ttl);
         let address_str = address.to_string().to_lowercase();
+        let now_ = now().as_secs() as i64;
+        let expires_at = ttl_seconds.map(|ttl| now_ + ttl);
 
         if let Some(reason) = &reason {
             tracing::info!(
@@ -597,7 +594,7 @@ impl UserDb2 {
             RETURNING (xmax = 0) as "is_insert!" "#)
             .bind(address_str)
             .bind(expires_at)
-            .bind(now)
+            .bind(now_)
             .fetch_one(&self.db)
             .await?;
 
@@ -622,22 +619,19 @@ impl UserDb2 {
     /// Get deny list entry for an address (if exists and not expired)
     ///
     /// Returns the deny list entry model if found and not expired
-    pub async fn get_deny_list_entry(
+    pub async fn get_deny_list_entry<F: Fn() -> Duration>(
         &self,
         address: &Address,
+        now: &F,
     ) -> Result<Option<DenyListSqlx>, SqlxError> {
 
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-
         let address_str = address.to_string().to_lowercase();
-
+        let now_ = now().as_secs() as i64;
+        
         // Single query with expiry check
         let result: Option<DenyListSqlx> = sqlx::query_as("SELECT * FROM deny_list WHERE address = $1 AND (expires_at IS NULL OR expires_at > $2)")
             .bind(address_str)
-            .bind(now)
+            .bind(now_)
             .fetch_optional(&self.db)
             .await?;
 
