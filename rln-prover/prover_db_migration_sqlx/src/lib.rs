@@ -49,7 +49,7 @@ impl Migrator {
             .await?;
 
         sqlx::query(r#"
-            CREATE TABLE  IF NOT EXISTS tier_limits (
+            CREATE TABLE IF NOT EXISTS tier_limits (
                 id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
                 name TEXT NOT NULL,
                 tier_limits JSONB,
@@ -62,7 +62,7 @@ impl Migrator {
         // Deny list
 
         sqlx::query(r#"
-            CREATE TABLE  IF NOT EXISTS deny_list (
+            CREATE TABLE IF NOT EXISTS deny_list (
                 id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
                 address CHAR(42) NOT NULL,
                 expires_at BIGINT,
@@ -74,6 +74,26 @@ impl Migrator {
             .await?;
 
         // Nullifiers
+
+        sqlx::query(r#"
+            CREATE TABLE IF NOT EXISTS nullifiers (
+                id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                nullifier BYTEA NOT NULL,
+                epoch BIGINT NOT NULL,
+                CONSTRAINT nullifiers_prod CHECK (OCTET_LENGTH(nullifier) = 32)
+            )
+        "#)
+            .execute(&db)
+            .await?;
+
+        sqlx::query(r#"
+            CREATE UNIQUE INDEX IF NOT EXISTS index_nullifiers_nullifier_epoch ON nullifiers (
+                nullifier,
+                epoch
+            )
+        "#)
+            .execute(&db)
+            .await?;
 
         // Merkle tree config
 
@@ -158,6 +178,18 @@ impl Migrator {
             .await?;
         sqlx::query(r#"
             DROP TABLE IF EXISTS tier_limits
+        "#)
+            .execute(&db)
+            .await?;
+
+        sqlx::query(r#"
+            DROP TABLE IF EXISTS deny_list
+        "#)
+            .execute(&db)
+            .await?;
+
+        sqlx::query(r#"
+            DROP TABLE IF EXISTS nullifiers
         "#)
             .execute(&db)
             .await?;

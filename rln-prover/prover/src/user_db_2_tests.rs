@@ -399,7 +399,7 @@ mod tests {
     #[tokio::test]
     async fn test_deny_list_1() -> Result<(), SqlxError> {
 
-        // Check if UserDb + deny list functionalities
+        // Check UserDb + deny list basic functionalities
 
         let epoch_store = Arc::new(RwLock::new(Default::default()));
         let tree_depth = 1;
@@ -457,9 +457,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_deny_list_2() -> Result<(), SqlxError> {
+    async fn test_deny_list_upsert_res() -> Result<(), SqlxError> {
 
-        // Check if UserDb + deny list functionalities
+        // Check UserDb deny_list add_to_deny_list result
 
         let epoch_store = Arc::new(RwLock::new(Default::default()));
         let tree_depth = 1;
@@ -481,11 +481,162 @@ mod tests {
             Default::default(),
         ).await?;
 
+        // Define some custom 'now' functions so we are in control
         let now = || Duration::from_secs(10);
         // Check this is an INSERT
         assert_eq!(user_db.add_to_deny_list(&ADDR_3, None, Some(5), &now).await?, true);
         // Check this is an UPDATE
         assert_eq!(user_db.add_to_deny_list(&ADDR_3, None, Some(7), &now).await?, false);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_deny_list_cleanup() -> Result<(), SqlxError> {
+
+        // Check UserDb deny_list cleanup
+
+        let epoch_store = Arc::new(RwLock::new(Default::default()));
+        let tree_depth = 1;
+        let tree_count_initial = 1;
+        let config = UserDb2Config {
+            tree_count: tree_count_initial,
+            max_tree_count: 1,
+            tree_depth,
+        };
+
+        let (_, db_conn) = create_database_connection("user_db_tests_test_deny_list_2", true, config.clone())
+            .await?;
+
+        let user_db = UserDb2::new(
+            db_conn.clone(),
+            config.clone(),
+            epoch_store.clone(),
+            Default::default(),
+            Default::default(),
+        ).await?;
+
+        // Define some custom 'now' functions so we are in control
+        let now_v = 10;
+        let now2_v = 12;
+        let now = || Duration::from_secs(now_v);
+        let now2 = || Duration::from_secs(now2_v);
+        let ttl = 5;
+        let now3 = || Duration::from_secs(now_v + ttl);
+        let now4 = || Duration::from_secs(now2_v + ttl);
+
+        user_db.add_to_deny_list(&ADDR_3, None, Some(ttl as i64), &now).await?;
+        user_db.add_to_deny_list(&ADDR_1, None, Some(ttl as i64), &now2).await?;
+
+        // Will clean nothing (no expiration yet)
+        user_db.cleanup_expired_deny_list_entries(&now).await?;
+        assert!(user_db.get_deny_list_entry(&ADDR_3, &now).await?.is_some());
+        assert!(user_db.get_deny_list_entry(&ADDR_1, &now).await?.is_some());
+
+        // Cleanup only ADDR3
+        user_db.cleanup_expired_deny_list_entries(&now3).await?;
+        assert!(user_db.get_deny_list_entry(&ADDR_3, &now3).await?.is_none());
+        assert!(user_db.get_raw_deny_list_entry(&ADDR_3).await?.is_none());
+        assert!(user_db.get_deny_list_entry(&ADDR_1, &now3).await?.is_some());
+        assert!(user_db.get_raw_deny_list_entry(&ADDR_1).await?.is_some());
+
+        // Cleanup ADDR_1 too
+        user_db.cleanup_expired_deny_list_entries(&now4).await?;
+        assert!(user_db.get_deny_list_entry(&ADDR_1, &now4).await?.is_none());
+        assert!(user_db.get_raw_deny_list_entry(&ADDR_1).await?.is_none());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_nullifier_1() -> Result<(), SqlxError> {
+
+        // Check UserDb nullifier basic functionalities
+
+        let epoch_store = Arc::new(RwLock::new(Default::default()));
+        let tree_depth = 1;
+        let tree_count_initial = 1;
+        let config = UserDb2Config {
+            tree_count: tree_count_initial,
+            max_tree_count: 1,
+            tree_depth,
+        };
+
+        println!("create db conn...");
+        let (_, db_conn) = create_database_connection("user_db_tests_test_deny_list_1", true, config.clone())
+            .await?;
+        println!("create db conn DONE");
+
+        let user_db = UserDb2::new(
+            db_conn.clone(),
+            config.clone(),
+            epoch_store.clone(),
+            Default::default(),
+            Default::default(),
+        ).await?;
+
+        let nullifier_1 = vec![1; 32];
+        let epoch_1 = 1;
+        let nullifier_2 = vec![1; 32];
+        let epoch_2 = 42;
+
+        assert_eq!(user_db.nullifier_exists(&nullifier_1, epoch_1).await?, false);
+
+        // INSERT
+        assert_eq!(user_db.record_nullifier(&nullifier_1, epoch_1).await?, true);
+        // UPDATE
+        assert_eq!(user_db.record_nullifier(&nullifier_1, epoch_1).await?, false);
+
+        assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_1).await?, 1);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_nullifier_cleanup() -> Result<(), SqlxError> {
+
+        // Check UserDb nullifier cleanup
+
+        let epoch_store = Arc::new(RwLock::new(Default::default()));
+        let tree_depth = 1;
+        let tree_count_initial = 1;
+        let config = UserDb2Config {
+            tree_count: tree_count_initial,
+            max_tree_count: 1,
+            tree_depth,
+        };
+
+        println!("create db conn...");
+        let (_, db_conn) = create_database_connection("user_db_tests_test_deny_list_1", true, config.clone())
+            .await?;
+        println!("create db conn DONE");
+
+        let user_db = UserDb2::new(
+            db_conn.clone(),
+            config.clone(),
+            epoch_store.clone(),
+            Default::default(),
+            Default::default(),
+        ).await?;
+
+        let nullifier_1 = vec![1; 32];
+        let epoch_1 = 1;
+        let nullifier_2 = vec![2; 32];
+        let epoch_2 = 42;
+
+        assert_eq!(user_db.record_nullifier(&nullifier_1, epoch_1).await?, true);
+        assert_eq!(user_db.record_nullifier(&nullifier_2, epoch_2).await?, true);
+
+        assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_1).await?, 1);
+        assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_2).await?, 1);
+
+        assert_eq!(user_db.cleanup_old_nullifiers(epoch_2, 0).await?, 1);
+        assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_1).await?, 0);
+        assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_2).await?, 1);
+
+        assert_eq!(user_db.cleanup_old_nullifiers(epoch_2+1, 0).await?, 1);
+        assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_1).await?, 0);
+        assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_2).await?, 0);
 
         Ok(())
     }

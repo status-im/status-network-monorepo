@@ -607,6 +607,7 @@ impl UserDb2 {
     ///
     /// Returns true if the address was removed, false if it wasn't on the list
     pub async fn remove_from_deny_list(&self, address: &Address) -> Result<bool, SqlxError> {
+
         let address_str = address.to_string().to_lowercase();
         let result = sqlx::query(r#"DELETE FROM deny_list WHERE address = $1"#)
             .bind(address_str)
@@ -627,7 +628,7 @@ impl UserDb2 {
 
         let address_str = address.to_string().to_lowercase();
         let now_ = now().as_secs() as i64;
-        
+
         // Single query with expiry check
         let result: Option<DenyListSqlx> = sqlx::query_as("SELECT * FROM deny_list WHERE address = $1 AND (expires_at IS NULL OR expires_at > $2)")
             .bind(address_str)
@@ -641,14 +642,11 @@ impl UserDb2 {
     /// Clean up expired deny list entries
     ///
     /// Returns the number of entries removed
-    pub async fn cleanup_expired_deny_list_entries(&self) -> Result<u64, SqlxError> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
+    pub async fn cleanup_expired_deny_list_entries<F: Fn() -> Duration>(&self, now: &F) -> Result<u64, SqlxError> {
 
+        let now_ = now().as_secs() as i64;
         let result = sqlx::query("DELETE FROM deny_list WHERE expires_at IS NOT NULL AND expires_at <= $1")
-            .bind(now)
+            .bind(now_)
             .execute(&self.db)
             .await?;
 
@@ -676,9 +674,11 @@ impl UserDb2 {
     /// Uses INSERT ... ON CONFLICT DO NOTHING for atomic check-and-insert
     pub async fn record_nullifier(&self, nullifier: &[u8], epoch: i64) -> Result<bool, SqlxError> {
 
+        // Note: ON_CONFLICT cause should be "DO NOTHING" but here with no-op
+        //       we force Postgresql to always return a row (is_insert)
         let result = sqlx::query(r#"
-                INSERT INTO nullifiers VALUES ($1, $2)
-                ON CONFLICT (nullifier, epoch) DO NOTHING
+                INSERT INTO nullifiers (nullifier, epoch) VALUES ($1, $2)
+                ON CONFLICT (nullifier, epoch) DO UPDATE SET nullifier = EXCLUDED.nullifier
                 RETURNING (xmax = 0) as "is_insert!"
             "#)
             .bind(nullifier)
@@ -717,6 +717,7 @@ impl UserDb2 {
     ) -> Result<u64, SqlxError> {
 
         let cutoff_epoch = current_epoch - keep_epochs;
+        println!("cutoff epoch: {}", cutoff_epoch);
         let result = sqlx::query("DELETE FROM nullifiers WHERE epoch < $1")
             .bind(cutoff_epoch)
             .execute(&self.db)
@@ -744,13 +745,6 @@ impl UserDb2 {
         Self::get_merkle_tree_count_from_db(&self.db).await
     }
 
-    /*
-    pub(crate) async fn get_vec_tree_count(&self) -> usize {
-        // self.merkle_trees.read().await.len()
-        todo!()
-    }
-    */
-
     pub(crate) async fn get_user_indexes(&self, address: &Address) -> (i64, i64) {
         let user_model = self.get_user(address).await.unwrap().unwrap();
 
@@ -768,6 +762,19 @@ impl UserDb2 {
             .unwrap();
 
         res
+    }
+
+    // deny list
+    pub async fn get_raw_deny_list_entry(
+        &self,
+        address: &Address,
+    ) -> Result<Option<DenyListSqlx>, SqlxError> {
+        let address_str = address.to_string().to_lowercase();
+        sqlx::query_as("SELECT * FROM deny_list WHERE address = $1")
+            .bind(address_str)
+            .fetch_optional(&self.db)
+            .await
+
     }
 }
 
