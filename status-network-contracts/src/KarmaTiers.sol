@@ -13,19 +13,19 @@ contract KarmaTiers is Ownable {
     event TiersUpdated();
     /// @notice Emitted when a transaction amount is invalid
 
-    error InvalidTxAmount();
+    error KarmaTiers__InvalidTxAmount();
     /// @notice Emitted when a tier name is empty
-    error EmptyTierName();
+    error KarmaTiers__EmptyTierName();
     /// @notice Emitted when a tier array is empty
-    error EmptyTiersArray();
+    error KarmaTiers__EmptyTiersArray();
     /// @notice Emitted when a tier is not found
-    error TierNotFound();
+    error KarmaTiers__TierNotFound();
     /// @notice Emitted when a tier name exceeds maximum length
-    error TierNameTooLong(uint256 nameLength, uint256 maxLength);
+    error KarmaTiers__TierNameTooLong(uint256 nameLength, uint256 maxLength);
     /// @notice Emitted when tiers are not contiguous
-    error NonContiguousTiers(uint8 index, uint256 expectedMinKarma, uint256 actualMinKarma);
+    error KarmaTiers__NonContiguousTiers(uint8 index, uint256 expectedMinKarma, uint256 actualMinKarma);
     /// @notice Emitted when a tier's minKarma is greater than or equal to maxKarma
-    error InvalidTierRange(uint256 minKarma, uint256 maxKarma);
+    error KarmaTiers__InvalidTierRange(uint256 minKarma, uint256 maxKarma);
 
     struct Tier {
         uint256 minKarma;
@@ -59,11 +59,11 @@ contract KarmaTiers is Ownable {
 
     function updateTiers(Tier[] calldata newTiers) external onlyOwner {
         if (newTiers.length == 0) {
-            revert EmptyTiersArray();
+            revert KarmaTiers__EmptyTiersArray();
         }
         // Ensure the first tier starts at minKarma = 0
         if (newTiers[0].minKarma != 0) {
-            revert NonContiguousTiers(0, 0, newTiers[0].minKarma);
+            revert KarmaTiers__NonContiguousTiers(0, 0, newTiers[0].minKarma);
         }
 
         delete tiers; // Clear existing tiers
@@ -74,13 +74,13 @@ contract KarmaTiers is Ownable {
 
             _validateTierName(input.name);
             if (input.maxKarma < input.minKarma) {
-                revert InvalidTierRange(input.minKarma, input.maxKarma);
+                revert KarmaTiers__InvalidTierRange(input.minKarma, input.maxKarma);
             }
 
             if (i > 0) {
                 uint256 expectedMinKarma = lastMaxKarma + 1;
                 if (input.minKarma != expectedMinKarma) {
-                    revert NonContiguousTiers(i, expectedMinKarma, input.minKarma);
+                    revert KarmaTiers__NonContiguousTiers(i, expectedMinKarma, input.minKarma);
                 }
             }
             lastMaxKarma = input.maxKarma;
@@ -100,9 +100,9 @@ contract KarmaTiers is Ownable {
      */
     function _validateTierName(string calldata name) internal pure {
         bytes memory nameBytes = bytes(name);
-        if (nameBytes.length == 0) revert EmptyTierName();
+        if (nameBytes.length == 0) revert KarmaTiers__EmptyTierName();
         if (nameBytes.length > MAX_TIER_NAME_LENGTH) {
-            revert TierNameTooLong(nameBytes.length, MAX_TIER_NAME_LENGTH);
+            revert KarmaTiers__TierNameTooLong(nameBytes.length, MAX_TIER_NAME_LENGTH);
         }
     }
 
@@ -146,7 +146,7 @@ contract KarmaTiers is Ownable {
 
     function _onlyValidTierId(uint8 tierId) internal view {
         if (tierId >= tiers.length) {
-            revert TierNotFound();
+            revert KarmaTiers__TierNotFound();
         }
     }
 }
