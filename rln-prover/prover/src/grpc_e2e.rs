@@ -25,35 +25,35 @@ mod tests {
         tonic::include_proto!("prover");
     }
     use crate::tests_common::create_database_connection;
+    use crate::user_db::MERKLE_TREE_HEIGHT;
+    use crate::user_db_2::UserDb2Config;
     use prover_proto::get_user_tier_info_reply::Resp;
     use prover_proto::{
         Address as GrpcAddress, GetUserTierInfoReply, GetUserTierInfoRequest, RlnProofFilter,
         RlnProofReply, SendTransactionReply, SendTransactionRequest, U256 as GrpcU256,
         Wei as GrpcWei, rln_prover_client::RlnProverClient,
     };
-    use crate::user_db::MERKLE_TREE_HEIGHT;
-    use crate::user_db_2::UserDb2Config;
     /*
-        async fn register_users(port: u16, addresses: Vec<Address>) {
-            let url = format!("http://127.0.0.1:{}", port);
-            let mut client = RlnProverClient::connect(url).await.unwrap();
+    async fn register_users(port: u16, addresses: Vec<Address>) {
+        let url = format!("http://127.0.0.1:{}", port);
+        let mut client = RlnProverClient::connect(url).await.unwrap();
 
-            for address in addresses {
-                let addr = GrpcAddress {
-                    value: address.to_vec(),
-                };
+        for address in addresses {
+            let addr = GrpcAddress {
+                value: address.to_vec(),
+            };
 
-                let request_0 = RegisterUserRequest { user: Some(addr) };
-                let request = tonic::Request::new(request_0);
-                let response: Response<RegisterUserReply> = client.register_user(request).await.unwrap();
+            let request_0 = RegisterUserRequest { user: Some(addr) };
+            let request = tonic::Request::new(request_0);
+            let response: Response<RegisterUserReply> = client.register_user(request).await.unwrap();
 
-                assert_eq!(
-                    RegistrationStatus::try_from(response.into_inner().status).unwrap(),
-                    RegistrationStatus::Success
-                );
-            }
+            assert_eq!(
+                RegistrationStatus::try_from(response.into_inner().status).unwrap(),
+                RegistrationStatus::Success
+            );
         }
-        */
+    }
+    */
 
     async fn query_user_info(port: u16, addresses: Vec<Address>) -> Vec<GetUserTierInfoReply> {
         let url = format!("http://127.0.0.1:{port}");
@@ -260,9 +260,10 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let (db_url, _db_conn) = create_database_connection("grpc_e2e_test_grpc_gen_proof", true, config.clone())
-            .await
-            .unwrap();
+        let (db_url, _db_conn) =
+            create_database_connection("grpc_e2e_test_grpc_gen_proof", true, config.clone())
+                .await
+                .unwrap();
         // End Setup db
 
         let temp_folder = tempfile::tempdir().unwrap();
@@ -510,10 +511,13 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let (db_url, _db_conn) =
-            create_database_connection("grpc_e2e_test_grpc_tx_exceed_gas_quota", true, config.clone())
-                .await
-                .unwrap();
+        let (db_url, _db_conn) = create_database_connection(
+            "grpc_e2e_test_grpc_tx_exceed_gas_quota",
+            true,
+            config.clone(),
+        )
+        .await
+        .unwrap();
         // End Setup db
 
         // let temp_folder = tempfile::tempdir().unwrap();

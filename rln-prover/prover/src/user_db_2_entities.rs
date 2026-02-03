@@ -1,21 +1,19 @@
-use std::sync::OnceLock;
-use sqlx::{Decode, Encode, Postgres, Type};
-use sqlx::postgres::{PgArgumentBuffer, PgHasArrayType, PgTypeInfo, PgValueRef};
-use rln_proof::RlnUserIdentity;
 use ark_bn254::Fr;
-use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use rln_proof::RlnUserIdentity;
 use sqlx::postgres::types::Oid;
+use sqlx::postgres::{PgArgumentBuffer, PgHasArrayType, PgTypeInfo, PgValueRef};
+use sqlx::{Decode, Encode, Postgres, Type};
+use std::sync::OnceLock;
 // internal
 use crate::tier::TierLimits;
 
-#[derive(Debug)]
-#[derive(sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow)]
 pub struct UserIdSqlx {
     pub id: i64,
 }
 
-#[derive(Debug)]
-#[derive(sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow)]
 pub struct UserSqlx {
     pub id: i64, // primary key
     pub address: Vec<u8>,
@@ -26,13 +24,12 @@ pub struct UserSqlx {
 
 #[derive(sqlx::FromRow)]
 pub struct TierLimitsSqlx {
-    pub id: i64, // primary key
+    pub id: i64,      // primary key
     pub name: String, // unique
     pub tier_limits: Option<sqlx::types::Json<TierLimits>>,
 }
 
-#[derive(Debug)]
-#[derive(sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow)]
 pub struct TxCounterSqlx {
     pub id: i64,
     pub address: Vec<u8>, // unique
@@ -58,7 +55,7 @@ pub struct DenyListSqlx {
 #[derive(sqlx::FromRow)]
 pub struct NullifierSqlx {
     pub nullifier: Vec<u8>, // primary key (part 1)
-    pub epoch: i64, // primary key (part 2)
+    pub epoch: i64,         // primary key (part 2)
 }
 
 // sqlx custom types
@@ -78,13 +75,18 @@ pub struct PgFrStruct {
 impl Type<Postgres> for PgFrStruct {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         // sqlx::postgres::PgTypeInfo::with_name("pgfr")
-        let oid = *PGFR_OID.get().expect("PGFR_OID must be initialized in main()");
+        let oid = *PGFR_OID
+            .get()
+            .expect("PGFR_OID must be initialized in main()");
         PgTypeInfo::with_oid(oid)
     }
 }
 
 impl<'q> Encode<'q, Postgres> for PgFrStruct {
-    fn encode_by_ref(&self, buf: &mut PgArgumentBuffer) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync>> {
+    fn encode_by_ref(
+        &self,
+        buf: &mut PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync>> {
         let mut temp_buf = Vec::with_capacity(32);
         self.inner.serialize_compressed(&mut temp_buf)?;
         buf.extend_from_slice(&temp_buf);
@@ -103,14 +105,16 @@ impl<'r> Decode<'r, Postgres> for PgFrStruct {
 impl PgHasArrayType for PgFrStruct {
     fn array_type_info() -> PgTypeInfo {
         // PgTypeInfo::with_name("_pgfr")
-        let oid = *PGFR_ARRAY_OID.get().expect("PGFR_ARRAY_OID must be initialized");
+        let oid = *PGFR_ARRAY_OID
+            .get()
+            .expect("PGFR_ARRAY_OID must be initialized");
         PgTypeInfo::with_oid(oid)
     }
 }
 
 #[derive(Default, Debug)]
 pub struct MerkleProof {
-    pub inner: Vec<(i64, Fr)>
+    pub inner: Vec<(i64, Fr)>,
 }
 
 impl Type<Postgres> for MerkleProof {

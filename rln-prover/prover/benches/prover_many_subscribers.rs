@@ -16,7 +16,7 @@ use tokio::sync::Notify;
 use tokio::task::JoinSet;
 use tonic::Response;
 // internal
-use prover::{AppArgs, MockUser, run_prover, UserDb2Config};
+use prover::{AppArgs, MockUser, UserDb2Config, run_prover};
 
 // grpc
 pub mod prover_proto {
@@ -168,7 +168,7 @@ fn proof_generation_bench(c: &mut Criterion) {
     // Tokio notify - wait for some time after spawning run_prover then notify it's ready to accept
     // connections
     let notify_start = Arc::new(Notify::new());
-    
+
     // Spawn prover
     let cfg = UserDb2Config {
         tree_count: 1,
@@ -178,9 +178,10 @@ fn proof_generation_bench(c: &mut Criterion) {
     let notify_start_1 = notify_start.clone();
     rt.spawn(async move {
         // Setup db
-        let (db_url, _db_conn) = create_database_connection("prover_benches_prover_many_subscriber", true, cfg)
-            .await
-            .unwrap();
+        let (db_url, _db_conn) =
+            create_database_connection("prover_benches_prover_many_subscriber", true, cfg)
+                .await
+                .unwrap();
         app_args.db_url = Some(db_url);
 
         tokio::spawn(run_prover(app_args));

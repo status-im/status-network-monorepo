@@ -16,7 +16,7 @@ use tokio::sync::Notify;
 use tokio::task::JoinSet;
 use tonic::Response;
 // internal
-use prover::{AppArgs, MockUser, run_prover, UserDb2Config};
+use prover::{AppArgs, MockUser, UserDb2Config, run_prover};
 
 // grpc
 pub mod prover_proto {
@@ -220,9 +220,10 @@ fn proof_generation_bench(c: &mut Criterion) {
     let notify_start_1 = notify_start.clone();
     rt.spawn(async move {
         // Setup db
-        let (db_url, _db_conn) = create_database_connection("prover_benches_prover_bench", true, cfg)
-            .await
-            .unwrap();
+        let (db_url, _db_conn) =
+            create_database_connection("prover_benches_prover_bench", true, cfg)
+                .await
+                .unwrap();
         app_args.db_url = Some(db_url);
 
         tokio::spawn(run_prover(app_args));

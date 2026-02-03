@@ -23,9 +23,9 @@ mod proof_service_tests;
 #[cfg(test)]
 pub mod tests_common;
 mod user_db_2;
+mod user_db_2_entities;
 mod user_db_2_tests;
 mod user_db_tests;
-mod user_db_2_entities;
 
 // std
 use std::net::SocketAddr;
@@ -35,22 +35,18 @@ use std::time::Duration;
 use alloy::{
     network::EthereumWallet,
     providers::{ProviderBuilder, WsConnect},
-    signers::local::PrivateKeySigner
+    signers::local::PrivateKeySigner,
 };
 // use prover_db_migration::{Migrator, MigratorTrait};
 // use sea_orm::Database;
+use prover_db_migration_sqlx::{MigrationConfig, Migrator};
+use sqlx::{
+    Decode, Encode, Pool, Type,
+    postgres::{PgArgumentBuffer, PgHasArrayType, PgTypeInfo, PgValueRef, Postgres, types::Oid},
+};
 use tokio::task::JoinSet;
 use tracing::{debug, info};
 use zeroize::Zeroizing;
-use sqlx::{postgres::{
-    PgHasArrayType,
-    PgTypeInfo,
-    types::Oid,
-    PgArgumentBuffer,
-    PgValueRef,
-    Postgres
-}, Type, Encode, Decode, Pool};
-use prover_db_migration_sqlx::{MigrationConfig, Migrator};
 // internal
 pub use crate::args::{ARGS_DEFAULT_GENESIS, AppArgs, AppArgsConfig};
 use crate::epoch_service::EpochService;
@@ -68,10 +64,7 @@ use crate::user_db_error::{RegisterError2, UserDb2OpenError};
 use crate::user_db_service::UserDbService;
 use crate::user_db_types::RateLimit;
 use rln_proof::RlnIdentifier;
-use smart_contract::{
-    KarmaTiers::KarmaTiersInstance,
-    KarmaTiersError, TIER_LIMITS
-};
+use smart_contract::{KarmaTiers::KarmaTiersInstance, KarmaTiersError, TIER_LIMITS};
 
 pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
     // Epoch service with configurable epoch and slice duration
@@ -170,7 +163,8 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
         max_tree_count: user_db_config.max_tree_count as i64,
         tree_depth: user_db_config.tree_depth as i16,
     };
-    migrator.up(db_conn.clone(), migration_config)
+    migrator
+        .up(db_conn.clone(), migration_config)
         .await
         .map_err(UserDb2OpenError::from)?;
 

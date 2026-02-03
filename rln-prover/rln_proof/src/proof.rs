@@ -1,7 +1,6 @@
 // std
 // use std::io::Cursor;
 // third-party
-use serde::{Deserialize, Serialize};
 use ark_bn254::{Bn254, Fr};
 use ark_groth16::{Proof, ProvingKey};
 use ark_relations::r1cs::ConstraintMatrices;
@@ -17,6 +16,7 @@ use rln::{
         RLNProofValues, generate_proof, proof_values_from_witness, rln_witness_from_values,
     },
 };
+use serde::{Deserialize, Serialize};
 // use rln::poseidon_tree::MerkleProof;
 // use zerokit_utils::ZerokitMerkleProof;
 // internal

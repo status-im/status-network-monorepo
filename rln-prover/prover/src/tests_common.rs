@@ -1,10 +1,10 @@
 // use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
 // use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
 
+use crate::user_db_2::UserDb2Config;
+use prover_db_migration_sqlx::{MigrationConfig, Migrator};
 use sqlx::error::Error as SqlxError;
 use sqlx::{Pool, Postgres};
-use prover_db_migration_sqlx::{MigrationConfig, Migrator};
-use crate::user_db_2::UserDb2Config;
 
 pub async fn create_database_connection(
     // f_name: &str,
@@ -13,7 +13,6 @@ pub async fn create_database_connection(
     db_refresh: bool,
     config: UserDb2Config,
 ) -> Result<(String, Pool<Postgres>), SqlxError> {
-
     // Drop / Create db_name then return a connection to it
 
     let db_url_base = "postgres://postgres:postgres@localhost";
@@ -25,14 +24,10 @@ pub async fn create_database_connection(
         let db = sqlx::PgPool::connect(db_url_0.as_str()).await?;
 
         let query_drop = format!("DROP DATABASE IF EXISTS {}", db_name);
-        let _res = sqlx::query(query_drop.as_str())
-            .execute(&db)
-            .await?;
+        let _res = sqlx::query(query_drop.as_str()).execute(&db).await?;
 
         let query_crate = format!("CREATE DATABASE {}", db_name);
-        let _res = sqlx::query(query_crate.as_str())
-            .execute(&db)
-            .await?;
+        let _res = sqlx::query(query_crate.as_str()).execute(&db).await?;
 
         db.close().await;
     }

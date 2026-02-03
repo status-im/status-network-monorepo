@@ -6,10 +6,7 @@ use std::sync::Arc;
 use tokio::sync::Notify;
 use tracing::debug;
 // sqlx
-use sqlx::{
-    pool::Pool,
-    Postgres
-};
+use sqlx::{Postgres, pool::Pool};
 // internal
 use crate::epoch_service::{Epoch, EpochSlice};
 use crate::error::AppError2;

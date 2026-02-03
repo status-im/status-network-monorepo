@@ -13,12 +13,8 @@ mod tests {
     use parking_lot::RwLock;
     // use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
     // sqlx
-    use sqlx::{
-        error::Error as SqlxError,
-        Pool,
-        Postgres,
-    };
     use crate::tests_common::create_database_connection;
+    use sqlx::{Pool, Postgres, error::Error as SqlxError};
     // internal
     use crate::user_db_error::RegisterError2;
     use crate::user_db_types::EpochCounter;
@@ -43,9 +39,14 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
-        let db_conn = create_database_connection("user_db_tests_test_incr_tx_counter_2", true, config.clone())
-            .await
-            .unwrap().1;
+        let db_conn = create_database_connection(
+            "user_db_tests_test_incr_tx_counter_2",
+            true,
+            config.clone(),
+        )
+        .await
+        .unwrap()
+        .1;
 
         let user_db = UserDb2::new(
             db_conn,
@@ -54,8 +55,8 @@ mod tests {
             Default::default(),
             Default::default(),
         )
-            .await
-            .expect("Cannot create UserDb");
+        .await
+        .expect("Cannot create UserDb");
 
         // Register users
         user_db.register_user(ADDR_1).await.unwrap();
@@ -116,9 +117,13 @@ mod tests {
 
         let addr = Address::new([0; 20]);
         {
-            let (_, db_conn) = create_database_connection("user_db_tests_test_persistent_storage", true, config.clone())
-                .await
-                .unwrap();
+            let (_, db_conn) = create_database_connection(
+                "user_db_tests_test_persistent_storage",
+                true,
+                config.clone(),
+            )
+            .await
+            .unwrap();
 
             let user_db = UserDb2::new(
                 db_conn.clone(),
@@ -127,8 +132,8 @@ mod tests {
                 Default::default(),
                 Default::default(),
             )
-                .await
-                .expect("Cannot create UserDb");
+            .await
+            .expect("Cannot create UserDb");
 
             // Register user
             user_db.register_user(ADDR_1).await.unwrap();
@@ -163,10 +168,13 @@ mod tests {
 
         {
             // Reopen Db and check that is inside
-            let (_, db_conn) =
-                create_database_connection("user_db_tests_test_persistent_storage", false, config.clone())
-                    .await
-                    .unwrap();
+            let (_, db_conn) = create_database_connection(
+                "user_db_tests_test_persistent_storage",
+                false,
+                config.clone(),
+            )
+            .await
+            .unwrap();
 
             let user_db = UserDb2::new(
                 db_conn,
@@ -175,8 +183,8 @@ mod tests {
                 Default::default(),
                 Default::default(),
             )
-                .await
-                .expect("Cannot create UserDb");
+            .await
+            .expect("Cannot create UserDb");
 
             assert!(!user_db.has_user(&addr).await.unwrap());
             assert!(user_db.has_user(&ADDR_1).await.unwrap());
@@ -214,9 +222,10 @@ mod tests {
         };
 
         {
-            let (_, db_conn) = create_database_connection("user_db_tests_test_multi_tree", true, config.clone())
-                .await
-                .unwrap();
+            let (_, db_conn) =
+                create_database_connection("user_db_tests_test_multi_tree", true, config.clone())
+                    .await
+                    .unwrap();
 
             let user_db = UserDb2::new(
                 db_conn.clone(),
@@ -225,8 +234,8 @@ mod tests {
                 Default::default(),
                 Default::default(),
             )
-                .await
-                .expect("Cannot create UserDb");
+            .await
+            .expect("Cannot create UserDb");
 
             assert_eq!(user_db.get_db_tree_count().await.unwrap(), tree_count);
             // assert_eq!(user_db.get_vec_tree_count().await as u64, tree_count);
@@ -247,9 +256,10 @@ mod tests {
         {
             // reload UserDb from disk and check indexes
 
-            let (_, db_conn) = create_database_connection("user_db_tests_test_multi_tree", false, config.clone())
-                .await
-                .unwrap();
+            let (_, db_conn) =
+                create_database_connection("user_db_tests_test_multi_tree", false, config.clone())
+                    .await
+                    .unwrap();
 
             let user_db = UserDb2::new(
                 db_conn,
@@ -258,8 +268,8 @@ mod tests {
                 Default::default(),
                 Default::default(),
             )
-                .await
-                .expect("Cannot create UserDb");
+            .await
+            .expect("Cannot create UserDb");
 
             assert_eq!(user_db.get_db_tree_count().await.unwrap(), tree_count);
             // assert_eq!(user_db.get_vec_tree_count().await as u64, tree_count);
@@ -289,9 +299,10 @@ mod tests {
             tree_depth,
         };
 
-        let (_, db_conn) = create_database_connection("user_db_tests_test_new_multi_tree", true, config.clone())
-            .await
-            .unwrap();
+        let (_, db_conn) =
+            create_database_connection("user_db_tests_test_new_multi_tree", true, config.clone())
+                .await
+                .unwrap();
 
         let user_db = UserDb2::new(
             db_conn.clone(),
@@ -300,13 +311,10 @@ mod tests {
             Default::default(),
             Default::default(),
         )
-            .await
-            .expect("Cannot create UserDb");
+        .await
+        .expect("Cannot create UserDb");
 
-        assert_eq!(
-            user_db.get_db_tree_count().await.unwrap(),
-            max_tree_count
-        );
+        assert_eq!(user_db.get_db_tree_count().await.unwrap(), max_tree_count);
         // assert_eq!(
         //     user_db.get_vec_tree_count().await as u64,
         //     tree_count_initial
@@ -336,9 +344,13 @@ mod tests {
         drop(user_db);
 
         {
-            let (_, db_conn) = create_database_connection("user_db_tests_test_new_multi_tree", false, config.clone())
-                .await
-                .unwrap();
+            let (_, db_conn) = create_database_connection(
+                "user_db_tests_test_new_multi_tree",
+                false,
+                config.clone(),
+            )
+            .await
+            .unwrap();
 
             let user_db = UserDb2::new(
                 db_conn.clone(),
@@ -347,8 +359,8 @@ mod tests {
                 Default::default(),
                 Default::default(),
             )
-                .await
-                .expect("Cannot create UserDb");
+            .await
+            .expect("Cannot create UserDb");
 
             assert_eq!(
                 user_db.get_db_tree_count().await.unwrap(),
@@ -363,7 +375,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_deny_list_1() -> Result<(), SqlxError> {
-
         // Check UserDb + deny list basic functionalities
 
         let epoch_store = Arc::new(RwLock::new(Default::default()));
@@ -375,8 +386,9 @@ mod tests {
             tree_depth,
         };
 
-        let (_, db_conn) = create_database_connection("user_db_tests_test_deny_list_1", true, config.clone())
-            .await?;
+        let (_, db_conn) =
+            create_database_connection("user_db_tests_test_deny_list_1", true, config.clone())
+                .await?;
 
         let user_db = UserDb2::new(
             db_conn.clone(),
@@ -384,7 +396,8 @@ mod tests {
             epoch_store.clone(),
             Default::default(),
             Default::default(),
-        ).await?;
+        )
+        .await?;
 
         // Define some custom 'now' functions so we are in control
         let now_v = 10;
@@ -396,11 +409,19 @@ mod tests {
 
         let ttl = 5;
         user_db.register_user(ADDR_3).await.unwrap();
-        user_db.add_to_deny_list(&ADDR_3, None, Some(ttl), &now).await?;
+        user_db
+            .add_to_deny_list(&ADDR_3, None, Some(ttl), &now)
+            .await?;
 
         assert_eq!(user_db.is_denied(&ADDR_3, &now).await?, true);
         // Check that in the future, ADDR_3 is not denied anymore
-        assert_eq!(user_db.is_denied(&ADDR_3, &|| Duration::from_secs(now_v) + Duration::from_secs(ttl as u64)).await?, false);
+        assert_eq!(
+            user_db
+                .is_denied(&ADDR_3, &|| Duration::from_secs(now_v)
+                    + Duration::from_secs(ttl as u64))
+                .await?,
+            false
+        );
         assert_eq!(user_db.is_denied(&ADDR_1, &now).await?, false);
         assert_eq!(user_db.is_denied(&ADDR_2, &now).await?, false);
 
@@ -409,25 +430,26 @@ mod tests {
         assert_eq!(user_db.is_denied(&ADDR_1, &now).await?, false);
         assert_eq!(user_db.is_denied(&ADDR_2, &now).await?, false);
 
-        user_db.add_to_deny_list(&ADDR_3, None, Some(5), &now2).await?;
+        user_db
+            .add_to_deny_list(&ADDR_3, None, Some(5), &now2)
+            .await?;
         assert_eq!(user_db.is_denied(&ADDR_3, &now2).await?, true);
-        let deny_list_entry = user_db.get_deny_list_entry(&ADDR_3, &now2)
-            .await?
-            .unwrap()
-            ;
+        let deny_list_entry = user_db.get_deny_list_entry(&ADDR_3, &now2).await?.unwrap();
 
         assert_eq!(
             Address::from_slice(deny_list_entry.address.as_slice()),
             ADDR_3
         );
-        assert_eq!(deny_list_entry.expires_at.unwrap(), (now2() + Duration::from_secs(5)).as_secs() as i64);
+        assert_eq!(
+            deny_list_entry.expires_at.unwrap(),
+            (now2() + Duration::from_secs(5)).as_secs() as i64
+        );
 
         Ok(())
     }
 
     #[tokio::test]
     async fn test_deny_list_upsert_res() -> Result<(), SqlxError> {
-
         // Check UserDb deny_list add_to_deny_list result
 
         let epoch_store = Arc::new(RwLock::new(Default::default()));
@@ -439,8 +461,9 @@ mod tests {
             tree_depth,
         };
 
-        let (_, db_conn) = create_database_connection("user_db_tests_test_deny_list_2", true, config.clone())
-            .await?;
+        let (_, db_conn) =
+            create_database_connection("user_db_tests_test_deny_list_2", true, config.clone())
+                .await?;
 
         let user_db = UserDb2::new(
             db_conn.clone(),
@@ -448,22 +471,32 @@ mod tests {
             epoch_store.clone(),
             Default::default(),
             Default::default(),
-        ).await?;
+        )
+        .await?;
 
         // Define some custom 'now' functions so we are in control
         let now = || Duration::from_secs(10);
         user_db.register_user(ADDR_3).await.unwrap();
         // Check this is an INSERT
-        assert_eq!(user_db.add_to_deny_list(&ADDR_3, None, Some(5), &now).await?, true);
+        assert_eq!(
+            user_db
+                .add_to_deny_list(&ADDR_3, None, Some(5), &now)
+                .await?,
+            true
+        );
         // Check this is an UPDATE
-        assert_eq!(user_db.add_to_deny_list(&ADDR_3, None, Some(7), &now).await?, false);
+        assert_eq!(
+            user_db
+                .add_to_deny_list(&ADDR_3, None, Some(7), &now)
+                .await?,
+            false
+        );
 
         Ok(())
     }
 
     #[tokio::test]
     async fn test_deny_list_cleanup() -> Result<(), SqlxError> {
-
         // Check UserDb deny_list cleanup
 
         let epoch_store = Arc::new(RwLock::new(Default::default()));
@@ -475,8 +508,9 @@ mod tests {
             tree_depth,
         };
 
-        let (_, db_conn) = create_database_connection("user_db_tests_test_deny_list_2", true, config.clone())
-            .await?;
+        let (_, db_conn) =
+            create_database_connection("user_db_tests_test_deny_list_2", true, config.clone())
+                .await?;
 
         let user_db = UserDb2::new(
             db_conn.clone(),
@@ -484,7 +518,8 @@ mod tests {
             epoch_store.clone(),
             Default::default(),
             Default::default(),
-        ).await?;
+        )
+        .await?;
 
         // Define some custom 'now' functions so we are in control
         let now_v = 10;
@@ -498,8 +533,12 @@ mod tests {
         user_db.register_user(ADDR_3).await.unwrap();
         user_db.register_user(ADDR_1).await.unwrap();
 
-        user_db.add_to_deny_list(&ADDR_3, None, Some(ttl as i64), &now).await?;
-        user_db.add_to_deny_list(&ADDR_1, None, Some(ttl as i64), &now2).await?;
+        user_db
+            .add_to_deny_list(&ADDR_3, None, Some(ttl as i64), &now)
+            .await?;
+        user_db
+            .add_to_deny_list(&ADDR_1, None, Some(ttl as i64), &now2)
+            .await?;
 
         // Will clean nothing (no expiration yet)
         user_db.cleanup_expired_deny_list_entries(&now).await?;
@@ -523,7 +562,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_nullifier_1() -> Result<(), SqlxError> {
-
         // Check UserDb nullifier basic functionalities
 
         let epoch_store = Arc::new(RwLock::new(Default::default()));
@@ -536,8 +574,9 @@ mod tests {
         };
 
         println!("create db conn...");
-        let (_, db_conn) = create_database_connection("user_db_tests_test_deny_list_1", true, config.clone())
-            .await?;
+        let (_, db_conn) =
+            create_database_connection("user_db_tests_test_deny_list_1", true, config.clone())
+                .await?;
         println!("create db conn DONE");
 
         let user_db = UserDb2::new(
@@ -546,19 +585,26 @@ mod tests {
             epoch_store.clone(),
             Default::default(),
             Default::default(),
-        ).await?;
+        )
+        .await?;
 
         let nullifier_1 = vec![1; 32];
         let epoch_1 = 1;
         let nullifier_2 = vec![1; 32];
         let epoch_2 = 42;
 
-        assert_eq!(user_db.nullifier_exists(&nullifier_1, epoch_1).await?, false);
+        assert_eq!(
+            user_db.nullifier_exists(&nullifier_1, epoch_1).await?,
+            false
+        );
 
         // INSERT
         assert_eq!(user_db.record_nullifier(&nullifier_1, epoch_1).await?, true);
         // UPDATE
-        assert_eq!(user_db.record_nullifier(&nullifier_1, epoch_1).await?, false);
+        assert_eq!(
+            user_db.record_nullifier(&nullifier_1, epoch_1).await?,
+            false
+        );
 
         assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_1).await?, 1);
 
@@ -567,7 +613,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_nullifier_cleanup() -> Result<(), SqlxError> {
-
         // Check UserDb nullifier cleanup
 
         let epoch_store = Arc::new(RwLock::new(Default::default()));
@@ -579,8 +624,9 @@ mod tests {
             tree_depth,
         };
 
-        let (_, db_conn) = create_database_connection("user_db_tests_test_deny_list_1", true, config.clone())
-            .await?;
+        let (_, db_conn) =
+            create_database_connection("user_db_tests_test_deny_list_1", true, config.clone())
+                .await?;
 
         let user_db = UserDb2::new(
             db_conn.clone(),
@@ -588,7 +634,8 @@ mod tests {
             epoch_store.clone(),
             Default::default(),
             Default::default(),
-        ).await?;
+        )
+        .await?;
 
         let nullifier_1 = vec![1; 32];
         let epoch_1 = 1;
@@ -605,11 +652,10 @@ mod tests {
         assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_1).await?, 0);
         assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_2).await?, 1);
 
-        assert_eq!(user_db.cleanup_old_nullifiers(epoch_2+1, 0).await?, 1);
+        assert_eq!(user_db.cleanup_old_nullifiers(epoch_2 + 1, 0).await?, 1);
         assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_1).await?, 0);
         assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_2).await?, 0);
 
         Ok(())
     }
 }
-

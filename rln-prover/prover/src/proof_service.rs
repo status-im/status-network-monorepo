@@ -135,9 +135,7 @@ impl ProofService {
                 let (path_indexes, path_elements): (Vec<u8>, Vec<Fr>) = merkle_proof_
                     .inner
                     .into_iter()
-                    .map(|(i, v)| {
-                        (i as u8, v)
-                    })
+                    .map(|(i, v)| (i as u8, v))
                     .unzip();
 
                 let message_id = {
@@ -170,7 +168,7 @@ impl ProofService {
                     rln_data,
                     epoch,
                     path_elements,
-                    path_indexes
+                    path_indexes,
                 ) {
                     Ok((proof, proof_values)) => (proof, proof_values),
                     Err(e) => {
@@ -406,9 +404,10 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
-        let (_, db_conn) = create_database_connection("proof_service_test_proof_generation", true, config.clone())
-            .await
-            .unwrap();
+        let (_, db_conn) =
+            create_database_connection("proof_service_test_proof_generation", true, config.clone())
+                .await
+                .unwrap();
         let user_db_service = UserDbService::new(
             db_conn,
             config,
