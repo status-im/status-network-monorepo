@@ -26,20 +26,21 @@ impl Migrator {
         sqlx::query(r#"
             CREATE TABLE IF NOT EXISTS users (
                 id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-                address CHAR(42) NOT NULL,
+                address BYTEA NOT NULL CHECK (OCTET_LENGTH(address) = 20),
                 rln_id JSON NOT NULL,
                 tree_index BIGINT,
                 index_in_merkle_tree BIGINT,
-                CONSTRAINT user_prod UNIQUE(address)
+                CONSTRAINT users_prod UNIQUE(address)
             )
         "#)
             .execute(&db)
             .await?;
 
+
         sqlx::query(r#"
             CREATE TABLE IF NOT EXISTS tx_counter (
                 id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-                address CHAR(42) NOT NULL,
+                address BYTEA NOT NULL REFERENCES users (address) ON DELETE CASCADE,
                 epoch BIGINT NOT NULL DEFAULT 0,
                 epoch_counter BIGINT NOT NULL DEFAULT 0,
                 CONSTRAINT tx_counter_prod UNIQUE(address)
@@ -64,7 +65,7 @@ impl Migrator {
         sqlx::query(r#"
             CREATE TABLE IF NOT EXISTS deny_list (
                 id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-                address CHAR(42) NOT NULL,
+                address BYTEA REFERENCES users (address) ON DELETE CASCADE,
                 expires_at BIGINT,
                 denied_at BIGINT,
                 CONSTRAINT deny_list_prod UNIQUE(address)
@@ -121,12 +122,10 @@ impl Migrator {
             .fetch_one(&db)
             .await?;
 
-        // println!("tree_count: {}", tree_count);
-
         if tree_count == 0 {
             for i in 0..config.max_tree_count {
 
-                // debug!("Creating merkle tree {}", i);
+                // println!("Creating merkle tree {}", i);
 
                 sqlx::query(r#"
                 INSERT INTO m_tree_config (tree_index, depth, next_index) VALUES ($1, $2, $3)

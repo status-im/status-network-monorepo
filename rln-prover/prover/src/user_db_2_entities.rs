@@ -18,7 +18,7 @@ pub struct UserIdSqlx {
 #[derive(sqlx::FromRow)]
 pub struct UserSqlx {
     pub id: i64, // primary key
-    pub address: String,
+    pub address: Vec<u8>,
     pub rln_id: sqlx::types::Json<RlnUserIdentity>,
     pub tree_index: i64,
     pub index_in_merkle_tree: i64,
@@ -35,7 +35,7 @@ pub struct TierLimitsSqlx {
 #[derive(sqlx::FromRow)]
 pub struct TxCounterSqlx {
     pub id: i64,
-    pub address: String, // TODO: unique?
+    pub address: Vec<u8>, // unique
     pub epoch: i64,
     pub epoch_counter: i64,
 }
@@ -50,7 +50,7 @@ pub struct MerkleTreeConfigSqlx {
 
 #[derive(sqlx::FromRow, Debug)]
 pub struct DenyListSqlx {
-    pub address: String, // primary key, unique
+    pub address: Vec<u8>, // unique
     pub expires_at: Option<i64>,
     pub denied_at: Option<i64>,
 }

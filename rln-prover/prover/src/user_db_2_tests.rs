@@ -29,41 +29,6 @@ mod tests {
     const ADDR_3: Address = address!("0x6d2e03b7EfFEae98BD302A9F836D0d6Ab0002766");
     const ADDR_4: Address = address!("0x7A4d20b913B97aD2F30B30610e212D7db11B4BC3");
 
-    /*
-    pub async fn create_database_connection(
-        db_name: &str,
-        db_refresh: bool,
-    ) -> Result<Pool<Postgres>, SqlxError> {
-        // Drop / Create db_name then return a connection to it
-
-        let db_url_base = "postgres://myuser:mysecretpassword@localhost";
-        let db_url = format!("{}/{}", db_url_base, "mydatabase");
-
-        if db_refresh {
-            let db = sqlx::PgPool::connect(db_url.as_str()).await?;
-
-            sqlx::query("DROP DATABASE IF EXISTS $1")
-                .bind(db_name)
-                .execute(&db)
-                .await?;
-
-            sqlx::query("CREATE DATABASE $1")
-                .bind(db_name)
-                .execute(&db)
-                .await?;
-
-            db.close().await;
-        }
-
-        let db_url_final = format!("{}/{}", db_url_base, db_name);
-        let db = sqlx::PgPool::connect(db_url.as_str()).await?;
-        // MigratorCreate::up(&db, None).await?;
-        todo!();
-
-        Ok(db)
-    }
-    */
-
     #[tokio::test]
     async fn test_incr_tx_counter_2() {
         // Same as test_incr_tx_counter but multi users AND multi incr
@@ -318,9 +283,10 @@ mod tests {
         let epoch_store = Arc::new(RwLock::new(Default::default()));
         let tree_depth = 1;
         let tree_count_initial = 1;
+        let max_tree_count = 2;
         let config = UserDb2Config {
             tree_count: tree_count_initial,
-            max_tree_count: 2,
+            max_tree_count,
             tree_depth,
         };
 
@@ -340,7 +306,7 @@ mod tests {
 
         assert_eq!(
             user_db.get_db_tree_count().await.unwrap(),
-            tree_count_initial
+            max_tree_count
         );
         // assert_eq!(
         //     user_db.get_vec_tree_count().await as u64,
@@ -430,6 +396,7 @@ mod tests {
         assert_eq!(user_db.is_denied(&ADDR_2, &now).await?, false);
 
         let ttl = 5;
+        user_db.register_user(ADDR_3).await.unwrap();
         user_db.add_to_deny_list(&ADDR_3, None, Some(ttl), &now).await?;
 
         assert_eq!(user_db.is_denied(&ADDR_3, &now).await?, true);
@@ -450,7 +417,10 @@ mod tests {
             .unwrap()
             ;
 
-        assert_eq!(deny_list_entry.address, ADDR_3.to_string().to_lowercase());
+        assert_eq!(
+            Address::from_slice(deny_list_entry.address.as_slice()),
+            ADDR_3
+        );
         assert_eq!(deny_list_entry.expires_at.unwrap(), (now2() + Duration::from_secs(5)).as_secs() as i64);
 
         Ok(())
@@ -483,6 +453,7 @@ mod tests {
 
         // Define some custom 'now' functions so we are in control
         let now = || Duration::from_secs(10);
+        user_db.register_user(ADDR_3).await.unwrap();
         // Check this is an INSERT
         assert_eq!(user_db.add_to_deny_list(&ADDR_3, None, Some(5), &now).await?, true);
         // Check this is an UPDATE
@@ -524,6 +495,9 @@ mod tests {
         let ttl = 5;
         let now3 = || Duration::from_secs(now_v + ttl);
         let now4 = || Duration::from_secs(now2_v + ttl);
+
+        user_db.register_user(ADDR_3).await.unwrap();
+        user_db.register_user(ADDR_1).await.unwrap();
 
         user_db.add_to_deny_list(&ADDR_3, None, Some(ttl as i64), &now).await?;
         user_db.add_to_deny_list(&ADDR_1, None, Some(ttl as i64), &now2).await?;
@@ -606,10 +580,8 @@ mod tests {
             tree_depth,
         };
 
-        println!("create db conn...");
         let (_, db_conn) = create_database_connection("user_db_tests_test_deny_list_1", true, config.clone())
             .await?;
-        println!("create db conn DONE");
 
         let user_db = UserDb2::new(
             db_conn.clone(),

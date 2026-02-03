@@ -469,7 +469,7 @@ where
         match self.user_db.get_deny_list_entry(&address, &now).await {
             Ok(Some(entry)) => Ok(Response::new(GetDenyListEntryReply {
                 resp: Some(DenyListResp::Entry(DenyListEntry {
-                    address: entry.address,
+                    address: Address::from_slice(entry.address.as_slice()).to_string(),
                     denied_at: entry.denied_at.unwrap_or(0),
                     expires_at: entry.expires_at,
                     reason: None, // Not stored for performance

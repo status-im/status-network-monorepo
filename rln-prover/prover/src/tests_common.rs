@@ -25,12 +25,12 @@ pub async fn create_database_connection(
         let db = sqlx::PgPool::connect(db_url_0.as_str()).await?;
 
         let query_drop = format!("DROP DATABASE IF EXISTS {}", db_name);
-        sqlx::query(query_drop.as_str())
+        let _res = sqlx::query(query_drop.as_str())
             .execute(&db)
             .await?;
 
         let query_crate = format!("CREATE DATABASE {}", db_name);
-        sqlx::query(query_crate.as_str())
+        let _res = sqlx::query(query_crate.as_str())
             .execute(&db)
             .await?;
 

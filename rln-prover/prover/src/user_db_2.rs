@@ -1,17 +1,18 @@
-use std::fmt::Formatter;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{
+    fmt::Formatter,
+    sync::Arc,
+    time::Duration
+};
 // third-party
 use alloy::primitives::{Address, U256};
 use ark_bn254::Fr;
 use ark_ff::AdditiveGroup;
 use chrono::Utc;
+use nom::AsBytes;
 use parking_lot::RwLock;
-use tokio::sync::RwLock as TokioRwLock;
 // RLN
 use rln::{hashers::poseidon_hash, protocol::keygen};
 // sqlx
-// use sqlx::{Pool, Postgres, FromRow};
 use sqlx::{postgres::{
     PgHasArrayType,
     PgTypeInfo,
@@ -121,7 +122,7 @@ impl UserDb2 {
 
     pub(crate) async fn has_user(&self, address: &Address) -> Result<bool, SqlxError> {
         let res: Option<UserIdSqlx> = sqlx::query_as("SELECT id FROM users WHERE address=$1 LIMIT 1")
-            .bind(address.to_string())
+            .bind(address.as_bytes())
             .fetch_optional(&self.db)
             .await?;
 
@@ -130,7 +131,7 @@ impl UserDb2 {
 
     pub(crate) async fn get_user(&self, address: &Address) -> Result<Option<UserSqlx>, SqlxError> {
         let res: Option<UserSqlx> = sqlx::query_as("SELECT * FROM users WHERE address=$1 LIMIT 1")
-            .bind(address.to_string())
+            .bind(address.as_bytes())
             .fetch_optional(&self.db)
             .await?;
 
@@ -194,7 +195,7 @@ impl UserDb2 {
         let mut txn = self.db.begin().await?;
 
         let res: Option<TxCounterSqlx> = sqlx::query_as("SELECT * FROM tx_counter WHERE address = $1 LIMIT 1")
-            .bind(address.to_string())
+            .bind(address.as_bytes())
             .fetch_optional(&mut *txn)
             .await?;
 
@@ -208,7 +209,7 @@ impl UserDb2 {
                 let res: TxCounterSqlx = sqlx::query_as("UPDATE tx_counter SET epoch = $1, epoch_counter = $2 WHERE address = $3 RETURNING *")
                     .bind(i64::from(epoch))
                     .bind(incr_value)
-                    .bind(address.to_string())
+                    .bind(address.as_bytes())
                     .fetch_one(&mut *txn)
                     .await?;
                 res
@@ -218,7 +219,7 @@ impl UserDb2 {
                 let res: TxCounterSqlx = sqlx::query_as("UPDATE tx_counter SET epoch = $1, epoch_counter = $2 WHERE address = $3 RETURNING *")
                     .bind(i64::from(epoch))
                     .bind(incr_value)
-                    .bind(address.to_string())
+                    .bind(address.as_bytes())
                     .fetch_one(&mut *txn)
                     .await?;
                 res
@@ -227,7 +228,7 @@ impl UserDb2 {
 
                 let res: TxCounterSqlx = sqlx::query_as("UPDATE tx_counter SET epoch_counter = $1 WHERE address = $2 RETURNING *")
                     .bind(model_epoch_counter.saturating_add(incr_value))
-                    .bind(address.to_string())
+                    .bind(address.as_bytes())
                     .fetch_one(&mut *txn)
                     .await?;
                 res
@@ -236,7 +237,7 @@ impl UserDb2 {
             } else {
 
                 let res: TxCounterSqlx = sqlx::query_as("INSERT INTO tx_counter (address, epoch, epoch_counter) VALUES ($1, $2, $3) RETURNING *")
-                    .bind(address.to_string())
+                    .bind(address.as_bytes())
                     .bind(i64::from(epoch))
                     .bind(incr_value)
                     .fetch_one(&mut *txn)
@@ -256,7 +257,7 @@ impl UserDb2 {
     ) -> Result<EpochCounter, TxCounterError2> {
 
         let res: Option<TxCounterSqlx> = sqlx::query_as("SELECT * FROM tx_counter WHERE address = $1 LIMIT 1")
-            .bind(address.to_string())
+            .bind(address.as_bytes())
             .fetch_optional(&self.db)
             .await?;
 
@@ -270,12 +271,13 @@ impl UserDb2 {
         let (epoch, _epoch_slice) = *self.epoch_store.read();
         let cmp = model.epoch == i64::from(epoch);
 
+        let address = Address::from_slice(model.address.as_slice());
         match cmp {
             true => {
                 // EpochCounter stored in DB == epoch store
                 // We query for an epoch and this is what is stored in the Db
                 tracing::debug!(
-                    address = %model.address,
+                    address = %address,
                     db_epoch = model.epoch,
                     current_epoch = i64::from(epoch),
                     epoch_counter = model.epoch_counter,
@@ -288,7 +290,7 @@ impl UserDb2 {
                 // We query for an epoch after what is stored in Db
                 // This can happen if no Tx has updated the epoch counter (yet)
                 tracing::warn!(
-                    address = %model.address,
+                    address = %address,
                     db_epoch = model.epoch,
                     current_epoch = i64::from(epoch),
                     epoch_counter = model.epoch_counter,
@@ -357,7 +359,7 @@ impl UserDb2 {
                     .await?;
 
                 let _res = sqlx::query("INSERT INTO users (address, rln_id, tree_index, index_in_merkle_tree) VALUES ($1, $2, $3, $4)")
-                    .bind(address.to_string())
+                    .bind(address.as_bytes())
                     .bind(serde_json::to_value(rln_identity).unwrap())
                     .bind(tree_config.tree_index)
                     .bind(tree_config.next_index)
@@ -365,7 +367,7 @@ impl UserDb2 {
                     .await?;
 
                 let _res = sqlx::query("INSERT INTO tx_counter (address) VALUES ($1)")
-                    .bind(address.to_string())
+                    .bind(address.as_bytes())
                     .execute(&mut *txn)
                     .await?;
 
@@ -384,7 +386,6 @@ impl UserDb2 {
         let user = self
             .get_user(address)
             .await?;
-            // .map_err(|e| MerkleTreeError::PDb(e.into()))?;
 
         if user.is_none() {
             // User not found (User not registered)
@@ -411,14 +412,14 @@ impl UserDb2 {
             .await?;
 
         sqlx::query("DELETE FROM users WHERE address = $1")
-            .bind(address.to_string())
+            .bind(address.as_bytes())
             .execute(&mut *txn)
             .await?;
-        sqlx::query("DELETE FROM tx_counter WHERE address = $1")
-            .bind(address.to_string())
-            .execute(&mut *txn)
-            .await?;
-        // TODO: delete in deny_list and others?
+        // Note: tx_counters has a foreign key on users.address + ON DELETE CASCADE
+        // sqlx::query("DELETE FROM tx_counter WHERE address = $1")
+        //     .bind(address.to_string())
+        //     .execute(&mut *txn)
+        //     .await?;
 
         txn.commit()
             .await?;
@@ -539,12 +540,11 @@ impl UserDb2 {
     /// Returns true if the address is denied (and not expired), false otherwise
     pub async fn is_denied<F: Fn() -> Duration>(&self, address: &Address, now: &F) -> Result<bool, SqlxError> {
 
-        let address_str = address.to_string().to_lowercase();
         let now_ = now().as_secs() as i64;
 
         // Single query: check if exists AND (no expiry OR not expired)
         let res: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM deny_list WHERE address = $1 AND (expires_at IS NULL OR expires_at > $2)")
-            .bind(address_str)
+            .bind(address.as_bytes())
             .bind(now_)
             .fetch_one(&self.db)
             .await?;
@@ -569,7 +569,6 @@ impl UserDb2 {
         now: &F,
     ) -> Result<bool, SqlxError> {
 
-        let address_str = address.to_string().to_lowercase();
         let now_ = now().as_secs() as i64;
         let expires_at = ttl_seconds.map(|ttl| now_ + ttl);
 
@@ -592,7 +591,7 @@ impl UserDb2 {
             INSERT INTO deny_list (address, expires_at, denied_at) VALUES ($1, $2, $3)
             ON CONFLICT (address) DO UPDATE SET expires_at = EXCLUDED.expires_at, denied_at = EXCLUDED.denied_at
             RETURNING (xmax = 0) as "is_insert!" "#)
-            .bind(address_str)
+            .bind(address.as_bytes())
             .bind(expires_at)
             .bind(now_)
             .fetch_one(&self.db)
@@ -608,9 +607,8 @@ impl UserDb2 {
     /// Returns true if the address was removed, false if it wasn't on the list
     pub async fn remove_from_deny_list(&self, address: &Address) -> Result<bool, SqlxError> {
 
-        let address_str = address.to_string().to_lowercase();
         let result = sqlx::query(r#"DELETE FROM deny_list WHERE address = $1"#)
-            .bind(address_str)
+            .bind(address.as_bytes())
             .execute(&self.db)
             .await?;
 
@@ -626,12 +624,11 @@ impl UserDb2 {
         now: &F,
     ) -> Result<Option<DenyListSqlx>, SqlxError> {
 
-        let address_str = address.to_string().to_lowercase();
         let now_ = now().as_secs() as i64;
 
         // Single query with expiry check
         let result: Option<DenyListSqlx> = sqlx::query_as("SELECT * FROM deny_list WHERE address = $1 AND (expires_at IS NULL OR expires_at > $2)")
-            .bind(address_str)
+            .bind(address.as_bytes())
             .bind(now_)
             .fetch_optional(&self.db)
             .await?;
@@ -717,7 +714,6 @@ impl UserDb2 {
     ) -> Result<u64, SqlxError> {
 
         let cutoff_epoch = current_epoch - keep_epochs;
-        println!("cutoff epoch: {}", cutoff_epoch);
         let result = sqlx::query("DELETE FROM nullifiers WHERE epoch < $1")
             .bind(cutoff_epoch)
             .execute(&self.db)
@@ -769,9 +765,8 @@ impl UserDb2 {
         &self,
         address: &Address,
     ) -> Result<Option<DenyListSqlx>, SqlxError> {
-        let address_str = address.to_string().to_lowercase();
         sqlx::query_as("SELECT * FROM deny_list WHERE address = $1")
-            .bind(address_str)
+            .bind(address.as_bytes())
             .fetch_optional(&self.db)
             .await
 
@@ -984,8 +979,8 @@ mod tests {
         user_db.register_user(ADDR_2).await.unwrap();
         let leaves_set_2 = user_db.get_merkle_tree_leave_set(0).await;
         assert_ne!(leaves_set_1, leaves_set_2);
-        println!("index addr 1: {}", leaves_set_1);
-        println!("index addr 2: {}", leaves_set_2);
+        // println!("index addr 1: {}", leaves_set_1);
+        // println!("index addr 2: {}", leaves_set_2);
 
         user_db.remove_user(&ADDR_2).await.unwrap();
         {
@@ -998,6 +993,8 @@ mod tests {
 
             assert_eq!(user_db.has_user(&ADDR_1).await.unwrap(), true);
             assert_eq!(user_db.has_user(&ADDR_2).await.unwrap(), false);
+            // Check tx_counter for user is deleted as well (foreign key)
+            assert_matches!(user_db.get_tx_counter(&ADDR_2).await, Err(TxCounterError2::NotRegistered(_)));
             // No reuse of index in PmTree (as this is a generic impl and could lead to security issue:
             // like replay attack...)
             assert_eq!(leaves_set_after_rm, leaves_set_2);
