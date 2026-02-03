@@ -16,9 +16,7 @@ abstract contract StakeMath is MultiplierPointMath {
     error StakeMath__InsufficientBalance();
     error StakeMath__AbsoluteMaxMPOverflow();
 
-    event StakeMathTest(uint256 lockTime);
     /// @notice Minimal lockup time
-
     uint256 public constant MIN_LOCKUP_PERIOD = 90 days;
     /// @notice Maximum lockup period
     uint256 public constant MAX_LOCKUP_PERIOD = MAX_MULTIPLIER * YEAR;
