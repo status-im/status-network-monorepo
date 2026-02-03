@@ -51,9 +51,9 @@ pub struct UserTierInfo2 {
 
 #[derive(Clone, Debug)]
 pub struct UserDb2Config {
-    pub(crate) tree_count: u64,
-    pub(crate) max_tree_count: u64,
-    pub(crate) tree_depth: u8,
+    pub tree_count: u64,
+    pub max_tree_count: u64,
+    pub tree_depth: u8,
 }
 
 #[derive(Clone)]
@@ -204,17 +204,7 @@ impl UserDb2 {
             let model_epoch = res.epoch;
             let model_epoch_counter = res.epoch_counter;
 
-            if model_epoch == 0 {
-
-                let res: TxCounterSqlx = sqlx::query_as("UPDATE tx_counter SET epoch = $1, epoch_counter = $2 WHERE address = $3 RETURNING *")
-                    .bind(i64::from(epoch))
-                    .bind(incr_value)
-                    .bind(address.as_bytes())
-                    .fetch_one(&mut *txn)
-                    .await?;
-                res
-
-            } else if epoch != Epoch::from(model_epoch) {
+            if model_epoch == 0 || epoch != Epoch::from(model_epoch) {
 
                 let res: TxCounterSqlx = sqlx::query_as("UPDATE tx_counter SET epoch = $1, epoch_counter = $2 WHERE address = $3 RETURNING *")
                     .bind(i64::from(epoch))
@@ -234,7 +224,7 @@ impl UserDb2 {
                 res
             }
 
-            } else {
+        } else {
 
                 let res: TxCounterSqlx = sqlx::query_as("INSERT INTO tx_counter (address, epoch, epoch_counter) VALUES ($1, $2, $3) RETURNING *")
                     .bind(address.as_bytes())

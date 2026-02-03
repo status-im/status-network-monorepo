@@ -1,3 +1,5 @@
+#![allow(clippy::explicit_auto_deref)] // allow: `&mut *txn` which is more explicit (Deref to Connection then take a exclusive ref)
+
 use sqlx::{Pool, Postgres, error::Error as SqlxError, PgConnection};
 
 #[derive(Clone)]

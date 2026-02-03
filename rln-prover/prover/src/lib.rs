@@ -63,7 +63,7 @@ use crate::proof_service::ProofService;
 use crate::tier::TierLimits;
 use crate::tiers_listener::TiersListener;
 use crate::user_db::MERKLE_TREE_HEIGHT;
-use crate::user_db_2::UserDb2Config;
+pub use crate::user_db_2::UserDb2Config;
 use crate::user_db_error::{RegisterError2, UserDb2OpenError};
 use crate::user_db_service::UserDbService;
 use crate::user_db_types::RateLimit;

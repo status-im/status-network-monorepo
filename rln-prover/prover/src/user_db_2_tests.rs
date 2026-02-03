@@ -21,8 +21,7 @@ mod tests {
     use crate::tests_common::create_database_connection;
     // internal
     use crate::user_db_error::RegisterError2;
-    use crate::user_db_types::{EpochCounter, EpochSliceCounter};
-    // use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
+    use crate::user_db_types::EpochCounter;
 
     const ADDR_1: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
     const ADDR_2: Address = address!("0xb20a608c624Ca5003905aA834De7156C68b2E1d0");
