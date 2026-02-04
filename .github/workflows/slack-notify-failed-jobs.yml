@@ -18,7 +18,7 @@ on:
 
 jobs:
   notify:
-    runs-on: gha-runner-scale-set-ubuntu-22.04-amd64-small
+    runs-on: ubuntu-latest
 
     steps:
       - name: Compute context values
