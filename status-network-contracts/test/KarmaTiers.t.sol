@@ -41,7 +41,7 @@ contract KarmaTiersTest is Test {
         newTiers[0] = KarmaTiers.Tier({ minKarma: 1, maxKarma: 100, name: "Bronze", txPerEpoch: 5 });
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(KarmaTiers.NonContiguousTiers.selector, 0, 0, 1));
+        vm.expectRevert(abi.encodeWithSelector(KarmaTiers.KarmaTiers__NonContiguousTiers.selector, 0, 0, 1));
         karmaTiers.updateTiers(newTiers);
     }
 
@@ -50,7 +50,7 @@ contract KarmaTiersTest is Test {
         newTiers[0] = KarmaTiers.Tier({ minKarma: 0, maxKarma: 100, name: "", txPerEpoch: 5 });
 
         vm.prank(owner);
-        vm.expectRevert(KarmaTiers.EmptyTierName.selector);
+        vm.expectRevert(KarmaTiers.KarmaTiers__EmptyTierName.selector);
         karmaTiers.updateTiers(newTiers);
     }
 
@@ -60,7 +60,7 @@ contract KarmaTiersTest is Test {
         newTiers[0] = KarmaTiers.Tier({ minKarma: 0, maxKarma: 100, name: longName, txPerEpoch: 5 });
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(KarmaTiers.TierNameTooLong.selector, 33, 32));
+        vm.expectRevert(abi.encodeWithSelector(KarmaTiers.KarmaTiers__TierNameTooLong.selector, 33, 32));
         karmaTiers.updateTiers(newTiers);
     }
 
@@ -70,7 +70,7 @@ contract KarmaTiersTest is Test {
         newTiers[1] = KarmaTiers.Tier({ minKarma: 102, maxKarma: 200, name: "Silver", txPerEpoch: 5 });
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(KarmaTiers.NonContiguousTiers.selector, 1, 101, 102));
+        vm.expectRevert(abi.encodeWithSelector(KarmaTiers.KarmaTiers__NonContiguousTiers.selector, 1, 101, 102));
         karmaTiers.updateTiers(newTiers);
     }
 
