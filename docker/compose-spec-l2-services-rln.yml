@@ -35,7 +35,7 @@ services:
   rln-prover:
     hostname: rln-prover
     container_name: rln-prover
-    image: status-rln-prover:20260118131133
+    image: 0xnadeem/status-network-rln-prover:v1.0.0
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo", "rln" ]
     ports:
       - "50051:50051"
@@ -65,7 +65,7 @@ services:
   sequencer:
     hostname: sequencer
     container_name: sequencer
-    image: linea-besu-minimal-rln:20260129122418-gasless-fix
+    image: 0xnadeem/status-network-besu:v1.0.0
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     ports:
       - "8545:8545"
@@ -173,7 +173,7 @@ services:
   l2-node-besu:
     hostname: l2-node-besu
     container_name: l2-node-besu
-    image: linea-besu-minimal-rln:20260129122418-gasless-fix
+    image: 0xnadeem/status-network-besu:v1.0.0
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     depends_on:
       sequencer:
@@ -238,7 +238,7 @@ services:
   l2-node-besu-follower:
     hostname: l2-node-besu-follower
     container_name: l2-node-besu-follower
-    image: linea-besu-minimal-rln:20260129122418-gasless-fix
+    image: 0xnadeem/status-network-besu:v1.0.0
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     depends_on:
       sequencer:
