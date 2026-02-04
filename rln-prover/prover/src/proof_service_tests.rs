@@ -23,13 +23,10 @@ mod tests {
     use crate::error::{AppError, AppError2, ProofGenerationStringError};
     use crate::proof_generation::{ProofGenerationData, ProofSendingData};
     use crate::proof_service::ProofService;
-    // use crate::user_db::{MERKLE_TREE_HEIGHT, UserDb, UserDbConfig};
-    use crate::user_db::MERKLE_TREE_HEIGHT;
-    use crate::user_db_2::{UserDb2, UserDb2Config};
+    use crate::tests_common::create_database_connection;
+    use crate::user_db_2::{MERKLE_TREE_HEIGHT, UserDb2, UserDb2Config};
     use crate::user_db_service::UserDbService;
     use crate::user_db_types::RateLimit;
-    // use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
-    use crate::tests_common::create_database_connection;
     use rln_proof::RlnIdentifier;
 
     const ADDR_1: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");

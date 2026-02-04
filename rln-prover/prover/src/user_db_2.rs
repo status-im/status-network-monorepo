@@ -4,7 +4,6 @@ use alloy::primitives::{Address, U256};
 use ark_bn254::Fr;
 use ark_ff::AdditiveGroup;
 use chrono::Utc;
-use nom::AsBytes;
 use parking_lot::RwLock;
 // RLN
 use rln::{hashers::poseidon_hash, protocol::keygen};
@@ -18,7 +17,7 @@ use sqlx::{
 // internal
 use crate::epoch_service::{Epoch, EpochSlice};
 use crate::tier::{TierLimit, TierLimits, TierMatch, TierName};
-use crate::user_db::UserTierInfo;
+// use crate::user_db::UserTierInfo;
 use crate::user_db_2_entities::{
     DenyListSqlx, MerkleProof, MerkleTreeConfigSqlx, PGFR_ARRAY_OID, PGFR_OID, PgFrStruct,
     TierLimitsSqlx, TxCounterSqlx, UserIdSqlx, UserSqlx,
@@ -31,6 +30,7 @@ use crate::user_db_types::{EpochCounter, EpochSliceCounter, RateLimit};
 use rln_proof::{ProverPoseidonHash, RlnUserIdentity};
 use smart_contract::KarmaAmountExt;
 
+pub const MERKLE_TREE_HEIGHT: u8 = 20;
 const TIER_LIMITS_KEY: &str = "CURRENT";
 const TIER_LIMITS_NEXT_KEY: &str = "NEXT";
 
@@ -118,7 +118,7 @@ impl UserDb2 {
     pub(crate) async fn has_user(&self, address: &Address) -> Result<bool, SqlxError> {
         let res: Option<UserIdSqlx> =
             sqlx::query_as("SELECT id FROM users WHERE address=$1 LIMIT 1")
-                .bind(address.as_bytes())
+                .bind(address.0.0)
                 .fetch_optional(&self.db)
                 .await?;
 
@@ -127,7 +127,7 @@ impl UserDb2 {
 
     pub(crate) async fn get_user(&self, address: &Address) -> Result<Option<UserSqlx>, SqlxError> {
         let res: Option<UserSqlx> = sqlx::query_as("SELECT * FROM users WHERE address=$1 LIMIT 1")
-            .bind(address.as_bytes())
+            .bind(address.0.0)
             .fetch_optional(&self.db)
             .await?;
 
@@ -190,7 +190,7 @@ impl UserDb2 {
 
         let res: Option<TxCounterSqlx> =
             sqlx::query_as("SELECT * FROM tx_counter WHERE address = $1 LIMIT 1")
-                .bind(address.as_bytes())
+                .bind(address.0.0)
                 .fetch_optional(&mut *txn)
                 .await?;
 
@@ -202,7 +202,7 @@ impl UserDb2 {
                 let res: TxCounterSqlx = sqlx::query_as("UPDATE tx_counter SET epoch = $1, epoch_counter = $2 WHERE address = $3 RETURNING *")
                     .bind(i64::from(epoch))
                     .bind(incr_value)
-                    .bind(address.as_bytes())
+                    .bind(address.0.0)
                     .fetch_one(&mut *txn)
                     .await?;
                 res
@@ -211,14 +211,14 @@ impl UserDb2 {
                     "UPDATE tx_counter SET epoch_counter = $1 WHERE address = $2 RETURNING *",
                 )
                 .bind(model_epoch_counter.saturating_add(incr_value))
-                .bind(address.as_bytes())
+                .bind(address.0.0)
                 .fetch_one(&mut *txn)
                 .await?;
                 res
             }
         } else {
             let res: TxCounterSqlx = sqlx::query_as("INSERT INTO tx_counter (address, epoch, epoch_counter) VALUES ($1, $2, $3) RETURNING *")
-                    .bind(address.as_bytes())
+                    .bind(address.0.0)
                     .bind(i64::from(epoch))
                     .bind(incr_value)
                     .fetch_one(&mut *txn)
@@ -238,7 +238,7 @@ impl UserDb2 {
     ) -> Result<EpochCounter, TxCounterError2> {
         let res: Option<TxCounterSqlx> =
             sqlx::query_as("SELECT * FROM tx_counter WHERE address = $1 LIMIT 1")
-                .bind(address.as_bytes())
+                .bind(address.0.0)
                 .fetch_optional(&self.db)
                 .await?;
 
@@ -342,7 +342,7 @@ impl UserDb2 {
                     .await?;
 
                 let _res = sqlx::query("INSERT INTO users (address, rln_id, tree_index, index_in_merkle_tree) VALUES ($1, $2, $3, $4)")
-                    .bind(address.as_bytes())
+                    .bind(address.0.0)
                     .bind(serde_json::to_value(rln_identity).unwrap())
                     .bind(tree_config.tree_index)
                     .bind(tree_config.next_index)
@@ -350,7 +350,7 @@ impl UserDb2 {
                     .await?;
 
                 let _res = sqlx::query("INSERT INTO tx_counter (address) VALUES ($1)")
-                    .bind(address.as_bytes())
+                    .bind(address.0.0)
                     .execute(&mut *txn)
                     .await?;
             }
@@ -389,7 +389,7 @@ impl UserDb2 {
             .await?;
 
         sqlx::query("DELETE FROM users WHERE address = $1")
-            .bind(address.as_bytes())
+            .bind(address.0.0)
             .execute(&mut *txn)
             .await?;
         // Note: tx_counters has a foreign key on users.address + ON DELETE CASCADE
@@ -521,7 +521,7 @@ impl UserDb2 {
 
         // Single query: check if exists AND (no expiry OR not expired)
         let res: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM deny_list WHERE address = $1 AND (expires_at IS NULL OR expires_at > $2)")
-            .bind(address.as_bytes())
+            .bind(address.0.0)
             .bind(now_)
             .fetch_one(&self.db)
             .await?;
@@ -567,7 +567,7 @@ impl UserDb2 {
             INSERT INTO deny_list (address, expires_at, denied_at) VALUES ($1, $2, $3)
             ON CONFLICT (address) DO UPDATE SET expires_at = EXCLUDED.expires_at, denied_at = EXCLUDED.denied_at
             RETURNING (xmax = 0) as "is_insert!" "#)
-            .bind(address.as_bytes())
+            .bind(address.0.0)
             .bind(expires_at)
             .bind(now_)
             .fetch_one(&self.db)
@@ -582,7 +582,7 @@ impl UserDb2 {
     /// Returns true if the address was removed, false if it wasn't on the list
     pub async fn remove_from_deny_list(&self, address: &Address) -> Result<bool, SqlxError> {
         let result = sqlx::query(r#"DELETE FROM deny_list WHERE address = $1"#)
-            .bind(address.as_bytes())
+            .bind(address.0.0)
             .execute(&self.db)
             .await?;
 
@@ -601,7 +601,7 @@ impl UserDb2 {
 
         // Single query with expiry check
         let result: Option<DenyListSqlx> = sqlx::query_as("SELECT * FROM deny_list WHERE address = $1 AND (expires_at IS NULL OR expires_at > $2)")
-            .bind(address.as_bytes())
+            .bind(address.0.0)
             .bind(now_)
             .fetch_optional(&self.db)
             .await?;
@@ -744,7 +744,7 @@ impl UserDb2 {
         address: &Address,
     ) -> Result<Option<DenyListSqlx>, SqlxError> {
         sqlx::query_as("SELECT * FROM deny_list WHERE address = $1")
-            .bind(address.as_bytes())
+            .bind(address.0.0)
             .fetch_optional(&self.db)
             .await
     }
@@ -937,7 +937,7 @@ mod tests {
         let config = UserDb2Config {
             tree_count: 1,
             max_tree_count: 1,
-            tree_depth: crate::user_db::MERKLE_TREE_HEIGHT,
+            tree_depth: MERKLE_TREE_HEIGHT,
         };
         let db_conn = create_database_connection("user_db_test_user_remove", true, config.clone())
             .await

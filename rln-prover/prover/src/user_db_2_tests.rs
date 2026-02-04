@@ -6,15 +6,13 @@ mod tests {
     use std::time::Duration;
     // third-party
     use crate::epoch_service::{Epoch, EpochSlice};
-    use crate::user_db::MERKLE_TREE_HEIGHT;
-    use crate::user_db_2::{UserDb2, UserDb2Config};
+    use crate::user_db_2::{MERKLE_TREE_HEIGHT, UserDb2, UserDb2Config};
     use alloy::primitives::{Address, address};
     use claims::assert_matches;
     use parking_lot::RwLock;
-    // use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
     // sqlx
     use crate::tests_common::create_database_connection;
-    use sqlx::{Pool, Postgres, error::Error as SqlxError};
+    use sqlx::error::Error as SqlxError;
     // internal
     use crate::user_db_error::RegisterError2;
     use crate::user_db_types::EpochCounter;

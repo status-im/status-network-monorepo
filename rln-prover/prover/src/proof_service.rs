@@ -293,8 +293,7 @@ mod tests {
     };
     // internal
     use crate::tests_common::create_database_connection;
-    use crate::user_db::MERKLE_TREE_HEIGHT;
-    use crate::user_db_2::UserDb2Config;
+    use crate::user_db_2::{MERKLE_TREE_HEIGHT, UserDb2Config};
     use crate::user_db_service::UserDbService;
     use rln_proof::RlnIdentifier;
 

@@ -318,10 +318,8 @@ mod tests {
     use parking_lot::RwLock;
     // internal
     use crate::epoch_service::{Epoch, EpochSlice};
-    use crate::user_db::MERKLE_TREE_HEIGHT;
-    // use crate::user_db::{MERKLE_TREE_HEIGHT, UserDbConfig};
     use crate::tests_common::create_database_connection;
-    use crate::user_db_2::UserDb2Config;
+    use crate::user_db_2::{MERKLE_TREE_HEIGHT, UserDb2Config};
     use crate::user_db_service::UserDbService;
     // use function_name::named;
 

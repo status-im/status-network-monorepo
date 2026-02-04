@@ -9,6 +9,7 @@ use crate::tier::ValidateTierLimitsError;
 // TODO: define MerkleTreeError here?
 // use crate::user_db_2::MerkleTreeError;
 
+/*
 #[derive(Debug, thiserror::Error)]
 pub enum UserDbOpenError {
     #[error(transparent)]
@@ -26,7 +27,8 @@ pub enum UserDbOpenError {
     #[error(transparent)]
     IoError(#[from] std::io::Error),
 }
-
+*/
+/*
 #[derive(thiserror::Error, Debug)]
 pub enum RegisterError {
     #[error("User (address: {0:?}) has already been registered")]
@@ -50,6 +52,7 @@ pub enum TxCounterError {
     #[error(transparent)]
     Db(#[from] rocksdb::Error),
 }
+*/
 
 /*
 #[derive(thiserror::Error, Debug, PartialEq, Clone)]
@@ -61,6 +64,7 @@ pub enum MerkleTreeIndexError {
 }
 */
 
+/*
 #[derive(thiserror::Error, Debug, PartialEq, Clone)]
 pub enum DbError {
     #[error("Uninitialized counter")]
@@ -84,6 +88,7 @@ pub enum SetTierLimitsError {
     #[error(transparent)]
     Db(#[from] rocksdb::Error),
 }
+*/
 
 #[derive(Debug, thiserror::Error)]
 pub enum UserTierInfoError<E: std::error::Error> {
@@ -91,10 +96,10 @@ pub enum UserTierInfoError<E: std::error::Error> {
     NotRegistered(Address),
     #[error(transparent)]
     Contract(E),
-    #[error(transparent)]
-    TxCounter(#[from] TxCounterError),
-    #[error(transparent)]
-    Db(#[from] rocksdb::Error),
+    // #[error(transparent)]
+    // TxCounter(#[from] TxCounterError),
+    // #[error(transparent)]
+    // Db(#[from] rocksdb::Error),
 }
 
 // UserDb2

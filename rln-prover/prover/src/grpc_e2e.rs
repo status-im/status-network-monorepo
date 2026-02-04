@@ -25,35 +25,13 @@ mod tests {
         tonic::include_proto!("prover");
     }
     use crate::tests_common::create_database_connection;
-    use crate::user_db::MERKLE_TREE_HEIGHT;
-    use crate::user_db_2::UserDb2Config;
+    use crate::user_db_2::{MERKLE_TREE_HEIGHT, UserDb2Config};
     use prover_proto::get_user_tier_info_reply::Resp;
     use prover_proto::{
         Address as GrpcAddress, GetUserTierInfoReply, GetUserTierInfoRequest, RlnProofFilter,
         RlnProofReply, SendTransactionReply, SendTransactionRequest, U256 as GrpcU256,
         Wei as GrpcWei, rln_prover_client::RlnProverClient,
     };
-    /*
-    async fn register_users(port: u16, addresses: Vec<Address>) {
-        let url = format!("http://127.0.0.1:{}", port);
-        let mut client = RlnProverClient::connect(url).await.unwrap();
-
-        for address in addresses {
-            let addr = GrpcAddress {
-                value: address.to_vec(),
-            };
-
-            let request_0 = RegisterUserRequest { user: Some(addr) };
-            let request = tonic::Request::new(request_0);
-            let response: Response<RegisterUserReply> = client.register_user(request).await.unwrap();
-
-            assert_eq!(
-                RegistrationStatus::try_from(response.into_inner().status).unwrap(),
-                RegistrationStatus::Success
-            );
-        }
-    }
-    */
 
     async fn query_user_info(port: u16, addresses: Vec<Address>) -> Vec<GetUserTierInfoReply> {
         let url = format!("http://127.0.0.1:{port}");
@@ -74,56 +52,6 @@ mod tests {
 
         result
     }
-
-    /*
-    #[tokio::test]
-    #[traced_test]
-    async fn test_grpc_register_users() {
-        let addresses = vec![
-            Address::from_str("0xd8da6bf26964af9d7eed9e03e53415d37aa96045").unwrap(),
-            Address::from_str("0xb20a608c624Ca5003905aA834De7156C68b2E1d0").unwrap(),
-        ];
-
-        let temp_folder = tempfile::tempdir().unwrap();
-        let temp_folder_tree = tempfile::tempdir().unwrap();
-
-        let port = 50051;
-        let app_args = AppArgs {
-            ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            port,
-            ws_rpc_url: None,
-            db_path: temp_folder.path().to_path_buf(),
-            merkle_tree_path: temp_folder_tree.path().to_path_buf(),
-            ksc_address: None,
-            rlnsc_address: None,
-            tsc_address: None,
-            mock_sc: Some(true),
-            mock_user: None,
-            config_path: Default::default(),
-            no_config: Some(true),
-            metrics_ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            metrics_port: 30031,
-            broadcast_channel_size: 100,
-            proof_service_count: 16,
-            transaction_channel_size: 100,
-            proof_sender_channel_size: 100,
-        };
-
-        info!("Starting prover...");
-        let prover_handle = task::spawn(run_prover(app_args));
-        // Wait for the prover to be ready
-        // Note: if unit test is failing - maybe add an optional notification when service is ready
-        tokio::time::sleep(Duration::from_secs(5)).await;
-        info!("Registering some users...");
-        register_users(port, addresses.clone()).await;
-        info!("Query info for these new users...");
-        let res = query_user_info(port, addresses.clone()).await;
-        assert_eq!(res.len(), addresses.len());
-        info!("Aborting prover...");
-        prover_handle.abort();
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-    */
 
     #[derive(Default)]
     struct TxData {

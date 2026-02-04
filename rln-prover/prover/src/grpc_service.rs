@@ -27,7 +27,7 @@ use crate::metrics::{
     PROOF_SERVICES_CHANNEL_QUEUE_LEN, SEND_TRANSACTION_REQUESTS,
 };
 use crate::proof_generation::{ProofGenerationData, ProofSendingData};
-use crate::user_db::UserTierInfo;
+// use crate::user_db::UserTierInfo;
 use rln_proof::RlnIdentifier;
 use smart_contract::{KarmaAmountExt, KarmaSC::KarmaSCInstance, MockKarmaSc};
 
@@ -729,6 +729,7 @@ impl<P: Provider + Clone + Send + Sync + 'static> GrpcProverService<P> {
     }
 }
 
+/*
 /// UserTierInfo to UserTierInfoResult (Grpc message) conversion
 impl From<UserTierInfo> for UserTierInfoResult {
     fn from(tier_info: UserTierInfo) -> Self {
@@ -739,16 +740,19 @@ impl From<UserTierInfo> for UserTierInfoResult {
             tier: None,
         };
 
-        if tier_info.tier_name.is_some() && tier_info.tier_limit.is_some() {
+        if let Some(tier_name) = tier_info.tier_name
+            && let Some(tier_limit) = tier_info.tier_limit
+        {
             res.tier = Some(Tier {
-                name: tier_info.tier_name.unwrap().into(),
-                quota: tier_info.tier_limit.unwrap().into(),
+                name: tier_name.into(),
+                quota: tier_limit.into(),
             })
         }
 
         res
     }
 }
+*/
 
 /// UserTierInfo2 to UserTierInfoResult (Grpc message) conversion
 impl From<UserTierInfo2> for UserTierInfoResult {
@@ -761,10 +765,12 @@ impl From<UserTierInfo2> for UserTierInfoResult {
             tier: None,
         };
 
-        if tier_info.tier_name.is_some() && tier_info.tier_limit.is_some() {
+        if let Some(tier_name) = tier_info.tier_name
+            && let Some(tier_limit) = tier_info.tier_limit
+        {
             res.tier = Some(Tier {
-                name: tier_info.tier_name.unwrap().into(),
-                quota: tier_info.tier_limit.unwrap().into(),
+                name: tier_name.into(),
+                quota: tier_limit.into(),
             })
         }
 

@@ -25,8 +25,9 @@ RUN cargo pgrx init --pg18 /usr/lib/postgresql/18/bin/pg_config
 WORKDIR /app
 COPY . .
 
-WORKDIR /app/pgrx_merkle_tree/pg_merkle_tree
-RUN cargo pgrx package --pg-config /usr/lib/postgresql/18/bin/pg_config
+WORKDIR /app/pgrx_merkle_tree
+
+RUN cargo pgrx package -p pg_merkle_tree --pg-config /usr/lib/postgresql/18/bin/pg_config
 
 # Stage 2: Postgres Runtime
 FROM postgres:18-bookworm

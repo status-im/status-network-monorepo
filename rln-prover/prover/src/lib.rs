@@ -7,12 +7,12 @@ pub mod metrics;
 mod mock;
 mod proof_generation;
 mod proof_service;
-mod rocksdb_operands;
+// mod rocksdb_operands;
 mod tier;
 mod tiers_listener;
-mod user_db;
+// mod user_db;
 mod user_db_error;
-mod user_db_serialization;
+// mod user_db_serialization;
 mod user_db_service;
 mod user_db_types;
 
@@ -25,7 +25,7 @@ pub mod tests_common;
 mod user_db_2;
 mod user_db_2_entities;
 mod user_db_2_tests;
-mod user_db_tests;
+// mod user_db_tests;
 
 // std
 use std::net::SocketAddr;
@@ -58,8 +58,7 @@ use crate::mock::read_mock_user;
 use crate::proof_service::ProofService;
 use crate::tier::TierLimits;
 use crate::tiers_listener::TiersListener;
-use crate::user_db::MERKLE_TREE_HEIGHT;
-pub use crate::user_db_2::UserDb2Config;
+pub use crate::user_db_2::{MERKLE_TREE_HEIGHT, UserDb2Config};
 use crate::user_db_error::{RegisterError2, UserDb2OpenError};
 use crate::user_db_service::UserDbService;
 use crate::user_db_types::RateLimit;
