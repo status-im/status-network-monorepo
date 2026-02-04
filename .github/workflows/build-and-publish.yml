@@ -63,15 +63,7 @@ on:
         required: false
 
 jobs:
-  coordinator:
-    uses: ./.github/workflows/coordinator-build-and-publish.yml
-    if: ${{ always() && (inputs.coordinator_changed == 'true' || inputs.coordinator_image_tagged != 'true') }}
-    with:
-      commit_tag: ${{ inputs.commit_tag }}
-      develop_tag: ${{ inputs.develop_tag }}
-      image_name: consensys/linea-coordinator
-      push_image: ${{ inputs.push_image }}
-    secrets: inherit
+
 
   native_yield_automation_service:
     uses: ./.github/workflows/native-yield-automation-service-build-and-publish.yml
