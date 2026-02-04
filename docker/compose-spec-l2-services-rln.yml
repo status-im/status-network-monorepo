@@ -472,6 +472,39 @@ services:
       - linea
       - l1network
 
+  postgres-replica:
+    image: postgres:16.0
+    hostname: postgres-replica
+    container_name: postgres-replica
+    profiles: [ "l2", "debug", "external-to-monorepo", "staterecovery" ]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PGDATA: /data/postgres-replica
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready" ]
+      interval: 1s
+      timeout: 1s
+      retries: 120
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    volumes:
+      - ./postgres/init-replica:/docker-entrypoint-initdb.d/
+      - ./postgres/conf/:/etc/postgresql/
+    networks:
+      - linea
+      - l1network
+
   zkbesu-shomei:
     image: consensys/linea-besu-package:${BESU_PACKAGE_TAG:-beta-v4.4-rc7-20251202165721-14b8f4c}
     hostname: zkbesu-shomei

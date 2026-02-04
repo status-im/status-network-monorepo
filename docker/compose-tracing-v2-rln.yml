@@ -102,6 +102,11 @@ services:
       file: compose-spec-l2-services-rln.yml
       service: postgres
 
+  postgres-replica:
+    extends:
+      file: compose-spec-l2-services-rln.yml
+      service: postgres-replica
+
   zkbesu-shomei:
     extends:
       file: compose-spec-l2-services-rln.yml
