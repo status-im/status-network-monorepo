@@ -1,10 +1,6 @@
-// use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
-// use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
-
-use crate::user_db_2::UserDb2Config;
+use prover::UserDb2Config;
 use prover_db_migration_sqlx::{MigrationConfig, Migrator};
-use sqlx::error::Error as SqlxError;
-use sqlx::{Pool, Postgres};
+use sqlx::{Pool, Postgres, error::Error as SqlxError};
 
 pub async fn create_database_connection(
     // f_name: &str,

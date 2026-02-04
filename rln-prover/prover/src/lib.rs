@@ -7,12 +7,12 @@ pub mod metrics;
 mod mock;
 mod proof_generation;
 mod proof_service;
-mod rocksdb_operands;
+// mod rocksdb_operands;
 mod tier;
 mod tiers_listener;
-mod user_db;
+// mod user_db;
 mod user_db_error;
-mod user_db_serialization;
+// mod user_db_serialization;
 mod user_db_service;
 mod user_db_types;
 
@@ -23,19 +23,27 @@ mod proof_service_tests;
 #[cfg(test)]
 pub mod tests_common;
 mod user_db_2;
+mod user_db_2_entities;
 mod user_db_2_tests;
-mod user_db_tests;
+// mod user_db_tests;
 
 // std
-use alloy::network::EthereumWallet;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
 // third-party
-use alloy::providers::{ProviderBuilder, WsConnect};
-use alloy::signers::local::PrivateKeySigner;
-use prover_db_migration::{Migrator, MigratorTrait};
-use sea_orm::Database;
+use alloy::{
+    network::EthereumWallet,
+    providers::{ProviderBuilder, WsConnect},
+    signers::local::PrivateKeySigner,
+};
+// use prover_db_migration::{Migrator, MigratorTrait};
+// use sea_orm::Database;
+use prover_db_migration_sqlx::{MigrationConfig, Migrator};
+use sqlx::{
+    Decode, Encode, Pool, Type,
+    postgres::{PgArgumentBuffer, PgHasArrayType, PgTypeInfo, PgValueRef, Postgres, types::Oid},
+};
 use tokio::task::JoinSet;
 use tracing::{debug, info};
 use zeroize::Zeroizing;
@@ -50,14 +58,12 @@ use crate::mock::read_mock_user;
 use crate::proof_service::ProofService;
 use crate::tier::TierLimits;
 use crate::tiers_listener::TiersListener;
-use crate::user_db::MERKLE_TREE_HEIGHT;
-use crate::user_db_2::UserDb2Config;
+pub use crate::user_db_2::{MERKLE_TREE_HEIGHT, UserDb2Config};
 use crate::user_db_error::{RegisterError2, UserDb2OpenError};
 use crate::user_db_service::UserDbService;
 use crate::user_db_types::RateLimit;
 use rln_proof::RlnIdentifier;
-use smart_contract::KarmaTiers::KarmaTiersInstance;
-use smart_contract::{KarmaTiersError, TIER_LIMITS};
+use smart_contract::{KarmaTiers::KarmaTiersInstance, KarmaTiersError, TIER_LIMITS};
 
 pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
     // Epoch service with configurable epoch and slice duration
@@ -139,15 +145,31 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
                 .to_string(),
         )
     })?;
+    /*
     let db_conn = Database::connect(&db_url)
+        .await
+        .map_err(UserDb2OpenError::from)?;
+    */
+    let db_conn = sqlx::PgPool::connect(db_url.as_str())
         .await
         .map_err(UserDb2OpenError::from)?;
 
     // Run database migrations
     info!("Running database migrations...");
-    Migrator::up(&db_conn, None)
+    let migrator = Migrator();
+    let migration_config = MigrationConfig {
+        tree_count: user_db_config.tree_count as i64,
+        max_tree_count: user_db_config.max_tree_count as i64,
+        tree_depth: user_db_config.tree_depth as i16,
+    };
+    migrator
+        .up(db_conn.clone(), migration_config)
         .await
-        .map_err(|e| AppError2::MigrationError(e.to_string()))?;
+        .map_err(UserDb2OpenError::from)?;
+
+    // Migrator::up(&db_conn, None)
+    //     .await
+    //     .map_err(|e| AppError2::MigrationError(e.to_string()))?;
     info!("Database migrations complete");
 
     let user_db_service = UserDbService::new(

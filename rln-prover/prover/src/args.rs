@@ -97,7 +97,7 @@ pub struct AppArgs {
     #[arg(
         long = "max-tree-count",
         help = "Merkle tree max count",
-        default_value = "100"
+        default_value = "10"
     )]
     pub merkle_tree_max_count: u64,
     #[arg(

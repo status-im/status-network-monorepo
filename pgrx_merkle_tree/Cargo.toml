@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "pg_merkle_tree",
+    # "sqlx_binary_protocol",
+    "zerokit_ref"
+]
+resolver = "3"

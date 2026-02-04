@@ -7,8 +7,12 @@ use async_channel::Receiver;
 use metrics::{counter, histogram};
 use parking_lot::RwLock;
 use rln::hashers::hash_to_field_le;
+use rln::poseidon_tree::MerkleProof;
 use rln::protocol::serialize_proof_values;
 use tracing::{Instrument, debug, debug_span, error, info, warn};
+// use zerokit_utils::pmtree::tree::MerkleProof;
+// use zerokit_utils::pmtree::tree::MerkleProof;
+// use prover_pmtree::tree::MerkleProof;
 // internal
 use crate::epoch_service::{Epoch, EpochSlice};
 use crate::error::{AppError2, ProofGenerationError, ProofGenerationStringError};
@@ -119,13 +123,20 @@ impl ProofService {
                 debug!("[ProofService {}] Rayon task started", counter_id);
                 let proof_generation_start = std::time::Instant::now();
 
-                let merkle_proof = match merkle_proof_ {
+                let merkle_proof_ = match merkle_proof_ {
                     Ok(proof) => proof,
                     Err(e) => {
                         let _ = send.send(Err(ProofGenerationError::MerkleProofError(e)));
                         return;
                     }
                 };
+
+                // TODO: can we avoid this remapping?
+                let (path_indexes, path_elements): (Vec<u8>, Vec<Fr>) = merkle_proof_
+                    .inner
+                    .into_iter()
+                    .map(|(i, v)| (i as u8, v))
+                    .unzip();
 
                 let message_id = {
                     let mut m_id = proof_generation_data.tx_counter;
@@ -156,7 +167,8 @@ impl ProofService {
                     &proof_generation_data.rln_identifier,
                     rln_data,
                     epoch,
-                    &merkle_proof,
+                    path_elements,
+                    path_indexes,
                 ) {
                     Ok((proof, proof_values)) => (proof, proof_values),
                     Err(e) => {
@@ -280,9 +292,8 @@ mod tests {
         protocol::{deserialize_proof_values, verify_proof},
     };
     // internal
-    use crate::tests_common::create_database_connection_1;
-    use crate::user_db::MERKLE_TREE_HEIGHT;
-    use crate::user_db_2::UserDb2Config;
+    use crate::tests_common::create_database_connection;
+    use crate::user_db_2::{MERKLE_TREE_HEIGHT, UserDb2Config};
     use crate::user_db_service::UserDbService;
     use rln_proof::RlnIdentifier;
 
@@ -392,9 +403,10 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
-        let (_, db_conn) = create_database_connection_1(file!(), function_name!())
-            .await
-            .unwrap();
+        let (_, db_conn) =
+            create_database_connection("proof_service_test_proof_generation", true, config.clone())
+                .await
+                .unwrap();
         let user_db_service = UserDbService::new(
             db_conn,
             config,

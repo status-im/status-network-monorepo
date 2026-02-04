@@ -1,10 +1,12 @@
 // std
 use parking_lot::RwLock;
-use sea_orm::DatabaseConnection;
+// use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 // third-party
 use tokio::sync::Notify;
 use tracing::debug;
+// sqlx
+use sqlx::{Postgres, pool::Pool};
 // internal
 use crate::epoch_service::{Epoch, EpochSlice};
 use crate::error::AppError2;
@@ -23,7 +25,7 @@ pub struct UserDbService {
 
 impl UserDbService {
     pub async fn new(
-        db_conn: DatabaseConnection,
+        db_conn: Pool<Postgres>,
         config: UserDb2Config,
         epoch_changes_notifier: Arc<Notify>,
         epoch_store: Arc<RwLock<(Epoch, EpochSlice)>>,

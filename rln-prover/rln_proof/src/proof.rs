@@ -17,8 +17,10 @@ use rln::{
     },
 };
 use serde::{Deserialize, Serialize};
+// use rln::poseidon_tree::MerkleProof;
+// use zerokit_utils::ZerokitMerkleProof;
 // internal
-use prover_pmtree::tree::MerkleProof;
+// use prover_pmtree::tree::MerkleProof;
 
 /// A RLN user identity & limit
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -101,12 +103,14 @@ pub fn compute_rln_proof_and_values(
     rln_identifier: &RlnIdentifier,
     rln_data: RlnData,
     epoch: Fr,
-    merkle_proof: &MerkleProof<ProverPoseidonHash>,
+    // merkle_proof: &MerkleProof,
+    path_elements: Vec<Fr>,
+    identity_path_index: Vec<u8>,
 ) -> Result<(Proof<Bn254>, RLNProofValues), ProofError> {
     let external_nullifier = poseidon_hash(&[rln_identifier.identifier, epoch]);
 
-    let path_elements = merkle_proof.get_path_elements();
-    let identity_path_index = merkle_proof.get_path_index();
+    // let path_elements = merkle_proof.get_path_elements();
+    // let identity_path_index = merkle_proof.get_path_index();
 
     // let mut id_s = user_identity.secret_hash;
 

@@ -1,0 +1,8 @@
+[package]
+name = "zerokit_ref"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rln = { version = "0.9.0", default-features = false, features = ["fullmerkletree"] }
+zerokit_utils = { version = "0.7.0" }

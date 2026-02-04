@@ -3,60 +3,24 @@
 mod tests {
     // std
     use std::sync::Arc;
+    use std::time::Duration;
     // third-party
     use crate::epoch_service::{Epoch, EpochSlice};
-    use crate::user_db::MERKLE_TREE_HEIGHT;
-    use crate::user_db_2::{UserDb2, UserDb2Config};
+    use crate::user_db_2::{MERKLE_TREE_HEIGHT, UserDb2, UserDb2Config};
     use alloy::primitives::{Address, address};
     use claims::assert_matches;
     use parking_lot::RwLock;
-    use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
+    // sqlx
+    use crate::tests_common::create_database_connection;
+    use sqlx::error::Error as SqlxError;
     // internal
     use crate::user_db_error::RegisterError2;
-    use crate::user_db_types::{EpochCounter, EpochSliceCounter};
-    use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
+    use crate::user_db_types::EpochCounter;
 
     const ADDR_1: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
     const ADDR_2: Address = address!("0xb20a608c624Ca5003905aA834De7156C68b2E1d0");
     const ADDR_3: Address = address!("0x6d2e03b7EfFEae98BD302A9F836D0d6Ab0002766");
     const ADDR_4: Address = address!("0x7A4d20b913B97aD2F30B30610e212D7db11B4BC3");
-
-    async fn create_database_connection(
-        db_name: &str,
-        db_refresh: bool,
-    ) -> Result<DatabaseConnection, DbErr> {
-        // Drop / Create db_name then return a connection to it
-
-        let db_url_base = "postgres://myuser:mysecretpassword@localhost";
-        let db_url = format!("{}/{}", db_url_base, "mydatabase");
-
-        if db_refresh {
-            let db = Database::connect(db_url)
-                .await
-                .expect("Database connection 0 failed");
-
-            db.execute_raw(Statement::from_string(
-                db.get_database_backend(),
-                format!("DROP DATABASE IF EXISTS \"{}\";", db_name),
-            ))
-            .await?;
-            db.execute_raw(Statement::from_string(
-                db.get_database_backend(),
-                format!("CREATE DATABASE \"{}\";", db_name),
-            ))
-            .await?;
-
-            db.close().await?;
-        }
-
-        let db_url_final = format!("{}/{}", db_url_base, db_name);
-        let db = Database::connect(db_url_final)
-            .await
-            .expect("Database connection failed");
-        MigratorCreate::up(&db, None).await?;
-
-        Ok(db)
-    }
 
     #[tokio::test]
     async fn test_incr_tx_counter_2() {
@@ -73,9 +37,14 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
-        let db_conn = create_database_connection("user_db_tests_test_incr_tx_counter_2", true)
-            .await
-            .unwrap();
+        let db_conn = create_database_connection(
+            "user_db_tests_test_incr_tx_counter_2",
+            true,
+            config.clone(),
+        )
+        .await
+        .unwrap()
+        .1;
 
         let user_db = UserDb2::new(
             db_conn,
@@ -92,46 +61,46 @@ mod tests {
         user_db.register_user(ADDR_2).await.unwrap();
 
         assert_eq!(
-            user_db.get_tx_counter(&ADDR_1).await,
-            Ok(EpochCounter::from(0))
+            user_db.get_tx_counter(&ADDR_1).await.unwrap(),
+            EpochCounter::from(0)
         );
         assert_eq!(
-            user_db.get_tx_counter(&ADDR_2).await,
-            Ok(EpochCounter::from(0))
+            user_db.get_tx_counter(&ADDR_2).await.unwrap(),
+            EpochCounter::from(0)
         );
 
         // Now update user tx counter
         assert_eq!(
-            user_db.on_new_tx(&ADDR_1, None).await,
-            Ok(EpochCounter::from(1))
+            user_db.on_new_tx(&ADDR_1, None).await.unwrap(),
+            EpochCounter::from(1)
         );
         assert_eq!(
-            user_db.on_new_tx(&ADDR_1, None).await,
-            Ok(EpochCounter::from(2))
+            user_db.on_new_tx(&ADDR_1, None).await.unwrap(),
+            EpochCounter::from(2)
         );
         assert_eq!(
-            user_db.on_new_tx(&ADDR_1, Some(2)).await,
-            Ok(EpochCounter::from(4))
-        );
-
-        assert_eq!(
-            user_db.on_new_tx(&ADDR_2, None).await,
-            Ok(EpochCounter::from(1))
+            user_db.on_new_tx(&ADDR_1, Some(2)).await.unwrap(),
+            EpochCounter::from(4)
         );
 
         assert_eq!(
-            user_db.on_new_tx(&ADDR_2, None).await,
-            Ok(EpochCounter::from(2))
+            user_db.on_new_tx(&ADDR_2, None).await.unwrap(),
+            EpochCounter::from(1)
         );
 
         assert_eq!(
-            user_db.get_tx_counter(&ADDR_1).await,
-            Ok(EpochCounter::from(4))
+            user_db.on_new_tx(&ADDR_2, None).await.unwrap(),
+            EpochCounter::from(2)
         );
 
         assert_eq!(
-            user_db.get_tx_counter(&ADDR_2).await,
-            Ok(EpochCounter::from(2))
+            user_db.get_tx_counter(&ADDR_1).await.unwrap(),
+            EpochCounter::from(4)
+        );
+
+        assert_eq!(
+            user_db.get_tx_counter(&ADDR_2).await.unwrap(),
+            EpochCounter::from(2)
         );
     }
 
@@ -146,9 +115,13 @@ mod tests {
 
         let addr = Address::new([0; 20]);
         {
-            let db_conn = create_database_connection("user_db_tests_test_persistent_storage", true)
-                .await
-                .unwrap();
+            let (_, db_conn) = create_database_connection(
+                "user_db_tests_test_persistent_storage",
+                true,
+                config.clone(),
+            )
+            .await
+            .unwrap();
 
             let user_db = UserDb2::new(
                 db_conn.clone(),
@@ -178,25 +151,28 @@ mod tests {
             );
 
             assert_eq!(
-                user_db.on_new_tx(&ADDR_1, Some(2)).await,
-                Ok(EpochCounter::from(2))
+                user_db.on_new_tx(&ADDR_1, Some(2)).await.unwrap(),
+                EpochCounter::from(2)
             );
             assert_eq!(
-                user_db.on_new_tx(&ADDR_2, Some(1000)).await,
-                Ok(EpochCounter::from(1000))
+                user_db.on_new_tx(&ADDR_2, Some(1000)).await.unwrap(),
+                EpochCounter::from(1000)
             );
 
-            db_conn.close().await.unwrap();
+            db_conn.close().await;
             // user_db is dropped at the end of the scope, but let's make it explicit
             drop(user_db);
         }
 
         {
             // Reopen Db and check that is inside
-            let db_conn =
-                create_database_connection("user_db_tests_test_persistent_storage", false)
-                    .await
-                    .unwrap();
+            let (_, db_conn) = create_database_connection(
+                "user_db_tests_test_persistent_storage",
+                false,
+                config.clone(),
+            )
+            .await
+            .unwrap();
 
             let user_db = UserDb2::new(
                 db_conn,
@@ -244,9 +220,10 @@ mod tests {
         };
 
         {
-            let db_conn = create_database_connection("user_db_tests_test_multi_tree", true)
-                .await
-                .unwrap();
+            let (_, db_conn) =
+                create_database_connection("user_db_tests_test_multi_tree", true, config.clone())
+                    .await
+                    .unwrap();
 
             let user_db = UserDb2::new(
                 db_conn.clone(),
@@ -259,7 +236,7 @@ mod tests {
             .expect("Cannot create UserDb");
 
             assert_eq!(user_db.get_db_tree_count().await.unwrap(), tree_count);
-            assert_eq!(user_db.get_vec_tree_count().await as u64, tree_count);
+            // assert_eq!(user_db.get_vec_tree_count().await as u64, tree_count);
 
             user_db.register_user(ADDR_1).await.unwrap();
             user_db.register_user(ADDR_2).await.unwrap();
@@ -277,9 +254,10 @@ mod tests {
         {
             // reload UserDb from disk and check indexes
 
-            let db_conn = create_database_connection("user_db_tests_test_multi_tree", false)
-                .await
-                .unwrap();
+            let (_, db_conn) =
+                create_database_connection("user_db_tests_test_multi_tree", false, config.clone())
+                    .await
+                    .unwrap();
 
             let user_db = UserDb2::new(
                 db_conn,
@@ -292,7 +270,7 @@ mod tests {
             .expect("Cannot create UserDb");
 
             assert_eq!(user_db.get_db_tree_count().await.unwrap(), tree_count);
-            assert_eq!(user_db.get_vec_tree_count().await as u64, tree_count);
+            // assert_eq!(user_db.get_vec_tree_count().await as u64, tree_count);
 
             let addr = Address::random();
             user_db.register_user(addr).await.unwrap();
@@ -312,15 +290,17 @@ mod tests {
         let epoch_store = Arc::new(RwLock::new(Default::default()));
         let tree_depth = 1;
         let tree_count_initial = 1;
+        let max_tree_count = 2;
         let config = UserDb2Config {
             tree_count: tree_count_initial,
-            max_tree_count: 2,
+            max_tree_count,
             tree_depth,
         };
 
-        let db_conn = create_database_connection("user_db_tests_test_new_multi_tree", true)
-            .await
-            .unwrap();
+        let (_, db_conn) =
+            create_database_connection("user_db_tests_test_new_multi_tree", true, config.clone())
+                .await
+                .unwrap();
 
         let user_db = UserDb2::new(
             db_conn.clone(),
@@ -332,14 +312,11 @@ mod tests {
         .await
         .expect("Cannot create UserDb");
 
-        assert_eq!(
-            user_db.get_db_tree_count().await.unwrap(),
-            tree_count_initial
-        );
-        assert_eq!(
-            user_db.get_vec_tree_count().await as u64,
-            tree_count_initial
-        );
+        assert_eq!(user_db.get_db_tree_count().await.unwrap(), max_tree_count);
+        // assert_eq!(
+        //     user_db.get_vec_tree_count().await as u64,
+        //     tree_count_initial
+        // );
 
         user_db.register_user(ADDR_1).await.unwrap();
         assert_eq!(user_db.get_user_indexes(&ADDR_1).await, (0, 0));
@@ -357,17 +334,21 @@ mod tests {
             user_db.get_db_tree_count().await.unwrap(),
             tree_count_initial + 1
         );
-        assert_eq!(
-            user_db.get_vec_tree_count().await as u64,
-            tree_count_initial + 1
-        );
+        // assert_eq!(
+        //     user_db.get_vec_tree_count().await as u64,
+        //     tree_count_initial + 1
+        // );
 
         drop(user_db);
 
         {
-            let db_conn = create_database_connection("user_db_tests_test_new_multi_tree", false)
-                .await
-                .unwrap();
+            let (_, db_conn) = create_database_connection(
+                "user_db_tests_test_new_multi_tree",
+                false,
+                config.clone(),
+            )
+            .await
+            .unwrap();
 
             let user_db = UserDb2::new(
                 db_conn.clone(),
@@ -383,10 +364,296 @@ mod tests {
                 user_db.get_db_tree_count().await.unwrap(),
                 tree_count_initial + 1
             );
-            assert_eq!(
-                user_db.get_vec_tree_count().await as u64,
-                tree_count_initial + 1
-            );
+            // assert_eq!(
+            //     user_db.get_vec_tree_count().await as u64,
+            //     tree_count_initial + 1
+            // );
         }
+    }
+
+    #[tokio::test]
+    async fn test_deny_list_1() -> Result<(), SqlxError> {
+        // Check UserDb + deny list basic functionalities
+
+        let epoch_store = Arc::new(RwLock::new(Default::default()));
+        let tree_depth = 1;
+        let tree_count_initial = 1;
+        let config = UserDb2Config {
+            tree_count: tree_count_initial,
+            max_tree_count: 1,
+            tree_depth,
+        };
+
+        let (_, db_conn) =
+            create_database_connection("user_db_tests_test_deny_list_1", true, config.clone())
+                .await?;
+
+        let user_db = UserDb2::new(
+            db_conn.clone(),
+            config.clone(),
+            epoch_store.clone(),
+            Default::default(),
+            Default::default(),
+        )
+        .await?;
+
+        // Define some custom 'now' functions so we are in control
+        let now_v = 10;
+        let now = || Duration::from_secs(now_v);
+        let now2 = || Duration::from_secs(12);
+
+        assert_eq!(user_db.is_denied(&ADDR_1, &now).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_2, &now).await?, false);
+
+        let ttl = 5;
+        user_db.register_user(ADDR_3).await.unwrap();
+        user_db
+            .add_to_deny_list(&ADDR_3, None, Some(ttl), &now)
+            .await?;
+
+        assert_eq!(user_db.is_denied(&ADDR_3, &now).await?, true);
+        // Check that in the future, ADDR_3 is not denied anymore
+        assert_eq!(
+            user_db
+                .is_denied(&ADDR_3, &|| Duration::from_secs(now_v)
+                    + Duration::from_secs(ttl as u64))
+                .await?,
+            false
+        );
+        assert_eq!(user_db.is_denied(&ADDR_1, &now).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_2, &now).await?, false);
+
+        user_db.remove_from_deny_list(&ADDR_3).await?;
+        assert_eq!(user_db.is_denied(&ADDR_3, &now).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_1, &now).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_2, &now).await?, false);
+
+        user_db
+            .add_to_deny_list(&ADDR_3, None, Some(5), &now2)
+            .await?;
+        assert_eq!(user_db.is_denied(&ADDR_3, &now2).await?, true);
+        let deny_list_entry = user_db.get_deny_list_entry(&ADDR_3, &now2).await?.unwrap();
+
+        assert_eq!(
+            Address::from_slice(deny_list_entry.address.as_slice()),
+            ADDR_3
+        );
+        assert_eq!(
+            deny_list_entry.expires_at.unwrap(),
+            (now2() + Duration::from_secs(5)).as_secs() as i64
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_deny_list_upsert_res() -> Result<(), SqlxError> {
+        // Check UserDb deny_list add_to_deny_list result
+
+        let epoch_store = Arc::new(RwLock::new(Default::default()));
+        let tree_depth = 1;
+        let tree_count_initial = 1;
+        let config = UserDb2Config {
+            tree_count: tree_count_initial,
+            max_tree_count: 1,
+            tree_depth,
+        };
+
+        let (_, db_conn) =
+            create_database_connection("user_db_tests_test_deny_list_2", true, config.clone())
+                .await?;
+
+        let user_db = UserDb2::new(
+            db_conn.clone(),
+            config.clone(),
+            epoch_store.clone(),
+            Default::default(),
+            Default::default(),
+        )
+        .await?;
+
+        // Define some custom 'now' functions so we are in control
+        let now = || Duration::from_secs(10);
+        user_db.register_user(ADDR_3).await.unwrap();
+        // Check this is an INSERT
+        assert_eq!(
+            user_db
+                .add_to_deny_list(&ADDR_3, None, Some(5), &now)
+                .await?,
+            true
+        );
+        // Check this is an UPDATE
+        assert_eq!(
+            user_db
+                .add_to_deny_list(&ADDR_3, None, Some(7), &now)
+                .await?,
+            false
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_deny_list_cleanup() -> Result<(), SqlxError> {
+        // Check UserDb deny_list cleanup
+
+        let epoch_store = Arc::new(RwLock::new(Default::default()));
+        let tree_depth = 1;
+        let tree_count_initial = 1;
+        let config = UserDb2Config {
+            tree_count: tree_count_initial,
+            max_tree_count: 1,
+            tree_depth,
+        };
+
+        let (_, db_conn) =
+            create_database_connection("user_db_tests_test_deny_list_2", true, config.clone())
+                .await?;
+
+        let user_db = UserDb2::new(
+            db_conn.clone(),
+            config.clone(),
+            epoch_store.clone(),
+            Default::default(),
+            Default::default(),
+        )
+        .await?;
+
+        // Define some custom 'now' functions so we are in control
+        let now_v = 10;
+        let now2_v = 12;
+        let now = || Duration::from_secs(now_v);
+        let now2 = || Duration::from_secs(now2_v);
+        let ttl = 5;
+        let now3 = || Duration::from_secs(now_v + ttl);
+        let now4 = || Duration::from_secs(now2_v + ttl);
+
+        user_db.register_user(ADDR_3).await.unwrap();
+        user_db.register_user(ADDR_1).await.unwrap();
+
+        user_db
+            .add_to_deny_list(&ADDR_3, None, Some(ttl as i64), &now)
+            .await?;
+        user_db
+            .add_to_deny_list(&ADDR_1, None, Some(ttl as i64), &now2)
+            .await?;
+
+        // Will clean nothing (no expiration yet)
+        user_db.cleanup_expired_deny_list_entries(&now).await?;
+        assert!(user_db.get_deny_list_entry(&ADDR_3, &now).await?.is_some());
+        assert!(user_db.get_deny_list_entry(&ADDR_1, &now).await?.is_some());
+
+        // Cleanup only ADDR3
+        user_db.cleanup_expired_deny_list_entries(&now3).await?;
+        assert!(user_db.get_deny_list_entry(&ADDR_3, &now3).await?.is_none());
+        assert!(user_db.get_raw_deny_list_entry(&ADDR_3).await?.is_none());
+        assert!(user_db.get_deny_list_entry(&ADDR_1, &now3).await?.is_some());
+        assert!(user_db.get_raw_deny_list_entry(&ADDR_1).await?.is_some());
+
+        // Cleanup ADDR_1 too
+        user_db.cleanup_expired_deny_list_entries(&now4).await?;
+        assert!(user_db.get_deny_list_entry(&ADDR_1, &now4).await?.is_none());
+        assert!(user_db.get_raw_deny_list_entry(&ADDR_1).await?.is_none());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_nullifier_1() -> Result<(), SqlxError> {
+        // Check UserDb nullifier basic functionalities
+
+        let epoch_store = Arc::new(RwLock::new(Default::default()));
+        let tree_depth = 1;
+        let tree_count_initial = 1;
+        let config = UserDb2Config {
+            tree_count: tree_count_initial,
+            max_tree_count: 1,
+            tree_depth,
+        };
+
+        println!("create db conn...");
+        let (_, db_conn) =
+            create_database_connection("user_db_tests_test_deny_list_1", true, config.clone())
+                .await?;
+        println!("create db conn DONE");
+
+        let user_db = UserDb2::new(
+            db_conn.clone(),
+            config.clone(),
+            epoch_store.clone(),
+            Default::default(),
+            Default::default(),
+        )
+        .await?;
+
+        let nullifier_1 = vec![1; 32];
+        let epoch_1 = 1;
+        let nullifier_2 = vec![1; 32];
+        let epoch_2 = 42;
+
+        assert_eq!(
+            user_db.nullifier_exists(&nullifier_1, epoch_1).await?,
+            false
+        );
+
+        // INSERT
+        assert_eq!(user_db.record_nullifier(&nullifier_1, epoch_1).await?, true);
+        // UPDATE
+        assert_eq!(
+            user_db.record_nullifier(&nullifier_1, epoch_1).await?,
+            false
+        );
+
+        assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_1).await?, 1);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_nullifier_cleanup() -> Result<(), SqlxError> {
+        // Check UserDb nullifier cleanup
+
+        let epoch_store = Arc::new(RwLock::new(Default::default()));
+        let tree_depth = 1;
+        let tree_count_initial = 1;
+        let config = UserDb2Config {
+            tree_count: tree_count_initial,
+            max_tree_count: 1,
+            tree_depth,
+        };
+
+        let (_, db_conn) =
+            create_database_connection("user_db_tests_test_deny_list_1", true, config.clone())
+                .await?;
+
+        let user_db = UserDb2::new(
+            db_conn.clone(),
+            config.clone(),
+            epoch_store.clone(),
+            Default::default(),
+            Default::default(),
+        )
+        .await?;
+
+        let nullifier_1 = vec![1; 32];
+        let epoch_1 = 1;
+        let nullifier_2 = vec![2; 32];
+        let epoch_2 = 42;
+
+        assert_eq!(user_db.record_nullifier(&nullifier_1, epoch_1).await?, true);
+        assert_eq!(user_db.record_nullifier(&nullifier_2, epoch_2).await?, true);
+
+        assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_1).await?, 1);
+        assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_2).await?, 1);
+
+        assert_eq!(user_db.cleanup_old_nullifiers(epoch_2, 0).await?, 1);
+        assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_1).await?, 0);
+        assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_2).await?, 1);
+
+        assert_eq!(user_db.cleanup_old_nullifiers(epoch_2 + 1, 0).await?, 1);
+        assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_1).await?, 0);
+        assert_eq!(user_db.get_nullifier_count_for_epoch(epoch_2).await?, 0);
+
+        Ok(())
     }
 }

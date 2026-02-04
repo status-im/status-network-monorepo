@@ -3,3 +3,4 @@
 **/tsconfig.build.tsbuildinfo
 **/coverage
 **/dist
+**/target

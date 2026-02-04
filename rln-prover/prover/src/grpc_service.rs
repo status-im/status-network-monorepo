@@ -4,7 +4,7 @@
 use std::net::SocketAddr;
 use std::num::NonZeroU64;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 // third-party
 use alloy::{primitives::Address, providers::Provider};
 use async_channel::Sender;
@@ -27,7 +27,7 @@ use crate::metrics::{
     PROOF_SERVICES_CHANNEL_QUEUE_LEN, SEND_TRANSACTION_REQUESTS,
 };
 use crate::proof_generation::{ProofGenerationData, ProofSendingData};
-use crate::user_db::UserTierInfo;
+// use crate::user_db::UserTierInfo;
 use rln_proof::RlnIdentifier;
 use smart_contract::{KarmaAmountExt, KarmaSC::KarmaSCInstance, MockKarmaSc};
 
@@ -189,6 +189,7 @@ where
                 u64::from(counter),
                 u64::from(effective_limit)
             );
+
             return Err(Status::resource_exhausted(
                 "Too many transactions sent by this user",
             ));
@@ -236,58 +237,6 @@ where
         let reply = SendTransactionReply { result: true };
         Ok(Response::new(reply))
     }
-
-    /*
-    #[tracing::instrument(skip(self), err, ret)]
-    async fn register_user(
-        &self,
-        request: Request<RegisterUserRequest>,
-    ) -> Result<Response<RegisterUserReply>, Status> {
-        debug!("register_user request: {:?}", request);
-        counter!(USER_REGISTERED_REQUESTS.name, "prover" => "grpc").increment(1);
-
-        let req = request.into_inner();
-        let user = if let Some(user) = req.user {
-            if let Ok(user) = Address::try_from(user.value.as_slice()) {
-                user
-            } else {
-                return Err(Status::invalid_argument("Invalid sender address"));
-            }
-        } else {
-            return Err(Status::invalid_argument("No sender address"));
-        };
-
-        let result = self.user_db.on_new_user(&user);
-
-        let status = match result {
-            Ok(id_commitment) => {
-                let id_co =
-                    U256::from_le_slice(BigUint::from(id_commitment).to_bytes_le().as_slice());
-
-                if let Err(e) = self.karma_rln_sc.register_user(&user, id_co).await {
-                    // Fail to register user on smart contract
-                    // Remove the user in internal Db
-                    if !self.user_db.remove_user(&user, false) {
-                        // Fails if DB & SC are inconsistent
-                        panic!("Unable to register user to SC and to remove it from DB...");
-                    }
-                    return Err(Status::from_error(Box::new(e)));
-                }
-
-                RegistrationStatus::Success
-            }
-            Err(RegisterError::AlreadyRegistered(_a)) => RegistrationStatus::AlreadyRegistered,
-            _ => RegistrationStatus::Failure,
-        };
-
-        let reply = RegisterUserReply {
-            status: status.into(),
-        };
-
-        counter!(USER_REGISTERED.name, "prover" => "grpc").increment(1);
-        Ok(Response::new(reply))
-    }
-    */
 
     type GetProofsStream = ReceiverStream<Result<RlnProofReply, Status>>;
 
@@ -412,7 +361,7 @@ where
             return Err(Status::invalid_argument("No address provided"));
         };
 
-        match self.user_db.is_denied(&address).await {
+        match self.user_db.is_denied(&address, &now).await {
             Ok(is_denied) => Ok(Response::new(IsDeniedReply { is_denied })),
             Err(e) => {
                 error!("Failed to check deny list: {:?}", e);
@@ -441,7 +390,7 @@ where
 
         match self
             .user_db
-            .add_to_deny_list(&address, req.reason, req.ttl_seconds)
+            .add_to_deny_list(&address, req.reason, req.ttl_seconds, &now)
             .await
         {
             Ok(was_new) => {
@@ -517,10 +466,10 @@ where
             return Err(Status::invalid_argument("No address provided"));
         };
 
-        match self.user_db.get_deny_list_entry(&address).await {
+        match self.user_db.get_deny_list_entry(&address, &now).await {
             Ok(Some(entry)) => Ok(Response::new(GetDenyListEntryReply {
                 resp: Some(DenyListResp::Entry(DenyListEntry {
-                    address: entry.address,
+                    address: Address::from_slice(entry.address.as_slice()).to_string(),
                     denied_at: entry.denied_at.unwrap_or(0),
                     expires_at: entry.expires_at,
                     reason: None, // Not stored for performance
@@ -780,6 +729,7 @@ impl<P: Provider + Clone + Send + Sync + 'static> GrpcProverService<P> {
     }
 }
 
+/*
 /// UserTierInfo to UserTierInfoResult (Grpc message) conversion
 impl From<UserTierInfo> for UserTierInfoResult {
     fn from(tier_info: UserTierInfo) -> Self {
@@ -790,16 +740,19 @@ impl From<UserTierInfo> for UserTierInfoResult {
             tier: None,
         };
 
-        if tier_info.tier_name.is_some() && tier_info.tier_limit.is_some() {
+        if let Some(tier_name) = tier_info.tier_name
+            && let Some(tier_limit) = tier_info.tier_limit
+        {
             res.tier = Some(Tier {
-                name: tier_info.tier_name.unwrap().into(),
-                quota: tier_info.tier_limit.unwrap().into(),
+                name: tier_name.into(),
+                quota: tier_limit.into(),
             })
         }
 
         res
     }
 }
+*/
 
 /// UserTierInfo2 to UserTierInfoResult (Grpc message) conversion
 impl From<UserTierInfo2> for UserTierInfoResult {
@@ -812,10 +765,12 @@ impl From<UserTierInfo2> for UserTierInfoResult {
             tier: None,
         };
 
-        if tier_info.tier_name.is_some() && tier_info.tier_limit.is_some() {
+        if let Some(tier_name) = tier_info.tier_name
+            && let Some(tier_limit) = tier_info.tier_limit
+        {
             res.tier = Some(Tier {
-                name: tier_info.tier_name.unwrap().into(),
-                quota: tier_info.tier_limit.unwrap().into(),
+                name: tier_name.into(),
+                quota: tier_limit.into(),
             })
         }
 
@@ -845,4 +800,10 @@ where
             message: value.to_string(),
         }
     }
+}
+
+fn now() -> Duration {
+    std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Clock may have gone backwards") // assume this will never happen on our servers
 }

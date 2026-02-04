@@ -15,7 +15,7 @@ mod tests {
     use rln::error::ComputeIdSecretError;
     use rln::protocol::{compute_id_secret, deserialize_proof_values, verify_proof};
     use rln::utils::IdSecret;
-    use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
+    // use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
     use tokio::sync::broadcast;
     use tracing::{debug, info};
     // internal
@@ -23,12 +23,10 @@ mod tests {
     use crate::error::{AppError, AppError2, ProofGenerationStringError};
     use crate::proof_generation::{ProofGenerationData, ProofSendingData};
     use crate::proof_service::ProofService;
-    // use crate::user_db::{MERKLE_TREE_HEIGHT, UserDb, UserDbConfig};
-    use crate::user_db::MERKLE_TREE_HEIGHT;
-    use crate::user_db_2::{UserDb2, UserDb2Config};
+    use crate::tests_common::create_database_connection;
+    use crate::user_db_2::{MERKLE_TREE_HEIGHT, UserDb2, UserDb2Config};
     use crate::user_db_service::UserDbService;
     use crate::user_db_types::RateLimit;
-    use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
     use rln_proof::RlnIdentifier;
 
     const ADDR_1: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
@@ -56,37 +54,6 @@ mod tests {
         RecoverSecretFailed(ComputeIdSecretError),
         #[error("Recovered secret")]
         RecoveredSecret(IdSecret),
-    }
-
-    async fn create_database_connection(db_name: &str) -> Result<DatabaseConnection, DbErr> {
-        // Drop / Create db_name then return a connection to it
-
-        let db_url_base = "postgres://myuser:mysecretpassword@localhost";
-        let db_url = format!("{}/{}", db_url_base, "mydatabase");
-        let db = Database::connect(db_url)
-            .await
-            .expect("Database connection 0 failed");
-
-        db.execute_raw(Statement::from_string(
-            db.get_database_backend(),
-            format!("DROP DATABASE IF EXISTS \"{}\";", db_name),
-        ))
-        .await?;
-        db.execute_raw(Statement::from_string(
-            db.get_database_backend(),
-            format!("CREATE DATABASE \"{}\";", db_name),
-        ))
-        .await?;
-
-        db.close().await?;
-
-        let db_url_final = format!("{}/{}", db_url_base, db_name);
-        let db = Database::connect(db_url_final)
-            .await
-            .expect("Database connection failed");
-        MigratorCreate::up(&db, None).await?;
-
-        Ok(db)
     }
 
     async fn proof_sender(
@@ -178,9 +145,14 @@ mod tests {
             tree_depth: MERKLE_TREE_HEIGHT,
         };
 
-        let db_conn = create_database_connection("proof_service_tests_test_user_not_registered")
-            .await
-            .unwrap();
+        let db_conn = create_database_connection(
+            "proof_service_tests_test_user_not_registered",
+            true,
+            config.clone(),
+        )
+        .await
+        .unwrap()
+        .1;
 
         let user_db_service = UserDbService::new(
             db_conn,
@@ -330,7 +302,7 @@ mod tests {
 
     #[tokio::test]
     #[tracing_test::traced_test]
-    async fn test_user_spamming() {
+    async fn test_user_spamming_1() {
         // Recover secret from a user spamming the system
 
         // Queues
@@ -352,9 +324,14 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let db_conn = create_database_connection("proof_service_tests_test_user_spamming")
-            .await
-            .unwrap();
+        let db_conn = create_database_connection(
+            "proof_service_tests_test_user_spamming_1",
+            true,
+            config.clone(),
+        )
+        .await
+        .unwrap()
+        .1;
         let user_db_service = UserDbService::new(
             db_conn,
             config,
@@ -432,10 +409,14 @@ mod tests {
             max_tree_count: 1,
             tree_depth: MERKLE_TREE_HEIGHT,
         };
-        let db_conn =
-            create_database_connection("proof_service_tests_test_user_spamming_same_signal")
-                .await
-                .unwrap();
+        let db_conn = create_database_connection(
+            "proof_service_tests_test_user_spamming_same_signal",
+            true,
+            config.clone(),
+        )
+        .await
+        .unwrap()
+        .1;
         let user_db_service = UserDbService::new(
             db_conn,
             config,

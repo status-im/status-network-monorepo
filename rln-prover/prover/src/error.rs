@@ -7,8 +7,13 @@ use smart_contract::{KarmaScError, KarmaTiersError, RlnScError};
 use crate::epoch_service::WaitUntilError;
 use crate::tier::ValidateTierLimitsError;
 use crate::user_db_error::{
-    GetMerkleTreeProofError2, RegisterError, RegisterError2, TxCounterError, TxCounterError2,
-    UserDb2OpenError, UserDbOpenError, UserMerkleTreeIndexError,
+    GetMerkleTreeProofError2,
+    // RegisterError,
+    RegisterError2,
+    // TxCounterError,
+    TxCounterError2,
+    UserDb2OpenError,
+    // UserDbOpenError, UserMerkleTreeIndexError,
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -35,12 +40,14 @@ pub enum AppError {
     SignerInitError(#[from] LocalSignerError),
     #[error(transparent)]
     ValidateTierError(#[from] ValidateTierLimitsError),
+    /*
     #[error(transparent)]
     UserDbOpenError(#[from] UserDbOpenError),
     #[error(transparent)]
     MockUserRegisterError(#[from] RegisterError),
     #[error(transparent)]
     MockUserTxCounterError(#[from] TxCounterError),
+    */
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -100,8 +107,8 @@ pub enum ProofGenerationStringError {
     Serialization(String),
     #[error("Proof serialization failed: {0}")]
     SerializationWrite(String),
-    #[error(transparent)]
-    MerkleProofError(#[from] GetMerkleTreeProofError2),
+    #[error("Merkle proof generation failed: {0}")]
+    MerkleProofError(String),
 }
 
 impl From<ProofGenerationError> for ProofGenerationStringError {
@@ -110,7 +117,7 @@ impl From<ProofGenerationError> for ProofGenerationStringError {
             ProofGenerationError::Proof(e) => ProofGenerationStringError::Proof(e.to_string()),
             ProofGenerationError::Serialization(e) => Self::Serialization(e.to_string()),
             ProofGenerationError::SerializationWrite(e) => Self::SerializationWrite(e.to_string()),
-            ProofGenerationError::MerkleProofError(e) => Self::MerkleProofError(e),
+            ProofGenerationError::MerkleProofError(e) => Self::MerkleProofError(e.to_string()),
         }
     }
 }
@@ -119,8 +126,8 @@ impl From<ProofGenerationError> for ProofGenerationStringError {
 pub enum GetMerkleTreeProofError {
     #[error("Merkle tree error: {0}")]
     TreeError(String),
-    #[error(transparent)]
-    MerkleTree(#[from] UserMerkleTreeIndexError),
+    // #[error(transparent)]
+    // MerkleTree(#[from] UserMerkleTreeIndexError),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -129,9 +136,8 @@ pub struct RegisterSCError(#[from] alloy::contract::Error);
 
 #[derive(thiserror::Error, Debug)]
 pub enum HandleTransferError {
-    #[error(transparent)]
-    Register(#[from] RegisterError),
-
+    // #[error(transparent)]
+    // Register(#[from] RegisterError),
     #[error("Fail to register user in RLN SC: {0}")]
     ScRegister(#[from] RegisterSCError),
     #[error("Unable to query balance: {0}")]

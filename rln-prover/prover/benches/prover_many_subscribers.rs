@@ -11,14 +11,12 @@ use std::time::Duration;
 use alloy::primitives::{Address, U256};
 use futures::FutureExt;
 use parking_lot::RwLock;
-use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
 use tempfile::NamedTempFile;
 use tokio::sync::Notify;
 use tokio::task::JoinSet;
 use tonic::Response;
 // internal
-use prover::{AppArgs, MockUser, run_prover};
-use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
+use prover::{AppArgs, MockUser, UserDb2Config, run_prover};
 
 // grpc
 pub mod prover_proto {
@@ -29,52 +27,8 @@ use prover_proto::{
     Address as GrpcAddress, RlnProofFilter, RlnProofReply, SendTransactionReply,
     SendTransactionRequest, U256 as GrpcU256, Wei as GrpcWei, rln_prover_client::RlnProverClient,
 };
-
-async fn create_database_connection(
-    f_name: &str,
-    test_name: &str,
-) -> Result<(String, DatabaseConnection), DbErr> {
-    // Drop / Create db_name then return a connection to it
-
-    let db_name = format!(
-        "{}_{}",
-        std::path::Path::new(f_name)
-            .file_stem()
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        test_name
-    );
-
-    println!("db_name: {db_name}");
-
-    let db_url_base = "postgres://myuser:mysecretpassword@localhost";
-    let db_url = format!("{db_url_base}/mydatabase");
-    let db = Database::connect(db_url)
-        .await
-        .expect("Database connection 0 failed");
-
-    db.execute_raw(Statement::from_string(
-        db.get_database_backend(),
-        format!("DROP DATABASE IF EXISTS \"{db_name}\";"),
-    ))
-    .await?;
-    db.execute_raw(Statement::from_string(
-        db.get_database_backend(),
-        format!("CREATE DATABASE \"{db_name}\";"),
-    ))
-    .await?;
-
-    db.close().await?;
-
-    let db_url_final = format!("{db_url_base}/{db_name}");
-    let db = Database::connect(&db_url_final)
-        .await
-        .expect("Database connection failed");
-    MigratorCreate::up(&db, None).await?;
-
-    Ok((db_url_final, db))
-}
+mod bench_common;
+use bench_common::create_database_connection;
 
 async fn proof_sender(ip: IpAddr, port: u16, addresses: Vec<Address>, proof_count: usize) {
     let chain_id = GrpcU256 {
@@ -216,12 +170,18 @@ fn proof_generation_bench(c: &mut Criterion) {
     let notify_start = Arc::new(Notify::new());
 
     // Spawn prover
+    let cfg = UserDb2Config {
+        tree_count: 1,
+        max_tree_count: 1,
+        tree_depth: 20,
+    };
     let notify_start_1 = notify_start.clone();
     rt.spawn(async move {
         // Setup db
-        let (db_url, _db_conn) = create_database_connection("prover_benches", "prover_bench")
-            .await
-            .unwrap();
+        let (db_url, _db_conn) =
+            create_database_connection("prover_benches_prover_many_subscriber", true, cfg)
+                .await
+                .unwrap();
         app_args.db_url = Some(db_url);
 
         tokio::spawn(run_prover(app_args));
