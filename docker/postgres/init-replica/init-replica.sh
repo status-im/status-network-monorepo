@@ -15,6 +15,7 @@ MAX_RETRIES=30
 for i in $(seq 1 $MAX_RETRIES); do
     if PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U $POSTGRES_USER -d prover_db -c "SELECT 'tx_counter'::regclass;" >/dev/null 2>&1; then
         echo "Table tx_counter found on Primary. Adding to publication..."
+        PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U $POSTGRES_USER -d prover_db -c "CREATE PUBLICATION rln_publication;" || true
         PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U $POSTGRES_USER -d prover_db -c "ALTER PUBLICATION rln_publication ADD TABLE tx_counter, deny_list;" || true
         break
     else
@@ -45,6 +46,6 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "prover_db" <<-EOSQ
     );
 
     CREATE SUBSCRIPTION rln_subscription
-        CONNECTION 'host=postgres port=5432 user=postgres password=postgres dbname=prover_db'
+        CONNECTION 'host=postgres port=5432 user=$POSTGRES_USER password=$POSTGRES_PASSWORD dbname=prover_db'
         PUBLICATION rln_publication;
 EOSQL
