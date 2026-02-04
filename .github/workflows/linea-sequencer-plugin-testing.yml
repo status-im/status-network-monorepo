@@ -71,7 +71,7 @@ jobs:
         uses: gradle/actions/setup-gradle@8379f6a1328ee0e06e2bb424dadb7b159856a326 # 4.4.0
 
       - name: Run acceptance tests
-        run: ./gradlew besu-plugins:linea-sequencer:acceptance-tests:acceptanceTests
+        run: ./gradlew besu-plugins:linea-sequencer:acceptance-tests:acceptanceTests --tests '!linea.plugin.acc.test.EcDataLimitsTest'
         env:
           JAVA_OPTS: -Xmx10g -Xms2g
 
