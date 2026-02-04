@@ -95,15 +95,6 @@ jobs:
       push_image: ${{ inputs.push_image }}
     secrets: inherit
 
-  postman:
-    uses: ./.github/workflows/postman-build-and-publish.yml
-    if: ${{ always() && (inputs.postman_changed == 'true' || inputs.postman_image_tagged != 'true') }}
-    with:
-      commit_tag: ${{ inputs.commit_tag }}
-      develop_tag: ${{ inputs.develop_tag }}
-      image_name: consensys/linea-postman
-      push_image: ${{ inputs.push_image }}
-    secrets: inherit
 
   transaction_exclusion_api:
     uses: ./.github/workflows/transaction-exclusion-api-build-and-publish.yml
