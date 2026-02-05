@@ -40,13 +40,15 @@ BESU_BASE_IMAGE="consensys/linea-besu-package:${BESU_PACKAGE_TAG}"
 BUILD_PROVER=${BUILD_PROVER:-false}
 RESTART_SERVICES=${RESTART_SERVICES:-false}
 SKIP_SOURCE_CLONE=${SKIP_SOURCE_CLONE:-false}
+MULTI_ARCH=${MULTI_ARCH:-false}
 
 # Publish options
 PUSH_IMAGES=${PUSH_IMAGES:-false}
-REGISTRY=${REGISTRY:-}
+REGISTRY=${REGISTRY:-docker.io}
 NAMESPACE=${NAMESPACE:-}
-BESU_IMAGE_NAME=${BESU_IMAGE_NAME:-linea-besu-minimal-rln}
-RLN_PROVER_IMAGE_NAME=${RLN_PROVER_IMAGE_NAME:-status-rln-prover}
+BESU_IMAGE_NAME=${BESU_IMAGE_NAME:-status-network-besu}
+RLN_PROVER_IMAGE_NAME=${RLN_PROVER_IMAGE_NAME:-status-network-rln-prover}
+IMAGE_TAG=${IMAGE_TAG:-}
 IMAGE_TAG_SUFFIX=${IMAGE_TAG_SUFFIX:--gasless-fix}
 
 print_usage() {
@@ -66,16 +68,26 @@ Options:
   --with-prover                Same as --all
   --restart                    Restart services after build
   --skip-clone                 Skip cloning if source already exists at correct commit
+  --multi-arch                 Build multi-arch images (linux/amd64 + linux/arm64)
   --push                       Push images to a registry after build
-  --registry <host>            Registry host (e.g. ghcr.io, docker.io)
-  --namespace <ns>             Namespace/org (e.g. status-im)
+  --registry <host>            Registry host (default: docker.io for Docker Hub)
+  --namespace <ns>             Namespace/org (e.g. status-im, statusnetwork)
   --besu-name <name>           Besu image repository name (default: ${BESU_IMAGE_NAME})
   --prover-name <name>         RLN prover image repository name (default: ${RLN_PROVER_IMAGE_NAME})
+  --tag <tag>                  Image tag (e.g. v1.0.1) - overrides tag-suffix
   --tag-suffix <suffix>        Optional tag suffix (default: ${IMAGE_TAG_SUFFIX})
   -h, --help                   Show this help
 
+Examples:
+  # Build and push multi-arch images to Docker Hub
+  $(basename "$0") --all --multi-arch --push --namespace statusnetwork --tag v1.0.1
+
+  # This will push:
+  #   statusnetwork/status-network-besu:v1.0.1
+  #   statusnetwork/status-network-rln-prover:v1.0.1
+
 Environment vars:
-  BUILD_PROVER, PUSH_IMAGES, REGISTRY, NAMESPACE, BESU_IMAGE_NAME, RLN_PROVER_IMAGE_NAME, IMAGE_TAG_SUFFIX
+  BUILD_PROVER, PUSH_IMAGES, MULTI_ARCH, REGISTRY, NAMESPACE, BESU_IMAGE_NAME, RLN_PROVER_IMAGE_NAME, IMAGE_TAG, IMAGE_TAG_SUFFIX
 USAGE
 }
 
@@ -88,6 +100,8 @@ while [[ $# -gt 0 ]]; do
             RESTART_SERVICES=true; shift ;;
         --skip-clone)
             SKIP_SOURCE_CLONE=true; shift ;;
+        --multi-arch)
+            MULTI_ARCH=true; shift ;;
         --push)
             PUSH_IMAGES=true; shift ;;
         --registry)
@@ -98,6 +112,8 @@ while [[ $# -gt 0 ]]; do
             BESU_IMAGE_NAME="$2"; shift 2 ;;
         --prover-name)
             RLN_PROVER_IMAGE_NAME="$2"; shift 2 ;;
+        --tag)
+            IMAGE_TAG="$2"; shift 2 ;;
         --tag-suffix)
             IMAGE_TAG_SUFFIX="$2"; shift 2 ;;
         -h|--help)
@@ -108,10 +124,19 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$PUSH_IMAGES" == "true" ]]; then
-    if [[ -z "$REGISTRY" || -z "$NAMESPACE" ]]; then
-        echo -e "${RED}❌ When using --push, both --registry and --namespace are required.${NC}"
+    if [[ -z "$NAMESPACE" ]]; then
+        echo -e "${RED}❌ When using --push, --namespace is required.${NC}"
         exit 1
     fi
+fi
+
+# Check for buildx if multi-arch is enabled
+if [[ "$MULTI_ARCH" == "true" ]]; then
+    if ! docker buildx version &>/dev/null; then
+        echo -e "${RED}❌ Docker buildx is required for multi-arch builds. Please install it.${NC}"
+        exit 1
+    fi
+    echo -e "${BLUE}🏗️  Multi-arch mode enabled: Building for linux/amd64 + linux/arm64${NC}"
 fi
 
 # Step 1: Clone or verify Linea besu source
@@ -359,17 +384,23 @@ echo -e "   Size: $(ls -lh "$PATCHED_MERGE_JAR" | awk '{print $5}')"
 
 cd "$REPO_ROOT"
 
-# Step 4: Build RLN Bridge library for ARM64 Linux
-echo -e "${BLUE}🦀 Step 4: Building RLN Bridge Rust Library for ARM64 Linux...${NC}"
+# Step 4: Build RLN Bridge library for Linux
 cd "${LINEA_SEQUENCER_DIR}/sequencer/src/main/rust/rln_bridge"
 
-RLN_LIB_FILE="${LINEA_SEQUENCER_DIR}/sequencer/src/main/rust/rln_bridge/target/aarch64-unknown-linux-gnu/release/librln_bridge.so"
+# Determine which architectures to build
+if [[ "$MULTI_ARCH" == "true" ]]; then
+    echo -e "${BLUE}🦀 Step 4: Building RLN Bridge Rust Library for Multi-Arch (ARM64 + AMD64)...${NC}"
+    RLN_ARCHS=("arm64" "amd64")
+else
+    echo -e "${BLUE}🦀 Step 4: Building RLN Bridge Rust Library for ARM64 Linux...${NC}"
+    RLN_ARCHS=("arm64")
+fi
 
-if [[ ! -f "$RLN_LIB_FILE" ]]; then
-    echo -e "${YELLOW}🐳 Building native ARM64 library using Docker...${NC}"
+RLN_LIB_ARM64="${LINEA_SEQUENCER_DIR}/sequencer/src/main/rust/rln_bridge/target/aarch64-unknown-linux-gnu/release/librln_bridge.so"
+RLN_LIB_AMD64="${LINEA_SEQUENCER_DIR}/sequencer/src/main/rust/rln_bridge/target/x86_64-unknown-linux-gnu/release/librln_bridge.so"
 
-    # Create temporary Dockerfile for ARM64 build
-    cat > Dockerfile.arm64-build << 'DOCKEREOF'
+# Create temporary Dockerfile for native builds
+cat > Dockerfile.rln-build << 'DOCKEREOF'
 FROM rust:1.85-bookworm
 
 RUN apt-get update && apt-get install -y \
@@ -386,36 +417,55 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock* ./
 COPY src ./src
 
-# Build for ARM64
+# Build native
 RUN cargo build --release
 
 # Verify output
 RUN ls -la target/release/librln_bridge.so
 DOCKEREOF
 
-    # Build using native ARM64 Docker container (no cross-compilation)
-    docker build --platform linux/arm64 -t rln-bridge-arm64-builder -f Dockerfile.arm64-build .
+for arch in "${RLN_ARCHS[@]}"; do
+    if [[ "$arch" == "arm64" ]]; then
+        RLN_LIB_FILE="$RLN_LIB_ARM64"
+        TARGET_DIR="target/aarch64-unknown-linux-gnu/release"
+        PLATFORM="linux/arm64"
+    else
+        RLN_LIB_FILE="$RLN_LIB_AMD64"
+        TARGET_DIR="target/x86_64-unknown-linux-gnu/release"
+        PLATFORM="linux/amd64"
+    fi
 
-    # Extract the library
-    echo -e "${YELLOW}📦 Extracting librln_bridge.so...${NC}"
-    mkdir -p target/aarch64-unknown-linux-gnu/release
-    docker create --name rln-extract rln-bridge-arm64-builder
-    docker cp rln-extract:/build/target/release/librln_bridge.so target/aarch64-unknown-linux-gnu/release/
-    docker rm rln-extract
+    if [[ ! -f "$RLN_LIB_FILE" ]]; then
+        echo -e "${YELLOW}🐳 Building native ${arch} library using Docker...${NC}"
 
-    # Cleanup
-    rm -f Dockerfile.arm64-build
+        # Build using native Docker container (no cross-compilation)
+        docker build --platform "$PLATFORM" -t "rln-bridge-${arch}-builder" -f Dockerfile.rln-build .
 
-    # Verify the library
-    echo -e "${YELLOW}🔍 Verifying library architecture...${NC}"
-    file "$RLN_LIB_FILE"
-fi
+        # Extract the library
+        echo -e "${YELLOW}📦 Extracting librln_bridge.so (${arch})...${NC}"
+        mkdir -p "$TARGET_DIR"
+        docker rm -f "rln-extract-${arch}" 2>/dev/null || true
+        docker create --name "rln-extract-${arch}" "rln-bridge-${arch}-builder"
+        docker cp "rln-extract-${arch}:/build/target/release/librln_bridge.so" "$TARGET_DIR/"
+        docker rm "rln-extract-${arch}"
 
-if [[ ! -f "$RLN_LIB_FILE" ]]; then
-    echo -e "${RED}❌ Error: ARM64 RLN library not found: $RLN_LIB_FILE${NC}"
-    exit 1
-fi
-echo -e "${GREEN}✅ RLN Bridge library ready (ARM64)${NC}"
+        # Verify the library
+        echo -e "${YELLOW}🔍 Verifying library architecture (${arch})...${NC}"
+        file "$RLN_LIB_FILE"
+    else
+        echo -e "${GREEN}✅ RLN library already exists for ${arch}${NC}"
+    fi
+
+    if [[ ! -f "$RLN_LIB_FILE" ]]; then
+        echo -e "${RED}❌ Error: ${arch} RLN library not found: $RLN_LIB_FILE${NC}"
+        exit 1
+    fi
+done
+
+# Cleanup
+rm -f Dockerfile.rln-build
+
+echo -e "${GREEN}✅ RLN Bridge library ready for: ${RLN_ARCHS[*]}${NC}"
 
 # Step 5: Build Custom Sequencer JAR
 echo -e "${BLUE}☕ Step 5: Building Custom Sequencer JAR...${NC}"
@@ -512,11 +562,26 @@ if [[ -f "$SEQUENCER_DIST" ]]; then
     echo -e "${GREEN}  ✅ Plugin dependencies installed${NC}"
 fi
 
-# Install RLN native library
+# Install RLN native library (for single-arch or prepare for multi-arch)
 echo -e "${YELLOW}📚 Installing RLN native library...${NC}"
-mkdir -p ./besu/lib/native
-cp "$RLN_LIB_FILE" ./besu/lib/native/
-echo -e "${GREEN}  ✅ Installed: librln_bridge.so${NC}"
+mkdir -p ./besu/lib/native-arm64
+mkdir -p ./besu/lib/native-amd64
+
+# Copy RLN libraries for each architecture we built
+if [[ -f "$RLN_LIB_ARM64" ]]; then
+    cp "$RLN_LIB_ARM64" ./besu/lib/native-arm64/librln_bridge.so
+    echo -e "${GREEN}  ✅ Installed: librln_bridge.so (arm64)${NC}"
+fi
+if [[ -f "$RLN_LIB_AMD64" ]]; then
+    cp "$RLN_LIB_AMD64" ./besu/lib/native-amd64/librln_bridge.so
+    echo -e "${GREEN}  ✅ Installed: librln_bridge.so (amd64)${NC}"
+fi
+
+# For single-arch (arm64 only), also create the original path for backward compat
+if [[ "$MULTI_ARCH" != "true" ]] && [[ -f "$RLN_LIB_ARM64" ]]; then
+    mkdir -p ./besu/lib/native
+    cp "$RLN_LIB_ARM64" ./besu/lib/native/librln_bridge.so
+fi
 
 # Update classpath in startup scripts
 echo -e "${YELLOW}⚙️ Updating Besu startup scripts...${NC}"
@@ -540,8 +605,63 @@ ls -1 ./besu/plugins/ | grep -E "\.(jar|JAR)$" | while read -r f; do echo "    �
 echo -e "  ${YELLOW}Merge JAR (patched):${NC}"
 ls -1 ./besu/lib/ | grep -i merge | while read -r f; do echo "    🩹 $f"; done
 
+# Determine image tag
+if [[ -n "$IMAGE_TAG" ]]; then
+    FINAL_TAG="$IMAGE_TAG"
+else
+    TIMESTAMP=$(date +%Y%m%d%H%M%S)
+    FINAL_TAG="${TIMESTAMP}${IMAGE_TAG_SUFFIX}"
+fi
+
+# Handle image naming
+if [[ -n "$NAMESPACE" ]]; then
+    BESU_IMAGE_REMOTE="${REGISTRY}/${NAMESPACE}/${BESU_IMAGE_NAME}:${FINAL_TAG}"
+    RLN_PROVER_IMAGE_REMOTE="${REGISTRY}/${NAMESPACE}/${RLN_PROVER_IMAGE_NAME}:${FINAL_TAG}"
+else
+    BESU_IMAGE_REMOTE="${BESU_IMAGE_NAME}:${FINAL_TAG}"
+    RLN_PROVER_IMAGE_REMOTE="${RLN_PROVER_IMAGE_NAME}:${FINAL_TAG}"
+fi
+
 # Create Dockerfile
-cat > Dockerfile << 'EOF'
+if [[ "$MULTI_ARCH" == "true" ]]; then
+    # Multi-arch Dockerfile with TARGETARCH
+    cat > Dockerfile << 'EOF'
+FROM ubuntu:24.04
+
+ARG TARGETARCH
+
+RUN apt-get update && \
+    apt-get install -y openjdk-21-jre-headless libjemalloc-dev && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    (groupadd -g 1000 besu || true) && \
+    useradd -u 1000 -g 1000 -m -s /bin/bash besu || \
+    (userdel -r besu 2>/dev/null || true && groupdel besu 2>/dev/null || true && \
+     groupadd -g 1001 besu && useradd -u 1001 -g besu -m -s /bin/bash besu)
+
+USER besu
+WORKDIR /opt/besu
+
+# Copy entire Besu distribution with patched consensus-merge and custom sequencer
+COPY --chown=besu:besu besu/ /opt/besu/
+
+# Copy architecture-specific native library
+# TARGETARCH is 'amd64' or 'arm64'
+COPY --chown=besu:besu besu/lib/native-${TARGETARCH}/librln_bridge.so /opt/besu/lib/native/librln_bridge.so
+
+# Set library paths for RLN
+ENV LD_LIBRARY_PATH="/opt/besu/lib/native:/usr/local/lib:/usr/lib"
+ENV JAVA_LIBRARY_PATH="/opt/besu/lib/native"
+ENV PATH="/opt/besu/bin:${PATH}"
+
+EXPOSE 8545 8546 8547 8550 8551 30303
+
+ENTRYPOINT ["besu"]
+HEALTHCHECK --start-period=5s --interval=5s --timeout=1s --retries=10 CMD bash -c "[ -f /tmp/pid ]"
+EOF
+else
+    # Single-arch Dockerfile (original)
+    cat > Dockerfile << 'EOF'
 FROM ubuntu:24.04
 
 RUN apt-get update && \
@@ -569,46 +689,94 @@ EXPOSE 8545 8546 8547 8550 8551 30303
 ENTRYPOINT ["besu"]
 HEALTHCHECK --start-period=5s --interval=5s --timeout=1s --retries=10 CMD bash -c "[ -f /tmp/pid ]"
 EOF
+fi
 
 # Build Docker image
-TIMESTAMP=$(date +%Y%m%d%H%M%S)
-TAG_WITH_TIME="${TIMESTAMP}${IMAGE_TAG_SUFFIX}"
-BESU_IMAGE_TAG="${BESU_IMAGE_NAME}:${TAG_WITH_TIME}"
+BESU_IMAGE_LOCAL="${BESU_IMAGE_NAME}:${FINAL_TAG}"
 
-echo -e "${YELLOW}🔨 Building Docker image...${NC}"
-docker build --platform linux/arm64 -t "$BESU_IMAGE_TAG" .
-echo -e "${GREEN}✅ Patched Besu image built: $BESU_IMAGE_TAG${NC}"
+if [[ "$MULTI_ARCH" == "true" ]]; then
+    echo -e "${YELLOW}🔨 Building multi-arch Docker image (arm64 + amd64)...${NC}"
+    
+    # Create/use a buildx builder with multi-platform support
+    BUILDER_NAME="multi-arch-builder"
+    if ! docker buildx inspect "$BUILDER_NAME" &>/dev/null; then
+        echo -e "${YELLOW}  Creating buildx builder for multi-arch...${NC}"
+        docker buildx create --name "$BUILDER_NAME" --driver docker-container --use
+    else
+        docker buildx use "$BUILDER_NAME"
+    fi
+    
+    # Build and push in one step for multi-arch (required by buildx)
+    if [[ "$PUSH_IMAGES" == "true" ]]; then
+        echo -e "${YELLOW}  Building and pushing multi-arch image to ${BESU_IMAGE_REMOTE}...${NC}"
+        docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --push \
+            -t "$BESU_IMAGE_REMOTE" \
+            .
+        echo -e "${GREEN}✅ Multi-arch Besu image built and pushed: $BESU_IMAGE_REMOTE${NC}"
+    else
+        # Build and load for local use (single platform at a time)
+        echo -e "${YELLOW}  Building multi-arch images locally (amd64)...${NC}"
+        docker buildx build \
+            --platform linux/amd64 \
+            --load \
+            -t "${BESU_IMAGE_LOCAL}-amd64" \
+            .
+        echo -e "${YELLOW}  Building multi-arch images locally (arm64)...${NC}"
+        docker buildx build \
+            --platform linux/arm64 \
+            --load \
+            -t "${BESU_IMAGE_LOCAL}-arm64" \
+            .
+        echo -e "${GREEN}✅ Multi-arch Besu images built: ${BESU_IMAGE_LOCAL}-amd64, ${BESU_IMAGE_LOCAL}-arm64${NC}"
+    fi
+else
+    echo -e "${YELLOW}🔨 Building Docker image (arm64)...${NC}"
+    docker build --platform linux/arm64 -t "$BESU_IMAGE_LOCAL" .
+    echo -e "${GREEN}✅ Patched Besu image built: $BESU_IMAGE_LOCAL${NC}"
+    
+    # Push if requested (single-arch)
+    if [[ "$PUSH_IMAGES" == "true" ]]; then
+        echo -e "${BLUE}📤 Pushing image to registry...${NC}"
+        docker tag "$BESU_IMAGE_LOCAL" "$BESU_IMAGE_REMOTE"
+        docker push "$BESU_IMAGE_REMOTE"
+        echo -e "${GREEN}✅ Image pushed: $BESU_IMAGE_REMOTE${NC}"
+    fi
+fi
 
 # Build RLN Prover image if requested
 RLN_PROVER_TAG=""
 if [[ "$BUILD_PROVER" == "true" ]]; then
     echo -e "${BLUE}🐳 Building RLN Prover Docker image...${NC}"
     cd "$STATUS_RLN_PROVER_DIR"
-    RLN_PROVER_TAG="${RLN_PROVER_IMAGE_NAME}:${TAG_WITH_TIME}"
-    docker build --platform linux/arm64 -t "$RLN_PROVER_TAG" .
-    echo -e "${GREEN}✅ RLN Prover image built: $RLN_PROVER_TAG${NC}"
-fi
-
-# Handle image naming for push
-BESU_IMAGE_REMOTE="$BESU_IMAGE_TAG"
-RLN_PROVER_IMAGE_REMOTE="$RLN_PROVER_TAG"
-
-if [[ -n "$REGISTRY" || -n "$NAMESPACE" ]]; then
-    BESU_IMAGE_REMOTE="${REGISTRY:+${REGISTRY}/}${NAMESPACE:+${NAMESPACE}/}${BESU_IMAGE_NAME}:${TAG_WITH_TIME}"
-    RLN_PROVER_IMAGE_REMOTE="${REGISTRY:+${REGISTRY}/}${NAMESPACE:+${NAMESPACE}/}${RLN_PROVER_IMAGE_NAME}:${TAG_WITH_TIME}"
-fi
-
-# Push images if requested
-if [[ "$PUSH_IMAGES" == "true" ]]; then
-    echo -e "${BLUE}📤 Pushing images to registry...${NC}"
-    docker tag "$BESU_IMAGE_TAG" "$BESU_IMAGE_REMOTE"
-    docker push "$BESU_IMAGE_REMOTE"
+    RLN_PROVER_LOCAL="${RLN_PROVER_IMAGE_NAME}:${FINAL_TAG}"
     
-    if [[ -n "$RLN_PROVER_TAG" ]]; then
-        docker tag "$RLN_PROVER_TAG" "$RLN_PROVER_IMAGE_REMOTE"
-        docker push "$RLN_PROVER_IMAGE_REMOTE"
+    if [[ "$MULTI_ARCH" == "true" ]]; then
+        if [[ "$PUSH_IMAGES" == "true" ]]; then
+            echo -e "${YELLOW}  Building and pushing multi-arch RLN Prover to ${RLN_PROVER_IMAGE_REMOTE}...${NC}"
+            docker buildx build \
+                --platform linux/amd64,linux/arm64 \
+                --push \
+                -t "$RLN_PROVER_IMAGE_REMOTE" \
+                .
+            echo -e "${GREEN}✅ Multi-arch RLN Prover built and pushed: $RLN_PROVER_IMAGE_REMOTE${NC}"
+        else
+            docker buildx build --platform linux/amd64 --load -t "${RLN_PROVER_LOCAL}-amd64" .
+            docker buildx build --platform linux/arm64 --load -t "${RLN_PROVER_LOCAL}-arm64" .
+            echo -e "${GREEN}✅ Multi-arch RLN Prover built: ${RLN_PROVER_LOCAL}-amd64, ${RLN_PROVER_LOCAL}-arm64${NC}"
+        fi
+    else
+        docker build --platform linux/arm64 -t "$RLN_PROVER_LOCAL" .
+        RLN_PROVER_TAG="$RLN_PROVER_LOCAL"
+        echo -e "${GREEN}✅ RLN Prover image built: $RLN_PROVER_LOCAL${NC}"
+        
+        if [[ "$PUSH_IMAGES" == "true" ]]; then
+            docker tag "$RLN_PROVER_LOCAL" "$RLN_PROVER_IMAGE_REMOTE"
+            docker push "$RLN_PROVER_IMAGE_REMOTE"
+            echo -e "${GREEN}✅ RLN Prover pushed: $RLN_PROVER_IMAGE_REMOTE${NC}"
+        fi
     fi
-    echo -e "${GREEN}✅ Images pushed successfully${NC}"
 fi
 
 # Update Docker Compose
@@ -673,13 +841,24 @@ echo -e "  • putPayloadById: Now prefers blocks with more txs when values equa
 echo -e "  • retrievePayloadById: Filters corrupted blocks, prefers blocks with more txs"
 echo -e "  • Gasless blocks (value=0 with txs) now beat empty blocks (value=0)"
 echo ""
-echo -e "${BLUE}📋 Built Components (ARM64):${NC}"
-echo -e "  Patched Merge JAR: $(basename "$PATCHED_MERGE_JAR")"
-echo -e "  Custom Sequencer JAR: $(basename "$SEQUENCER_JAR")"
-echo -e "  RLN Library: librln_bridge.so (aarch64)"
-echo -e "  Besu Image: $BESU_IMAGE_REMOTE (arm64)"
-if [[ -n "$RLN_PROVER_TAG" ]]; then
-    echo -e "  RLN Prover Image: $RLN_PROVER_IMAGE_REMOTE"
+if [[ "$MULTI_ARCH" == "true" ]]; then
+    echo -e "${BLUE}📋 Built Components (Multi-Arch: amd64 + arm64):${NC}"
+    echo -e "  Patched Merge JAR: $(basename "$PATCHED_MERGE_JAR")"
+    echo -e "  Custom Sequencer JAR: $(basename "$SEQUENCER_JAR")"
+    echo -e "  RLN Library: librln_bridge.so (aarch64 + x86_64)"
+    echo -e "  Besu Image: $BESU_IMAGE_REMOTE (multi-arch)"
+    if [[ "$BUILD_PROVER" == "true" ]]; then
+        echo -e "  RLN Prover Image: $RLN_PROVER_IMAGE_REMOTE (multi-arch)"
+    fi
+else
+    echo -e "${BLUE}📋 Built Components (ARM64):${NC}"
+    echo -e "  Patched Merge JAR: $(basename "$PATCHED_MERGE_JAR")"
+    echo -e "  Custom Sequencer JAR: $(basename "$SEQUENCER_JAR")"
+    echo -e "  RLN Library: librln_bridge.so (aarch64)"
+    echo -e "  Besu Image: $BESU_IMAGE_REMOTE (arm64)"
+    if [[ -n "$RLN_PROVER_TAG" ]]; then
+        echo -e "  RLN Prover Image: $RLN_PROVER_IMAGE_REMOTE"
+    fi
 fi
 echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
 
