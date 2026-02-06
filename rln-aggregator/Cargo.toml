@@ -1,0 +1,21 @@
+[package]
+name = "rln-aggregator"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }
+clap = { version = "4.5.57", features = ["derive", "wrap_help"] }
+tonic = "0.14.3"
+# tonic-web = "0.14.3"
+# tonic-reflection = "0.14.3"
+prost = "0.14.3"
+tonic-prost = "0.14.3"
+anyhow = "1.0.101"
+tower-http = { version = "0.6.8", features = ["cors"] }
+futures = "0.3.31"
+bytesize = "2.3.1"
+
+
+[build-dependencies]
+tonic-prost-build = "0.14.3"

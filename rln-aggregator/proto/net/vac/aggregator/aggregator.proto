@@ -1,0 +1,34 @@
+syntax = "proto3";
+package prover;
+
+import "google/protobuf/descriptor.proto";
+
+service RlnAggregator {
+
+  // Server side streaming RPC: 1 request -> X responses (stream)
+  rpc GetProofs(RlnAggFilter) returns (stream RlnAggProofReply);
+}
+
+message RlnAggFilter {
+  optional string address = 1;
+}
+
+message RlnAggProofReply {
+  oneof resp {
+    // variant for success
+    RlnAggProof proof = 1;
+    // variant for error
+    RlnAggProofError error = 2;
+  }
+}
+
+message RlnAggProof {
+  // From https://rfc.vac.dev/vac/32/rln-v1#sending-the-output-message
+  bytes sender = 1;
+  bytes tx_hash = 2;              // Transaction hash for the proof (non hash signal)
+  bytes proof = 3;                // The RLN proof itself, hex encoded
+}
+
+message RlnAggProofError {
+  string error = 2;
+}
