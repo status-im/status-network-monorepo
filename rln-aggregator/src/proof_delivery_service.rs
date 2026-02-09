@@ -1,9 +1,12 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 // third-party
+use crate::prover_proto;
 use anyhow::anyhow;
 use bytesize::ByteSize;
 use futures::TryFutureExt;
+use tokio::sync::broadcast::error::RecvError;
 use tokio::{
     sync::broadcast::{Receiver, Sender},
     sync::{Semaphore, TryAcquireError},
@@ -21,6 +24,13 @@ use crate::prover_proto::{
     RlnProofReply, rln_agg_proof_reply,
 };
 
+const DELIVERY_SERVICE_LIMIT_PER_CONNECTION: usize = 16;
+// Timeout for all handlers of a request (increased to 5 minutes for streaming support)
+const DELIVERY_SERVICE_GRPC_TIMEOUT: Duration = Duration::from_secs(300);
+const DELIVERY_SERVICE_HTTP2_MAX_CONCURRENT_STREAM: u32 = 32;
+// Http2 max frame size (e.g. 16 Kb)
+const DELIVERY_SERVICE_HTTP2_MAX_FRAME_SIZE: ByteSize = ByteSize::kib(16);
+
 pub struct ProofDeliveryServer {
     config: ProofDeliveryServerConfig,
     addr: SocketAddr,
@@ -31,6 +41,7 @@ pub struct ProofDeliveryServerConfig {
     grpc_max_decoding_message_size: u64,
     grpc_max_encoding_message_size: u64,
     pub(crate) client_connected_limit: u32,
+    grpc_reflection: bool,
 }
 
 impl Default for ProofDeliveryServerConfig {
@@ -39,6 +50,7 @@ impl Default for ProofDeliveryServerConfig {
             grpc_max_decoding_message_size: ByteSize::mib(5).as_u64(),
             grpc_max_encoding_message_size: ByteSize::mib(5).as_u64(),
             client_connected_limit: 2000,
+            grpc_reflection: false,
         }
     }
 }
@@ -77,14 +89,24 @@ impl ProofDeliveryServer {
             .allow_origin(Any)
             .allow_headers(Any);
 
+        let reflection_service = if self.config.grpc_reflection {
+            Some(
+                tonic_reflection::server::Builder::configure()
+                    .register_encoded_file_descriptor_set(prover_proto::FILE_DESCRIPTOR_SET)
+                    .build_v1()?,
+            )
+        } else {
+            None
+        };
+
         Server::builder()
             // service protection && limits
             // limits: connection
-            // .concurrency_limit_per_connection(self.config.agg_service_limit_per_connection)
-            // .timeout(PROVER_SERVICE_GRPC_TIMEOUT)
+            .concurrency_limit_per_connection(DELIVERY_SERVICE_LIMIT_PER_CONNECTION)
+            .timeout(DELIVERY_SERVICE_GRPC_TIMEOUT)
             // limits : http2
-            // .max_concurrent_streams(PROVER_SERVICE_HTTP2_MAX_CONCURRENT_STREAM)
-            // .max_frame_size(PROVER_SERVICE_HTTP2_MAX_FRAME_SIZE.as_u64() as u32)
+            .max_concurrent_streams(DELIVERY_SERVICE_HTTP2_MAX_CONCURRENT_STREAM)
+            .max_frame_size(DELIVERY_SERVICE_HTTP2_MAX_FRAME_SIZE.as_u64() as u32)
             // perf: tcp
             .tcp_nodelay(true)
             // http 1 layer required for GrpcWebLayer
@@ -92,10 +114,9 @@ impl ProofDeliveryServer {
             // services
             .layer(cors)
             // .layer(GrpcWebLayer::new())
-            // .add_optional_service(reflection_service)
+            .add_optional_service(reflection_service)
             .add_service(agg_server)
             .serve(self.addr)
-            // .map_err(AppError2::from)
             .map_err(|e| anyhow!(e))
             .await
     }
@@ -131,7 +152,7 @@ impl RlnAggregator for ProofDeliveryService {
         };
 
         // Channel to send stuff to the connected grpc client
-        let (tx, rx) = tokio::sync::mpsc::channel(10);
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
         // Channel to receive a RLN proof (from one proof service)
         let mut rx2 = self.broadcast_channel.0.subscribe();
 
@@ -157,15 +178,19 @@ impl RlnAggregator for ProofDeliveryService {
                                 let resp = rln_proof_reply.into();
 
                                 // Send to the client
+                                // println!("[Proof delivery service] Sending message...");
                                 if let Err(e) = tx.send(Ok(resp)).await {
                                     println!("[Proof delivery service] Client disconnected during send: {}", e);
                                     break;
                                 };
-
                             },
-                            Err(e) => {
+                            Err(RecvError::Lagged(skipped_msg_count)) => {
                                 // TODO: handle the slow receiver here
-                                println!("[Proof delivery service] channel receive error {:?}", e);
+                                println!("[Proof delivery service] client is too slow (already {} skipped message), disconnecting him...", skipped_msg_count);
+                                break;
+                            }
+                            Err(RecvError::Closed) => {
+                                eprintln!("[Proof delivery service] channel receive closed, exiting now...");
                                 break;
                             }
                         }
