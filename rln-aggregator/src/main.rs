@@ -11,6 +11,8 @@ use rand::RngExt;
 use rand::rngs::StdRng;
 use tokio::task::JoinSet;
 use tonic::{IntoRequest, codegen::tokio_stream::StreamExt, transport::Channel};
+use tracing::{debug, error, info, level_filters::LevelFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 // internal
 use crate::proof_delivery_service::{ProofDeliveryServer, ProofDeliveryServerConfig};
 
@@ -54,8 +56,12 @@ pub struct AppArgs {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    setup_tracing().context("Failed to setup tracing in main")?;
+
+    info!("Starting rln-aggregator...");
+
     let app_args = AppArgs::parse();
-    println!("{:#?}", app_args);
+    debug!("{:#?}", app_args);
 
     /*
     let url_0 = app_args.urls[0].clone();
@@ -94,6 +100,7 @@ async fn run_aggregator(app_args: AppArgs) -> anyhow::Result<()> {
     let mock_prover_proof = app_args.mock_prover_proof.unwrap_or(false);
 
     if mock_prover_proof {
+        info!("Using mock prover proof...");
         let mut mock = MockProverProof::new(0, "Mock prover proof".to_string(), tx);
         set.spawn(async move { mock.serve().await });
     } else {
@@ -130,7 +137,7 @@ async fn run_aggregator(app_args: AppArgs) -> anyhow::Result<()> {
     // We expect that the Aggregator should never stop unexpectedly, but printing error can help to debug
     res.iter().for_each(|r| {
         if r.is_err() {
-            println!("Error: {:?}", r);
+            error!("Error: {:?}", r);
         }
     });
     Ok(())
@@ -214,11 +221,9 @@ impl MockProverProof {
         loop {
             // let proof_reply = RlnProofReply::default();
             let proof_reply = RlnProofReply {
-                resp: Some(Resp::Error {
-                    0: RlnProofError {
-                        error: format!("index: {}", i),
-                    },
-                }),
+                resp: Some(Resp::Error(RlnProofError {
+                    error: format!("index: {}", i),
+                })),
             };
 
             self.sender.send(proof_reply).context(format!(
@@ -234,4 +239,23 @@ impl MockProverProof {
             i += 1;
         }
     }
+}
+
+fn setup_tracing() -> anyhow::Result<()> {
+    let filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .from_env_lossy()
+        // TODO: Add a way to disable this for maximum log?
+        .add_directive("h2=error".parse()?)
+        .add_directive("opentelemetry_sdk=error".parse()?);
+
+    let fmt_layer = tracing_subscriber::fmt::layer();
+
+    tracing_subscriber::registry()
+        .with(fmt_layer)
+        .with(filter)
+        // .with(telemetry_layer)
+        .init();
+
+    Ok(())
 }

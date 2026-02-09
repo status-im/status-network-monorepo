@@ -16,6 +16,7 @@ use tonic::{
     codegen::tokio_stream::wrappers::ReceiverStream, transport::Server,
 };
 use tower_http::cors::{Any, CorsLayer};
+use tracing::{debug, error, warn};
 // grpc proto
 use crate::prover_proto::rln_aggregator_server::{RlnAggregator, RlnAggregatorServer};
 use crate::prover_proto::rln_proof_reply::Resp;
@@ -141,12 +142,12 @@ impl RlnAggregator for ProofDeliveryService {
             Ok(sem_permit) => sem_permit,
             Err(TryAcquireError::Closed) => {
                 // Semaphore is closed - rln-aggregator is likely closing
-                eprintln!("Semaphore closed");
+                debug!("Semaphore closed");
                 return Err(Status::internal("Semaphore closed"));
             }
             Err(TryAcquireError::NoPermits) => {
                 // Semaphore is full - let the client knows about it
-                eprintln!("Semaphore full");
+                debug!("Semaphore full");
                 return Err(Status::resource_exhausted("Semaphore full"));
             }
         };
@@ -166,7 +167,7 @@ impl RlnAggregator for ProofDeliveryService {
                 tokio::select! {
                     // Check if client disconnected (receiver dropped)
                     _ = tx.closed() => {
-                        println!("[Proof delivery service] client disconnected");
+                        error!("[Proof delivery service] client disconnected");
                         break;
                     }
                     // Receive proofs from broadcast channel
@@ -180,17 +181,17 @@ impl RlnAggregator for ProofDeliveryService {
                                 // Send to the client
                                 // println!("[Proof delivery service] Sending message...");
                                 if let Err(e) = tx.send(Ok(resp)).await {
-                                    println!("[Proof delivery service] Client disconnected during send: {}", e);
+                                    warn!("[Proof delivery service] Client disconnected during send: {}", e);
                                     break;
                                 };
                             },
                             Err(RecvError::Lagged(skipped_msg_count)) => {
                                 // TODO: handle the slow receiver here
-                                println!("[Proof delivery service] client is too slow (already {} skipped message), disconnecting him...", skipped_msg_count);
+                                error!("[Proof delivery service] client is too slow (already {} skipped message), disconnecting him...", skipped_msg_count);
                                 break;
                             }
                             Err(RecvError::Closed) => {
-                                eprintln!("[Proof delivery service] channel receive closed, exiting now...");
+                                debug!("[Proof delivery service] channel receive closed, exiting now...");
                                 break;
                             }
                         }

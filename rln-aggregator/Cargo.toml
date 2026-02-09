@@ -16,6 +16,12 @@ tower-http = { version = "0.6.8", features = ["cors"] }
 futures = "0.3.31"
 bytesize = "2.3.1"
 rand = "0.10.0"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+tracing = "0.1.44"
 
 [build-dependencies]
 tonic-prost-build = "0.14.3"
+
+[dev-dependencies]
+# tempfile = "3.21"
+tracing-test = "0.2.6"

@@ -12,6 +12,7 @@ mod tests {
     // use tokio::io::AsyncWriteExt;
     use crate::MockProverProof;
     use tonic::{IntoRequest, Status};
+    use tracing::{debug, info};
 
     #[tokio::test]
     async fn test_client_connected_limit() -> anyhow::Result<()> {
@@ -47,6 +48,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[tracing_test::traced_test]
     async fn test_client_too_slow() -> anyhow::Result<()> {
         // Test rln-aggregator client too slow disconnection
 
@@ -88,7 +90,7 @@ mod tests {
         */
 
         let h_c2 = tokio::spawn(async move {
-            println!("Client 2 get proof...");
+            debug!("Client 2 get proof...");
             // let mut stdout = tokio::io::stdout();
             let mut count_2 = 0;
             let mut gp_2 = client_2.get_proofs(filter_2).await?.into_inner();
@@ -102,7 +104,7 @@ mod tests {
             Ok::<u64, Status>(count_2)
         });
 
-        println!("Joining h_c1 & h_c2...");
+        info!("Joining h_c1 & h_c2...");
         // let res = tokio::try_join!(h_c1, h_c2);
         let res = h_c2.await;
         println!("res: {:?}", res);
