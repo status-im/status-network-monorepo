@@ -4,7 +4,10 @@ use std::sync::Arc;
 use anyhow::anyhow;
 use bytesize::ByteSize;
 use futures::TryFutureExt;
-use tokio::sync::broadcast::{Receiver, Sender};
+use tokio::{
+    sync::broadcast::{Receiver, Sender},
+    sync::{Semaphore, TryAcquireError},
+};
 use tonic::{
     Request, Response, Status, codegen::http::Method,
     codegen::tokio_stream::wrappers::ReceiverStream, transport::Server,
@@ -27,6 +30,7 @@ pub struct ProofDeliveryServer {
 pub struct ProofDeliveryServerConfig {
     grpc_max_decoding_message_size: u64,
     grpc_max_encoding_message_size: u64,
+    pub(crate) client_connected_limit: u32,
 }
 
 impl Default for ProofDeliveryServerConfig {
@@ -34,6 +38,7 @@ impl Default for ProofDeliveryServerConfig {
         Self {
             grpc_max_decoding_message_size: ByteSize::mib(5).as_u64(),
             grpc_max_encoding_message_size: ByteSize::mib(5).as_u64(),
+            client_connected_limit: 2000,
         }
     }
 }
@@ -57,6 +62,10 @@ impl ProofDeliveryServer {
                 self.broadcast_channel.0.clone(),
                 self.broadcast_channel.0.subscribe(),
             ),
+
+            client_connected_limit: Arc::new(Semaphore::new(
+                self.config.client_connected_limit as usize,
+            )),
         };
 
         let agg_server = RlnAggregatorServer::new(service)
@@ -94,6 +103,7 @@ impl ProofDeliveryServer {
 
 struct ProofDeliveryService {
     broadcast_channel: (Sender<RlnProofReply>, Receiver<RlnProofReply>),
+    client_connected_limit: Arc<tokio::sync::Semaphore>,
 }
 
 #[tonic::async_trait]
@@ -104,7 +114,21 @@ impl RlnAggregator for ProofDeliveryService {
         &self,
         _request: Request<RlnAggFilter>,
     ) -> Result<Response<Self::GetProofsStream>, Status> {
+        let sem_permit = self.client_connected_limit.clone().try_acquire_owned();
 
+        let sem_permit = match sem_permit {
+            Ok(sem_permit) => sem_permit,
+            Err(TryAcquireError::Closed) => {
+                // Semaphore is closed - rln-aggregator is likely closing
+                eprintln!("Semaphore closed");
+                return Err(Status::internal("Semaphore closed"));
+            }
+            Err(TryAcquireError::NoPermits) => {
+                // Semaphore is full - let the client knows about it
+                eprintln!("Semaphore full");
+                return Err(Status::resource_exhausted("Semaphore full"));
+            }
+        };
 
         // Channel to send stuff to the connected grpc client
         let (tx, rx) = tokio::sync::mpsc::channel(10);
@@ -112,6 +136,10 @@ impl RlnAggregator for ProofDeliveryService {
         let mut rx2 = self.broadcast_channel.0.subscribe();
 
         tokio::spawn(async move {
+            // Move semaphore permit in async closure so it will only be dropped once client
+            // disconnect
+            let _sem_permit = sem_permit;
+
             // Stream proofs to client, with proper disconnect detection
             loop {
                 tokio::select! {

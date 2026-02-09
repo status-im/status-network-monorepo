@@ -1,4 +1,6 @@
 mod proof_delivery_service;
+#[cfg(test)]
+mod proof_delivery_service_tests;
 
 use std::net::{IpAddr, SocketAddr};
 // third-party
