@@ -1,4 +1,3 @@
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 // third-party
@@ -6,20 +5,24 @@ use crate::prover_proto;
 use anyhow::anyhow;
 use bytesize::ByteSize;
 use futures::TryFutureExt;
+use tokio::net::TcpListener;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::{
     sync::broadcast::{Receiver, Sender},
     sync::{Semaphore, TryAcquireError},
 };
+use tonic::codegen::tokio_stream::wrappers::TcpListenerStream;
 use tonic::{
     Request, Response, Status, codegen::http::Method,
     codegen::tokio_stream::wrappers::ReceiverStream, transport::Server,
 };
 use tower_http::cors::{Any, CorsLayer};
-use tracing::{debug, error,
-              warn,
-              // info,
-              // Level
+use tracing::{
+    debug,
+    error,
+    warn,
+    // info,
+    // Level
 };
 // grpc proto
 use crate::prover_proto::rln_aggregator_server::{RlnAggregator, RlnAggregatorServer};
@@ -38,7 +41,6 @@ const DELIVERY_SERVICE_HTTP2_MAX_FRAME_SIZE: ByteSize = ByteSize::kib(16);
 
 pub struct ProofDeliveryServer {
     config: ProofDeliveryServerConfig,
-    addr: SocketAddr,
     broadcast_channel: (Sender<RlnProofReply>, Receiver<RlnProofReply>),
 }
 
@@ -63,17 +65,15 @@ impl Default for ProofDeliveryServerConfig {
 impl ProofDeliveryServer {
     pub(crate) fn new(
         config: ProofDeliveryServerConfig,
-        addr: SocketAddr,
         (tx, rx): (Sender<RlnProofReply>, Receiver<RlnProofReply>),
     ) -> Self {
         Self {
             config,
-            addr,
             broadcast_channel: (tx, rx),
         }
     }
 
-    pub(crate) async fn serve(&self) -> anyhow::Result<()> {
+    pub(crate) async fn serve_with(&self, listener: TcpListener) -> anyhow::Result<()> {
         let service = ProofDeliveryService {
             broadcast_channel: (
                 self.broadcast_channel.0.clone(),
@@ -104,6 +104,8 @@ impl ProofDeliveryServer {
             None
         };
 
+        let incoming = TcpListenerStream::new(listener);
+
         Server::builder()
             // service protection && limits
             // limits: connection
@@ -121,7 +123,7 @@ impl ProofDeliveryServer {
             // .layer(GrpcWebLayer::new())
             .add_optional_service(reflection_service)
             .add_service(agg_server)
-            .serve(self.addr)
+            .serve_with_incoming(incoming)
             .map_err(|e| anyhow!(e))
             .await
     }

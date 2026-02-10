@@ -9,6 +9,7 @@ use anyhow::Context;
 use clap::Parser;
 use rand::RngExt;
 use rand::rngs::StdRng;
+use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tonic::{IntoRequest, codegen::tokio_stream::StreamExt, transport::Channel};
 use tracing::{debug, error, info, level_filters::LevelFilter};
@@ -89,11 +90,12 @@ async fn run_aggregator(app_args: AppArgs) -> anyhow::Result<()> {
 
     // proof delivery server
 
-    let addr = SocketAddr::new(app_args.ip, app_args.port);
+    let addr_ = SocketAddr::new(app_args.ip, app_args.port);
+    let listener = TcpListener::bind(addr_).await?;
     let config = ProofDeliveryServerConfig::default();
-    let delivery_server = ProofDeliveryServer::new(config, addr, (tx.clone(), rx));
+    let delivery_server = ProofDeliveryServer::new(config, (tx.clone(), rx));
 
-    set.spawn(async move { delivery_server.serve().await });
+    set.spawn(async move { delivery_server.serve_with(listener).await });
 
     // proof listening clients
 

@@ -7,39 +7,49 @@ mod tests {
     use crate::prover_proto::RlnAggFilter;
     use crate::prover_proto::rln_aggregator_client::RlnAggregatorClient;
     use futures::StreamExt;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::time::Duration;
+    use tokio::net::TcpListener;
     // use tokio::io::AsyncWriteExt;
     use crate::MockProverProof;
     use tonic::{IntoRequest, Status};
     use tracing::{debug, info};
 
     #[tokio::test]
+    #[tracing_test::traced_test]
     async fn test_client_connected_limit() -> anyhow::Result<()> {
         // Test rln-aggregator connected client limit
 
         let mut cfg = ProofDeliveryServerConfig::default();
         cfg.client_connected_limit = 1;
 
-        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        debug!("addr: {}", addr);
+
         let (tx, rx) = tokio::sync::broadcast::channel(10);
-        let server = ProofDeliveryServer::new(cfg, addr, (tx, rx));
+        let server = ProofDeliveryServer::new(cfg, (tx, rx));
 
-        tokio::spawn(async move { server.serve().await });
+        tokio::spawn(async move { server.serve_with(listener).await });
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
-
-        let mut client_1 = RlnAggregatorClient::connect("http://127.0.0.1:8080").await?;
+        let channel_1 = tonic::transport::Channel::from_shared(format!("http://{}", addr))?
+            .connect()
+            .await?;
+        let mut client_1 = RlnAggregatorClient::new(channel_1);
         let filter_1 = RlnAggFilter::default().into_request();
         let _gp_1 = client_1.get_proofs(filter_1).await?;
 
-        let mut client_2 = RlnAggregatorClient::connect("http://127.0.0.1:8080").await?;
+        // let mut client_2 = RlnAggregatorClient::connect("http://127.0.0.1:8080").await?;
+        let channel_2 = tonic::transport::Channel::from_shared(format!("http://{}", addr))?
+            .connect()
+            .await?;
+        let mut client_2 = RlnAggregatorClient::new(channel_2);
         let filter_2 = RlnAggFilter::default().into_request();
         let gp_2 = client_2.get_proofs(filter_2).await;
 
         match gp_2 {
             Ok(_) => panic!("Expect an error"),
             Err(e) => {
+                debug!("e: {}", e.to_string());
                 assert_eq!(e.message(), "Semaphore full")
             }
         }
@@ -55,11 +65,13 @@ mod tests {
         let mut cfg = ProofDeliveryServerConfig::default();
         cfg.client_connected_limit = 2;
 
-        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        debug!("addr: {}", addr);
         let (tx, rx) = tokio::sync::broadcast::channel(2);
-        let server = ProofDeliveryServer::new(cfg, addr, (tx.clone(), rx));
+        let server = ProofDeliveryServer::new(cfg, (tx.clone(), rx));
 
-        tokio::spawn(async move { server.serve().await });
+        tokio::spawn(async move { server.serve_with(listener).await });
         tokio::time::sleep(Duration::from_secs(2)).await;
 
         let mut mock = MockProverProof::new(0, "Mock".to_string(), tx);
@@ -67,10 +79,14 @@ mod tests {
         tokio::time::sleep(Duration::from_secs(2)).await;
 
         /*
-        let mut client_1 = RlnAggregatorClient::connect("http://127.0.0.1:8080").await?;
+        let channel_1 = tonic::transport::Channel::from_shared(format!("http://{}", addr))?.connect().await?;
+        let mut client_1 = RlnAggregatorClient::new(channel_1);
         let filter_1 = RlnAggFilter::default().into_request();
         */
-        let mut client_2 = RlnAggregatorClient::connect("http://127.0.0.1:8080").await?;
+        let channel_2 = tonic::transport::Channel::from_shared(format!("http://{}", addr))?
+            .connect()
+            .await?;
+        let mut client_2 = RlnAggregatorClient::new(channel_2);
         let filter_2 = RlnAggFilter::default().into_request();
 
         /*
