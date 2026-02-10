@@ -16,7 +16,11 @@ use tonic::{
     codegen::tokio_stream::wrappers::ReceiverStream, transport::Server,
 };
 use tower_http::cors::{Any, CorsLayer};
-use tracing::{debug, error, warn};
+use tracing::{debug, error,
+              warn,
+              // info,
+              // Level
+};
 // grpc proto
 use crate::prover_proto::rln_aggregator_server::{RlnAggregator, RlnAggregatorServer};
 use crate::prover_proto::rln_proof_reply::Resp;
@@ -132,6 +136,8 @@ struct ProofDeliveryService {
 impl RlnAggregator for ProofDeliveryService {
     type GetProofsStream = ReceiverStream<Result<RlnAggProofReply, Status>>;
 
+    // #[tracing::instrument(skip(self), err, ret)]
+    #[tracing::instrument(skip(self), err)]
     async fn get_proofs(
         &self,
         _request: Request<RlnAggFilter>,
