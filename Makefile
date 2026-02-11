@@ -126,7 +126,7 @@ start-env-with-rln-production:
 	echo "Step 5: Restarting RLN prover in production mode..." && \
 	docker stop rln-prover karma-service 2>/dev/null || true && \
 	docker rm rln-prover karma-service 2>/dev/null || true && \
-	RLN_PROVER_IMAGE=$$(docker images --format '{{.Repository}}:{{.Tag}}' | grep status-rln-prover | head -1) && \
+	RLN_PROVER_IMAGE=$$(docker images --format '{{.Repository}}:{{.Tag}}' | grep status-network-rln-prover | head -1) && \
 	echo "  Using prover image: $$RLN_PROVER_IMAGE" && \
 	docker run -d --name rln-prover --hostname rln-prover \
 		--network docker_linea --ip 11.11.11.120 \
