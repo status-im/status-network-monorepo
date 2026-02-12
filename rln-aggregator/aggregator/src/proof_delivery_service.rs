@@ -186,7 +186,7 @@ impl RlnAggregator for ProofDeliveryService {
 
                                 let resp = rln_proof_reply.into();
 
-                                println!("resp: {:?} - bcast rx2 len: {}", resp, bcast_rx.len());
+                                // println!("resp: {:?} - bcast rx2 len: {}", resp, bcast_rx.len());
 
                                 // Send to the client
                                 // println!("[Proof delivery service] Sending message...");
@@ -197,7 +197,7 @@ impl RlnAggregator for ProofDeliveryService {
                                 };
                                 let elapsed = start.elapsed();
 
-                                println!("send in {} nanos", elapsed.as_nanos());
+                                // println!("send in {} nanos", elapsed.as_nanos());
 
                             },
                             Err(RecvError::Lagged(skipped_msg_count)) => {

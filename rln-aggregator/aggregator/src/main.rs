@@ -7,10 +7,14 @@ use std::time::Duration;
 // third-party
 use anyhow::Context;
 use clap::Parser;
-use rand::RngExt;
-use rand::rngs::StdRng;
-use tokio::net::TcpListener;
-use tokio::task::JoinSet;
+use rand::{
+    RngExt,
+    rngs::StdRng
+};
+use tokio::{
+    net::TcpListener,
+    task::JoinSet
+};
 use tonic::{IntoRequest, codegen::tokio_stream::StreamExt, transport::Channel};
 use tracing::{debug, error, info, level_filters::LevelFilter};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
@@ -92,6 +96,7 @@ async fn run_aggregator(app_args: AppArgs) -> anyhow::Result<()> {
 
     let addr_ = SocketAddr::new(app_args.ip, app_args.port);
     let listener = TcpListener::bind(addr_).await?;
+    info!("Listening on {}", addr_);
     let config = ProofDeliveryServerConfig::default();
     let delivery_server = ProofDeliveryServer::new(config, (bcast_tx.clone(), bcast_rx));
 
@@ -218,10 +223,10 @@ impl MockProverProof {
 
     #[tracing::instrument(skip(self), err, ret)]
     async fn serve(&mut self) -> anyhow::Result<()> {
-        let mut rng: StdRng = rand::make_rng();
+        let mut _rng: StdRng = rand::make_rng();
 
         // Simulate time to connect to client
-        tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
         let mut i = 0u64;
         loop {
@@ -238,10 +243,13 @@ impl MockProverProof {
             ))?;
 
             // Simulate network time
-            // let sleep_time_ = rng.random_range(25..=75);
-            // let sleep_time = Duration::from_millis(sleep_time_);
-            // tokio::time::sleep(sleep_time).await;
+            let sleep_time_ = _rng.random_range(25..=75);
+            let sleep_time = Duration::from_millis(sleep_time_);
+            tokio::time::sleep(sleep_time).await;
 
+            i+=1;
+
+            /*
             // tokio::time::sleep(Duration::from_nanos(10)).await;
 
             i += 1;
@@ -251,6 +259,7 @@ impl MockProverProof {
                 tokio::time::sleep(Duration::from_millis(1)).await;
                 // break;
             }
+            */
         }
         Ok(())
     }

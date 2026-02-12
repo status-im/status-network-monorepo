@@ -4,8 +4,13 @@ An aggregator service collection Rln proof and sending them to slasher nodes
 
 ## Rln aggregator development
 
-* Start rln-prover (Postgres + Mock)
-* `cargo run -- -u http://localhost:50051`
+* Start aggregator
+  * `cargo run -- -u http://localhost:50051`
+* Start aggregator (using mocked proofs)
+  * `cargo run -p aggregator -- -i 127.0.0.1 --mock-prover-proof true`
+
+* Start slasher node
+  * `cargo run -p slasher` 
 
 ### Send tx to rln-prover
 
