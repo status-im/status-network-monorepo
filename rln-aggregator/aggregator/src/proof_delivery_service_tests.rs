@@ -3,15 +3,15 @@ use crate::proof_delivery_service::ProofDeliveryServerConfig;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::MockProverProof;
     use crate::proof_delivery_service::ProofDeliveryServer;
     use crate::prover_proto::RlnAggFilter;
     use crate::prover_proto::rln_aggregator_client::RlnAggregatorClient;
     use futures::StreamExt;
     use std::time::Duration;
+    use tokio::io::AsyncWriteExt;
     use tokio::net::TcpListener;
     use tokio::sync::broadcast::error::{RecvError, SendError};
-    use tokio::io::AsyncWriteExt;
-    use crate::MockProverProof;
     use tonic::{IntoRequest, Status};
     use tracing::{debug, error, info};
 
@@ -61,7 +61,6 @@ mod tests {
     #[tokio::test]
     #[tracing_test::traced_test]
     async fn test_broadcast_lagged() -> anyhow::Result<()> {
-
         let (tx, mut rx) = tokio::sync::broadcast::channel(2);
 
         tx.send(10)?;
@@ -73,7 +72,7 @@ mod tests {
         match rx.recv().await {
             Err(RecvError::Lagged(n)) => {
                 error!("Already {} skipped message", n);
-            },
+            }
             _ => panic!("Expect an error"),
         }
 
@@ -88,7 +87,6 @@ mod tests {
     #[tokio::test]
     #[tracing_test::traced_test]
     async fn test_broadcast_lagged_2() -> anyhow::Result<()> {
-
         let (bcast_tx, mut bcast_rx) = tokio::sync::broadcast::channel(2);
         let (client_tx, mut client_rx) = tokio::sync::mpsc::channel(2);
 
@@ -119,12 +117,12 @@ mod tests {
                     Err(RecvError::Lagged(n)) => {
                         error!("Already {} skipped message", n);
                         break;
-                    },
+                    }
                     Err(RecvError::Closed) => break,
                     Ok(v) => {
                         count += 1;
                         client_tx.send(v).await.unwrap();
-                    },
+                    }
                 }
             }
             Ok::<i32, SendError<u8>>(count)
@@ -140,7 +138,6 @@ mod tests {
             Ok::<i32, SendError<u8>>(3i32)
         });
 
-
         let res = tokio::join!(handle_client, handle_recv, handle_send);
 
         println!("res: {:?}", res);
@@ -151,7 +148,6 @@ mod tests {
     #[tokio::test]
     #[tracing_test::traced_test]
     async fn test_broadcast_lagged_3() -> anyhow::Result<()> {
-
         let (bcast_tx, mut bcast_rx) = tokio::sync::broadcast::channel(2);
         let (client_tx, mut client_rx) = tokio::sync::mpsc::channel(2);
 
@@ -211,7 +207,6 @@ mod tests {
             Ok::<i32, SendError<u8>>(3i32)
         });
 
-
         let res = tokio::join!(handle_client, handle_recv, handle_send);
 
         println!("res: {:?}", res);
@@ -219,8 +214,7 @@ mod tests {
         Ok(())
     }
 
-
-    #[tokio::test(flavor = "multi_thread", worker_threads=4)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     #[tracing_test::traced_test]
     async fn test_client_too_slow() -> anyhow::Result<()> {
         // Test rln-aggregator client too slow disconnection
@@ -275,9 +269,13 @@ mod tests {
             let mut gp_2 = client_2.get_proofs(filter_2).await?.into_inner();
             while let Some(p) = gp_2.next().await {
                 let p_ = p?;
-                stdout.write_all(format!("[client 2] received {:?}", p_).as_bytes()).await?;
+                stdout
+                    .write_all(format!("[client 2] received {:?}", p_).as_bytes())
+                    .await?;
                 count_2 += 1;
-                stdout.write_all(format!("[client 2] received {} messages\n", count_2).as_bytes()).await?;
+                stdout
+                    .write_all(format!("[client 2] received {} messages\n", count_2).as_bytes())
+                    .await?;
                 stdout.flush().await?;
                 tokio::time::sleep(Duration::from_secs(10)).await;
             }

@@ -157,12 +157,13 @@ impl RlnAggregator for ProofDeliveryService {
         // Channel to send stuff to the connected grpc client
         let (client_tx, client_rx) = tokio::sync::mpsc::channel(1);
         // Channel to receive a RLN proof (from one proof service)
-        let mut bcast_rx = self
-            .broadcast_channel
-            .0
-            .subscribe();
+        let mut bcast_rx = self.broadcast_channel.0.subscribe();
 
-        info!("Spawning task with bcast_tx len: {} - bcast_rx2 len: {}", self.broadcast_channel.0.len(), bcast_rx.len());
+        info!(
+            "Spawning task with bcast_tx len: {} - bcast_rx2 len: {}",
+            self.broadcast_channel.0.len(),
+            bcast_rx.len()
+        );
 
         tokio::spawn(async move {
             // Move semaphore permit in async closure so it will only be dropped once client

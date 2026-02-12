@@ -27,6 +27,7 @@ message RlnAggProof {
   bytes sender = 1;
   bytes tx_hash = 2;              // Transaction hash for the proof (non hash signal)
   bytes proof = 3;                // The RLN proof itself, hex encoded
+  uint64 epoch = 4;
 }
 
 message RlnAggProofError {

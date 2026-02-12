@@ -4,14 +4,17 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+clap.workspace = true
 anyhow.workspace = true
+thiserror.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 tokio.workspace = true
 tonic.workspace = true
 prost.workspace = true
 tonic-prost.workspace = true
-clap = { version = "4.5.58", features = ["derive"] }
+alloy.workspace = true
+parking_lot = "0.12.5"
 
 [build-dependencies]
 tonic-prost-build.workspace = true

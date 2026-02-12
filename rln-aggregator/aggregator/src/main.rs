@@ -7,14 +7,8 @@ use std::time::Duration;
 // third-party
 use anyhow::Context;
 use clap::Parser;
-use rand::{
-    RngExt,
-    rngs::StdRng
-};
-use tokio::{
-    net::TcpListener,
-    task::JoinSet
-};
+use rand::{RngExt, rngs::StdRng};
+use tokio::{net::TcpListener, task::JoinSet};
 use tonic::{IntoRequest, codegen::tokio_stream::StreamExt, transport::Channel};
 use tracing::{debug, error, info, level_filters::LevelFilter};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
@@ -220,7 +214,6 @@ impl MockProverProof {
 }
 
 impl MockProverProof {
-
     #[tracing::instrument(skip(self), err, ret)]
     async fn serve(&mut self) -> anyhow::Result<()> {
         let mut _rng: StdRng = rand::make_rng();
@@ -247,7 +240,7 @@ impl MockProverProof {
             let sleep_time = Duration::from_millis(sleep_time_);
             tokio::time::sleep(sleep_time).await;
 
-            i+=1;
+            i += 1;
 
             /*
             // tokio::time::sleep(Duration::from_nanos(10)).await;
