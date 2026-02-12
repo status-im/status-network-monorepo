@@ -31,7 +31,7 @@ use prover_proto::{
 };
 
 #[derive(Debug, Clone, Parser)]
-#[command(about = "RLN prover client", long_about = None)]
+#[command(about = "RLN aggregator node", long_about = None)]
 pub struct AppArgs {
     #[arg(short = 'i', long = "ip", default_value = "::1", help = "Service ip")]
     pub ip: IpAddr,
@@ -84,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
 async fn run_aggregator(app_args: AppArgs) -> anyhow::Result<()> {
     // queue
     // Used to send proof from "proof listening clients" to "proof delivery service"
-    let (tx, rx) = tokio::sync::broadcast::channel(2);
+    let (bcast_tx, bcast_rx) = tokio::sync::broadcast::channel(2);
 
     let mut set = JoinSet::new();
 
@@ -93,7 +93,7 @@ async fn run_aggregator(app_args: AppArgs) -> anyhow::Result<()> {
     let addr_ = SocketAddr::new(app_args.ip, app_args.port);
     let listener = TcpListener::bind(addr_).await?;
     let config = ProofDeliveryServerConfig::default();
-    let delivery_server = ProofDeliveryServer::new(config, (tx.clone(), rx));
+    let delivery_server = ProofDeliveryServer::new(config, (bcast_tx.clone(), bcast_rx));
 
     set.spawn(async move { delivery_server.serve_with(listener).await });
 
@@ -103,7 +103,7 @@ async fn run_aggregator(app_args: AppArgs) -> anyhow::Result<()> {
 
     if mock_prover_proof {
         info!("Using mock prover proof...");
-        let mut mock = MockProverProof::new(0, "Mock prover proof".to_string(), tx);
+        let mut mock = MockProverProof::new(0, "Mock prover proof".to_string(), bcast_tx);
         set.spawn(async move { mock.serve().await });
     } else {
         for (id, url) in app_args.urls.into_iter().enumerate() {
@@ -115,7 +115,7 @@ async fn run_aggregator(app_args: AppArgs) -> anyhow::Result<()> {
             let mut s = client.get_proofs(req).await.unwrap().into_inner();
             */
 
-            let tx = tx.clone();
+            let tx = bcast_tx.clone();
 
             // rln-prover clients
             set.spawn(async move {
@@ -166,6 +166,7 @@ impl ProverClient {
         })
     }
 
+    #[tracing::instrument(skip(self), err, ret)]
     async fn serve(&mut self) -> anyhow::Result<()> {
         let proof_filter = RlnProofFilter::default();
         let req = proof_filter.into_request();
@@ -182,12 +183,13 @@ impl ProverClient {
                     }
                     Err(e) => {
                         // FIXME: what to do here?
-                        println!("[client {} {}] received an error: {}", self.id, self.url, e);
+                        error!("[client {} {}] received an error: {}", self.id, self.url, e);
                     }
                 }
             } else {
                 // Stream has ended
                 // TODO: log this
+                error!("Stream has ended");
                 break;
             }
         }
@@ -213,11 +215,13 @@ impl MockProverProof {
 }
 
 impl MockProverProof {
+
+    #[tracing::instrument(skip(self), err, ret)]
     async fn serve(&mut self) -> anyhow::Result<()> {
         let mut rng: StdRng = rand::make_rng();
 
         // Simulate time to connect to client
-        tokio::time::sleep(tokio::time::Duration::from_millis(450)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
 
         let mut i = 0u64;
         loop {
@@ -234,12 +238,21 @@ impl MockProverProof {
             ))?;
 
             // Simulate network time
-            let sleep_time_ = rng.random_range(25..=75);
-            let sleep_time = Duration::from_millis(sleep_time_);
-            tokio::time::sleep(sleep_time).await;
+            // let sleep_time_ = rng.random_range(25..=75);
+            // let sleep_time = Duration::from_millis(sleep_time_);
+            // tokio::time::sleep(sleep_time).await;
+
+            // tokio::time::sleep(Duration::from_nanos(10)).await;
 
             i += 1;
+
+            if i % 3 == 0 {
+                info!("Already send {} proof reply", i);
+                tokio::time::sleep(Duration::from_millis(1)).await;
+                // break;
+            }
         }
+        Ok(())
     }
 }
 

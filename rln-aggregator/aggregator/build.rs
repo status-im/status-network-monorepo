@@ -7,10 +7,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .file_descriptor_set_path(out_dir.join("prover_descriptor.bin"))
         .compile_protos(
             &[
-                "../rln-prover/proto/net/vac/prover/prover.proto",
-                "proto/net/vac/aggregator/aggregator.proto",
+                "../../rln-prover/proto/net/vac/prover/prover.proto",
+                "../proto/net/vac/aggregator/aggregator.proto",
             ],
-            &["../rln-prover/proto", "proto"],
+            &["../../rln-prover/proto", "../proto"],
         )
         .unwrap();
 

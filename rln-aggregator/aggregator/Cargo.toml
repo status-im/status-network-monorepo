@@ -1,0 +1,25 @@
+[package]
+name = "aggregator"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio.workspace = true
+clap.workspace = true
+tonic.workspace = true
+tonic-reflection.workspace = true
+prost.workspace = true
+tonic-prost.workspace = true
+anyhow.workspace = true
+tower-http = { version = "0.6.8", features = ["cors"] }
+futures = "0.3.31"
+bytesize = "2.3.1"
+rand = "0.10.0"
+tracing.workspace = true
+tracing-subscriber.workspace = true
+[build-dependencies]
+tonic-prost-build.workspace = true
+
+[dev-dependencies]
+# tempfile = "3.21"
+tracing-test = "0.2.6"

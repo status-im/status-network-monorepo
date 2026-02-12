@@ -17,13 +17,7 @@ use tonic::{
     codegen::tokio_stream::wrappers::ReceiverStream, transport::Server,
 };
 use tower_http::cors::{Any, CorsLayer};
-use tracing::{
-    debug,
-    error,
-    warn,
-    // info,
-    // Level
-};
+use tracing::{debug, error, info, warn};
 // grpc proto
 use crate::prover_proto::rln_aggregator_server::{RlnAggregator, RlnAggregatorServer};
 use crate::prover_proto::rln_proof_reply::Resp;
@@ -161,9 +155,14 @@ impl RlnAggregator for ProofDeliveryService {
         };
 
         // Channel to send stuff to the connected grpc client
-        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        let (client_tx, client_rx) = tokio::sync::mpsc::channel(1);
         // Channel to receive a RLN proof (from one proof service)
-        let mut rx2 = self.broadcast_channel.0.subscribe();
+        let mut bcast_rx = self
+            .broadcast_channel
+            .0
+            .subscribe();
+
+        info!("Spawning task with bcast_tx len: {} - bcast_rx2 len: {}", self.broadcast_channel.0.len(), bcast_rx.len());
 
         tokio::spawn(async move {
             // Move semaphore permit in async closure so it will only be dropped once client
@@ -174,32 +173,44 @@ impl RlnAggregator for ProofDeliveryService {
             loop {
                 tokio::select! {
                     // Check if client disconnected (receiver dropped)
-                    _ = tx.closed() => {
+                    _ = client_tx.closed() => {
                         error!("[Proof delivery service] client disconnected");
+                        println!("[Proof delivery service] client disconnected");
                         break;
                     }
                     // Receive proofs from broadcast channel
-                    result = rx2.recv() => {
+                    result = bcast_rx.recv() => {
 
                         match result {
                             Ok(rln_proof_reply) => {
 
                                 let resp = rln_proof_reply.into();
 
+                                println!("resp: {:?} - bcast rx2 len: {}", resp, bcast_rx.len());
+
                                 // Send to the client
                                 // println!("[Proof delivery service] Sending message...");
-                                if let Err(e) = tx.send(Ok(resp)).await {
+                                let start = std::time::Instant::now();
+                                if let Err(e) = client_tx.send(Ok(resp)).await {
                                     warn!("[Proof delivery service] Client disconnected during send: {}", e);
                                     break;
                                 };
+                                let elapsed = start.elapsed();
+
+                                println!("send in {} nanos", elapsed.as_nanos());
+
                             },
                             Err(RecvError::Lagged(skipped_msg_count)) => {
                                 // TODO: handle the slow receiver here
                                 error!("[Proof delivery service] client is too slow (already {} skipped message), disconnecting him...", skipped_msg_count);
+                                error!("[Proof delivery service] {}", bcast_rx.len());
+                                // println!("[Proof delivery service] client is too slow (already {} skipped message), disconnecting him...", skipped_msg_count);
+                                drop(client_tx);
                                 break;
                             }
                             Err(RecvError::Closed) => {
                                 debug!("[Proof delivery service] channel receive closed, exiting now...");
+                                println!("[Proof delivery service] channel receive closed, exiting now...");
                                 break;
                             }
                         }
@@ -208,7 +219,7 @@ impl RlnAggregator for ProofDeliveryService {
             }
         });
 
-        Ok(Response::new(ReceiverStream::new(rx)))
+        Ok(Response::new(ReceiverStream::new(client_rx)))
     }
 }
 
