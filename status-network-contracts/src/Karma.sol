@@ -6,6 +6,7 @@ import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/I
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ERC20VotesUpgradeable } from "./utils/ERC20VotesUpgradeable.sol";
 import { IRewardDistributor } from "./interfaces/IRewardDistributor.sol";
+import { IGaugeVoter } from "./interfaces/IGaugeVoter.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
@@ -48,6 +49,8 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     event SlashPercentageUpdated(uint256 oldPercentage, uint256 newPercentage);
     /// @notice Emitted when the slash reward percentage is updated
     event SlashRewardPercentageUpdated(uint256 oldPercentage, uint256 newPercentage);
+    /// @notice Emitted when the gauge voter is updated
+    event GaugeVoterUpdated(address indexed oldGaugeVoter, address indexed newGaugeVoter);
 
     /*//////////////////////////////////////////////////////////////////////////
                                     CONSTANTS
@@ -80,6 +83,9 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     bytes32 public constant OPERATOR_ROLE = 0x97667070c54ef182b0f5858b034beac1b6f3089aa2d3188bb1e8929f4fa9b929;
     /// @notice Slasher role keccak256("SLASHER_ROLE")
     bytes32 public constant SLASHER_ROLE = 0x12b42e8a160f6064dc959c6f251e3af0750ad213dbecf573b4710d67d6c28e39;
+
+    /// @notice The gauge voter contract to notify on voting power changes
+    IGaugeVoter public gaugeVoter;
 
     /// @notice Gap for upgrade safety.
     // solhint-disable-next-line
@@ -190,6 +196,17 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     }
 
     /**
+     * @notice Sets the gauge voter contract to notify on voting power changes.
+     * @dev Only the admin can set the gauge voter.
+     * @param _gaugeVoter The address of the gauge voter contract (or address(0) to disable).
+     */
+    function setGaugeVoter(address _gaugeVoter) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        address oldGaugeVoter = address(gaugeVoter);
+        gaugeVoter = IGaugeVoter(_gaugeVoter);
+        emit GaugeVoterUpdated(oldGaugeVoter, _gaugeVoter);
+    }
+
+    /**
      * @notice Sets the reward for a reward distributor.
      * @dev Only the owner can set the reward for a reward distributor.
      * @dev The total allocation for all reward distributors is updated.
@@ -266,6 +283,17 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     /*//////////////////////////////////////////////////////////////////////////
                              INTERNAL FUNCTIONS
       //////////////////////////////////////////////////////////////////////////*/
+
+    function _delegate(address delegator, address delegatee) internal virtual override {
+        address currentDelegate = delegates(delegator);
+        super._delegate(delegator, delegatee);
+        _notifyGaugeVoter(currentDelegate, delegatee);
+    }
+
+    function _afterTokenTransfer(address from, address to, uint256 amount) internal virtual override {
+        super._afterTokenTransfer(from, to, amount);
+        _notifyGaugeVoter(delegates(from), delegates(to));
+    }
 
     function _beforeTokenTransfer(address from, address to, uint256) internal view override {
         if (from != address(0) && to != address(0)) {
@@ -401,6 +429,12 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     function _onlyAdminOrSlasher(address sender) internal view {
         if (!hasRole(DEFAULT_ADMIN_ROLE, sender) && !hasRole(SLASHER_ROLE, sender)) {
             revert Karma__Unauthorized();
+        }
+    }
+
+    function _notifyGaugeVoter(address from, address to) internal {
+        if (address(gaugeVoter) != address(0)) {
+            gaugeVoter.updateVotingPower(from, to);
         }
     }
 
