@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-// use parking_lot::RwLock;
-use crate::prover_proto::RlnAggProof;
+// third-party
 use alloy::primitives::Address;
-use tokio::sync::RwLock;
-use tokio::sync::mpsc::{Receiver, Sender};
-use tracing::{error, info, warn};
+use tokio::{
+    sync::RwLock,
+    sync::mpsc::{Receiver, Sender},
+};
+use tracing::{debug, error, info, warn};
+// internal - Grpc
+use crate::prover_proto::RlnAggProof;
 
 pub(crate) struct ProofProcessService {
     config: ProofProcessConfig,
@@ -40,6 +43,9 @@ impl ProofProcessService {
                         ProofProcessError::InvalidSender => {
                             continue;
                         }
+                        ProofProcessError::DecreasingEpoch => {
+                            break;
+                        }
                         ProofProcessError::SendForSlasing(_) => {
                             error!("Cannot send to slashing_tx, aborting...");
                             break;
@@ -66,8 +72,9 @@ impl ProofProcessService {
 
         // Unwrap safe: length has already been tested
         let sender_addr: &[u8; Address::len_bytes()] = proof.sender.as_slice().try_into().unwrap();
-        let sender_addr = Address::try_from(sender_addr);
+        let sender_addr = Address::from(sender_addr);
 
+        /*
         let sender_addr = match sender_addr {
             Ok(sender_addr) => sender_addr,
             Err(e) => {
@@ -75,29 +82,29 @@ impl ProofProcessService {
                 return Err(ProofProcessError::InvalidSender);
             }
         };
+        */
 
         let mut guard = self.db.write().await;
 
-        // TODO
-        /*
-        let current_epoch = match current_epoch {
-            Some(v) => {
-                // Epoch has changed
-                if *v < proof.epoch {
-                    self.0.clear();
+        self.current_epoch = match self.current_epoch {
+            Some(current_epoch) => {
+                if current_epoch < proof.epoch {
+                    guard.0.clear();
                     debug!("New epoch: {}, resetting db...", proof.epoch);
                     Some(proof.epoch)
-                } else if *v == proof.epoch {
-                    Some(*v) // Same epoch - only store proof here
+                } else if current_epoch == proof.epoch {
+                    Some(current_epoch)
                 } else {
-                    // Decreasing epoch ?? - aborting...
-                    error!("Slasher current epoch is {} but received new epoch: {}, aborting...", v, res.epoch);
-                    break;
+                    // Decreasing epoch WTF? - aborting...
+                    error!(
+                        "Slasher current epoch is {} but received new epoch: {}, aborting...",
+                        current_epoch, proof.epoch
+                    );
+                    return Err(ProofProcessError::DecreasingEpoch);
                 }
-            },
-            None => Some(res.epoch) // Initial epoch right after slasher app starts
+            }
+            None => Some(proof.epoch),
         };
-        */
 
         let db_entry = guard.insert_proof(&sender_addr, &proof);
 
@@ -127,15 +134,15 @@ impl Db {
     fn insert_proof(&mut self, addr: &Address, proof: &RlnAggProof) -> DbEntry {
         let e = self
             .0
-            .entry(addr.clone())
+            .entry(*addr)
             .and_modify(|db_e| {
                 // Note: rln-prover manually tweaks the RLN message id if there is a spam
                 //       this allows the slasher to keep only the two last proofs received
-                db_e.set_proof(&proof);
+                db_e.set_proof(proof);
             })
             .or_insert_with(|| {
                 let mut db_e = DbEntry::default();
-                db_e.set_proof(&proof);
+                db_e.set_proof(proof);
                 db_e
             });
 
@@ -143,13 +150,14 @@ impl Db {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct DbEntry {
     proof_1: Option<RlnAggProof>,
     proof_2: Option<RlnAggProof>,
     seen_proof_count: u64,
 }
 
+/*
 impl Default for DbEntry {
     fn default() -> Self {
         Self {
@@ -159,6 +167,7 @@ impl Default for DbEntry {
         }
     }
 }
+*/
 
 impl DbEntry {
     fn set_proof(&mut self, proof: &RlnAggProof) {
@@ -186,6 +195,131 @@ pub(crate) struct ProofProcessConfig {
 enum ProofProcessError {
     #[error("Invalid sender address received")]
     InvalidSender,
+    #[error("Received an invalid epoch")]
+    DecreasingEpoch,
     #[error(transparent)]
     SendForSlasing(#[from] tokio::sync::mpsc::error::SendError<(RlnAggProof, RlnAggProof)>),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn test_db() {
+        let config = ProofProcessConfig { rln_limit: 10 };
+        let (_proof_tx, proof_rx) = tokio::sync::mpsc::channel(2);
+        let (slashing_tx, _slashing_rx) = tokio::sync::mpsc::channel(2);
+        let mut service = ProofProcessService::new(config, proof_rx, slashing_tx);
+
+        let addr_1 = Address::random();
+        let proof_1 = RlnAggProof {
+            sender: addr_1.to_vec(),
+            ..Default::default()
+        };
+        service.proof_process(proof_1.clone()).await.unwrap();
+        {
+            let guard = service.db.read().await;
+            assert!(guard.0.contains_key(&addr_1));
+            assert_eq!(guard.0.get(&addr_1).unwrap().proof_1, Some(proof_1.clone()));
+            assert_eq!(guard.0.get(&addr_1).unwrap().proof_2, None);
+            assert_eq!(guard.0.get(&addr_1).unwrap().seen_proof_count, 1);
+            // drop(guard);
+        }
+
+        let proof_2 = RlnAggProof {
+            sender: addr_1.to_vec(),
+            ..Default::default()
+        };
+
+        service.proof_process(proof_2.clone()).await.unwrap();
+        {
+            let guard = service.db.read().await;
+            assert!(guard.0.contains_key(&addr_1));
+            assert_eq!(guard.0.get(&addr_1).unwrap().proof_1, Some(proof_1));
+            assert_eq!(guard.0.get(&addr_1).unwrap().proof_2, Some(proof_2));
+            assert_eq!(guard.0.get(&addr_1).unwrap().seen_proof_count, 2);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_db_epoch_changes() {
+        let config = ProofProcessConfig { rln_limit: 10 };
+        let (_proof_tx, proof_rx) = tokio::sync::mpsc::channel(2);
+        let (slashing_tx, _slashing_rx) = tokio::sync::mpsc::channel(2);
+        let mut service = ProofProcessService::new(config, proof_rx, slashing_tx);
+
+        let addr_1 = Address::random();
+        let proof_1 = RlnAggProof {
+            sender: addr_1.to_vec(),
+            epoch: 0,
+            ..Default::default()
+        };
+        service.proof_process(proof_1.clone()).await.unwrap();
+
+        let proof_2 = RlnAggProof {
+            sender: addr_1.to_vec(),
+            epoch: 1, // New epoch
+            ..Default::default()
+        };
+
+        service.proof_process(proof_2.clone()).await.unwrap();
+
+        {
+            assert_eq!(service.current_epoch, Some(1));
+            let guard = service.db.read().await;
+            assert_eq!(guard.0.get(&addr_1).unwrap().proof_1, Some(proof_2));
+            assert_eq!(guard.0.get(&addr_1).unwrap().proof_2, None);
+            assert_eq!(guard.0.get(&addr_1).unwrap().seen_proof_count, 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_db_slashing_detect() {
+        let config = ProofProcessConfig { rln_limit: 2 };
+        let (_proof_tx, proof_rx) = tokio::sync::mpsc::channel(3);
+        let (slashing_tx, mut slashing_rx) = tokio::sync::mpsc::channel(3);
+
+        // Tokio task simulating the slashing service
+        let handle = tokio::spawn(async move {
+            loop {
+                let proofs = slashing_rx.recv().await;
+                if proofs.is_none() {
+                    break;
+                }
+                let proofs = proofs.unwrap();
+                return Some(proofs);
+            }
+
+            None
+        });
+
+        let mut service = ProofProcessService::new(config, proof_rx, slashing_tx);
+
+        let addr_1 = Address::random();
+        let proof_1 = RlnAggProof {
+            sender: addr_1.to_vec(),
+            epoch: 0,
+            ..Default::default()
+        };
+        service.proof_process(proof_1.clone()).await.unwrap();
+
+        let proof_2 = RlnAggProof {
+            sender: addr_1.to_vec(),
+            epoch: 0,
+            ..Default::default()
+        };
+        let proof_3 = proof_2.clone();
+
+        service.proof_process(proof_2.clone()).await.unwrap();
+        service.proof_process(proof_3.clone()).await.unwrap();
+
+        let res = tokio::time::timeout(Duration::from_secs(10), handle)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(res, Some((proof_2, proof_3)));
+    }
 }

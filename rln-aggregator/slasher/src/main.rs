@@ -1,4 +1,6 @@
 mod proof_process;
+mod slashing;
+mod smart_contract;
 
 use std::net::IpAddr;
 // third-party
@@ -32,6 +34,7 @@ use crate::prover_proto::{
     // RlnAggProof
     rln_aggregator_client::RlnAggregatorClient,
 };
+use crate::slashing::SlashingService;
 
 #[derive(Debug, Clone, Parser)]
 #[command(about = "RLN slasher node", long_about = None)]
@@ -67,6 +70,11 @@ async fn main() -> anyhow::Result<()> {
 
     let mut set = JoinSet::new();
 
+    // Slashing service
+    let mut slashing_service = SlashingService::new(_slashing_rx);
+    set.spawn(async move { slashing_service.serve().await });
+
+    // Proof process service
     let cfg = ProofProcessConfig {
         rln_limit: app_args.rln_spam_limit,
     };
@@ -74,6 +82,7 @@ async fn main() -> anyhow::Result<()> {
 
     set.spawn(async move { proof_process_service.serve().await });
 
+    // Aggregator client
     let url = format!("http://{}:{}", app_args.ip, app_args.port);
     let mut client_1 = RlnAggregatorClient::connect(url.clone())
         .await
@@ -126,7 +135,6 @@ async fn main() -> anyhow::Result<()> {
 
     let res = set.join_all().await;
     // Print all errors from services (if any)
-    // We expect that the Aggregator should never stop unexpectedly, but printing error can help to debug
     res.iter().for_each(|r| {
         if r.is_err() {
             error!("Error: {:?}", r);

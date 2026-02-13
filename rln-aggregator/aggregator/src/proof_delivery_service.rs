@@ -196,7 +196,7 @@ impl RlnAggregator for ProofDeliveryService {
                                     warn!("[Proof delivery service] Client disconnected during send: {}", e);
                                     break;
                                 };
-                                let elapsed = start.elapsed();
+                                let _elapsed = start.elapsed();
 
                                 // println!("send in {} nanos", elapsed.as_nanos());
 
@@ -246,6 +246,7 @@ impl From<RlnProof> for RlnAggProof {
             sender: value.sender,
             tx_hash: value.tx_hash,
             proof: value.proof,
+            epoch: value.epoch,
         }
     }
 }
