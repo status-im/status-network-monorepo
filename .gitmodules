@@ -13,11 +13,11 @@
 [submodule "status-network-contracts/lib/openzeppelin-contracts"]
 	path = status-network-contracts/lib/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
-    branch = v4.8.3
+    branch = v4.9.6
 [submodule "status-network-contracts/lib/openzeppelin-contracts-upgradeable"]
 	path = status-network-contracts/lib/openzeppelin-contracts-upgradeable
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable
-    branch = v4.8.3
+    branch = v4.9.6
 [submodule "linea-constraints"]
 	path = tracer/linea-constraints
 	url = https://github.com/Consensys/linea-constraints
