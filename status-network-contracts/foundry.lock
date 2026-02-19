@@ -8,19 +8,25 @@
   "../go-corset": {
     "rev": "ee34d9eb60bf369958fcaae6b97a0c53502092fc"
   },
+  "../tracer/linea-constraints": {
+    "rev": "ac2dcb77c4f3ea33d34be65858a54a7223468582"
+  },
+  "lib/ExcessivelySafeCall": {
+    "rev": "81cd99ce3e69117d665d7601c330ea03b97acce0"
+  },
   "lib/forge-std": {
     "rev": "035de35f5e366c8d6ed142aec4ccb57fe2dd87d4"
   },
   "lib/openzeppelin-contracts": {
-    "branch": {
-      "name": "v4.8.3",
-      "rev": "0a25c1940ca220686588c4af3ec526f725fe2582"
+    "tag": {
+      "name": "v4.9.6",
+      "rev": "dc44c9f1a4c3b10af99492eed84f83ed244203f6"
     }
   },
   "lib/openzeppelin-contracts-upgradeable": {
-    "branch": {
-      "name": "v4.8.3",
-      "rev": "58fa0f81c4036f1a3b616fdffad2fd27e5d5ce21"
+    "tag": {
+      "name": "v4.9.6",
+      "rev": "2d081f24cac1a867f6f73d512f2022e1fa987854"
     }
   }
 }
