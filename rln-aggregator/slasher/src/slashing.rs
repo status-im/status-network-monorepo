@@ -11,6 +11,7 @@ use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, warn};
 // RLN
 use rln::protocol::{compute_id_secret, deserialize_proof_values};
+use rln::utils::IdSecret;
 use tokio::sync::TryAcquireError;
 // internal
 use crate::common::SlashingData;
@@ -91,7 +92,7 @@ impl SlashingService {
     }
 }
 
-async fn slash<P: Provider>(rln_sc: RLNInstance<P>, slashing_data: SlashingData, account_to_reward: Address) -> anyhow::Result<()> {
+fn recover(slashing_data: SlashingData) -> anyhow::Result<IdSecret> {
 
     let proof_1 = slashing_data.proof_1;
     let proof_2 = slashing_data.proof_2;
@@ -109,7 +110,147 @@ async fn slash<P: Provider>(rln_sc: RLNInstance<P>, slashing_data: SlashingData,
         (proof_2_values_de.x, proof_2_values_de.y),
     ).context("Fail to recover identity secret hash")?;
 
-    rln_sc.slash(slashing_data.sender, recovered_identity_secret_hash, account_to_reward).await
+    Ok(recovered_identity_secret_hash)
+}
+
+async fn slash<P: Provider>(rln_sc: RLNInstance<P>, slashing_data: SlashingData, account_to_reward: Address) -> anyhow::Result<()> {
+
+    let sender = slashing_data.sender;
+    let recovered_identity_secret_hash= recover(slashing_data)?;
+    rln_sc.slash(sender, recovered_identity_secret_hash, account_to_reward)
+        .await
         .context("Failed to call slash on RLN SC")?;
+
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Cursor, Write};
+    use alloy::primitives::address;
+    use super::*;
+    use ark_bn254::Fr;
+    use ark_serialize::CanonicalSerialize;
+    use rln::circuit::{zkey_from_folder, Curve};
+    use rln::hashers::{hash_to_field_le, poseidon_hash};
+    use rln::poseidon_tree::PoseidonTree;
+    use rln::protocol::{generate_proof, keygen, proof_values_from_witness, rln_witness_from_values, serialize_proof_values, RLNProofValues};
+    use rln::utils::IdSecret;
+    use zerokit_utils::{ZerokitMerkleProof, ZerokitMerkleTree};
+    use crate::prover_proto::{RlnAggProof, RlnProof};
+
+    const addr_alice: Address = address!("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
+    const addr_bob: Address = address!("0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
+
+    fn serialize_proof(proof: Proof<Curve>, proof_values: RLNProofValues) -> Vec<u8> {
+        let mut output_buffer = Cursor::new(Vec::new());
+        if let Err(e) = proof.serialize_compressed(&mut output_buffer) {
+            panic!();
+        }
+        if let Err(e) = output_buffer.write_all(&serialize_proof_values(&proof_values)) {
+            panic!();
+        }
+        output_buffer.into_inner()
+    }
+
+    #[test]
+    fn test_recover() {
+
+        let (user_secret, user_co) = keygen();
+        let epoch = hash_to_field_le(b"foo");
+        let spam_limit = Fr::from(10);
+
+        // let mut tree = OptimalMerkleTree::new(20, Default::default(), Default::default()).unwrap();
+        let mut tree = PoseidonTree::new(20, Default::default(), Default::default()).unwrap();
+        tree.set(0, spam_limit).unwrap();
+        let m_proof = tree.proof(0).unwrap();
+
+        let (rln_identifier, pk, matrices, graph_bytes) = {
+            // RlnIdentifier::new(b"rln id test");
+            let (pk, matrices) = zkey_from_folder();
+            // Load the graph.bin file that's compatible with rln 0.9.0
+            // This was copied from rln-0.9.0/resources/tree_depth_20/graph.bin
+            let graph_bytes = include_bytes!("../resources/graph.bin");
+
+            (hash_to_field_le(b"rln id test"), pk.clone(), matrices.clone(), graph_bytes)
+        };
+
+        let message_id = Fr::from(1);
+
+        let (proof_0, proof_values_0) = {
+            let external_nullifier = poseidon_hash(&[rln_identifier, epoch]);
+            let witness = rln_witness_from_values(
+                user_secret.clone(),
+                m_proof.get_path_elements(),
+                m_proof.get_path_index(),
+                hash_to_field_le(b"sig"),
+                external_nullifier,
+                spam_limit,
+                message_id
+            ).unwrap();
+
+            let proof_values = proof_values_from_witness(&witness).unwrap();
+            let proof = generate_proof(
+                &(pk.clone(), matrices.clone()),
+                &witness,
+                graph_bytes,
+            ).unwrap();
+
+            (proof, proof_values)
+        };
+
+        let (proof_1, proof_values_1) = {
+
+            let external_nullifier = poseidon_hash(&[rln_identifier, epoch]);
+            let witness = rln_witness_from_values(
+                user_secret.clone(),
+                m_proof.get_path_elements(),
+                m_proof.get_path_index(),
+                hash_to_field_le(b"sig 2"),
+                external_nullifier,
+                spam_limit,
+                message_id,
+            ).unwrap();
+
+            let proof_values = proof_values_from_witness(&witness).unwrap();
+            let proof = generate_proof(
+                &(pk, matrices),
+                &witness,
+                graph_bytes,
+            ).unwrap();
+
+            (proof, proof_values)
+
+
+        };
+
+        let share1 = (proof_values_0.x, proof_values_0.y);
+        let share2 = (proof_values_1.x, proof_values_1.y);
+        let recovered_identity_secret_hash = compute_id_secret(share1, share2).unwrap();
+        assert_eq!(user_secret, recovered_identity_secret_hash);
+
+        // Now, serialize this to RlnAggProof and try to recover secret
+
+        let proof_0_se = serialize_proof(proof_0, proof_values_0);
+        let proof_1_se = serialize_proof(proof_1, proof_values_1);
+        let slashing_data = SlashingData {
+            proof_1: RlnAggProof {
+                sender: addr_bob.to_vec(),
+                tx_hash: vec![0; 32],
+                proof: proof_0_se,
+                epoch: 0,
+            },
+            proof_2: RlnAggProof {
+                sender: addr_bob.to_vec(),
+                tx_hash: vec![1; 32],
+                proof: proof_1_se,
+                epoch: 0,
+            },
+            sender: addr_alice,
+        };
+        let rec = recover(slashing_data).unwrap();
+        assert_eq!(user_secret, rec);
+    }
+
+
 }
