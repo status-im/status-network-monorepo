@@ -8,6 +8,7 @@ use tokio::{
 };
 use tracing::{debug, error, info, warn};
 // internal - Grpc
+use crate::common::SlashingData;
 use crate::prover_proto::RlnAggProof;
 
 pub(crate) struct ProofProcessService {
@@ -15,14 +16,14 @@ pub(crate) struct ProofProcessService {
     db: Arc<RwLock<Db>>,
     proof_rx: Receiver<RlnAggProof>,
     current_epoch: Option<u64>,
-    slashing_tx: Sender<(RlnAggProof, RlnAggProof)>,
+    slashing_tx: Sender<SlashingData>,
 }
 
 impl ProofProcessService {
     pub(crate) fn new(
         config: ProofProcessConfig,
         proof_rx: Receiver<RlnAggProof>,
-        slashing_tx: Sender<(RlnAggProof, RlnAggProof)>,
+        slashing_tx: Sender<SlashingData>,
     ) -> Self {
         Self {
             config,
@@ -110,10 +111,14 @@ impl ProofProcessService {
 
         if db_entry.seen_proof_count > self.config.rln_limit {
             info!("Detected too many messages for address: {:?}", sender_addr);
-            self.slashing_tx.send((
-                db_entry.proof_1.unwrap(),
-                db_entry.proof_2.unwrap()
-            ))
+
+            let slashing_data = SlashingData {
+                proof_1: db_entry.proof_1.unwrap(),
+                proof_2: db_entry.proof_2.unwrap(),
+                sender: sender_addr,
+            };
+
+            self.slashing_tx.send(slashing_data)
                 .await
                 // .context(
                 //     format!("Failed to send proof to slashing task, db_entry: {:?}", db_entry)
@@ -198,7 +203,7 @@ enum ProofProcessError {
     #[error("Received an invalid epoch")]
     DecreasingEpoch,
     #[error(transparent)]
-    SendForSlasing(#[from] tokio::sync::mpsc::error::SendError<(RlnAggProof, RlnAggProof)>),
+    SendForSlasing(#[from] tokio::sync::mpsc::error::SendError<SlashingData>),
 }
 
 #[cfg(test)]
@@ -320,6 +325,10 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(res, Some((proof_2, proof_3)));
+        assert_eq!(res, Some(SlashingData {
+            proof_1: proof_2,
+            proof_2: proof_3,
+            sender: addr_1,
+        }));
     }
 }

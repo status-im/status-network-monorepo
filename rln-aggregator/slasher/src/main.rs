@@ -1,10 +1,12 @@
 mod proof_process;
 mod slashing;
 mod smart_contract;
+mod common;
 
 use std::net::IpAddr;
+use std::str::FromStr;
 // third-party
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use clap::Parser;
 use tokio::task::JoinSet;
 use tonic::{IntoRequest, codegen::tokio_stream::StreamExt};
@@ -15,9 +17,18 @@ use tracing::{
     level_filters::LevelFilter,
     warn,
 };
+use alloy::{
+    primitives::Address,
+    network::EthereumWallet,
+    providers::{ProviderBuilder, WsConnect},
+    signers::local::PrivateKeySigner
+};
+use url::Url;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use zeroize::Zeroizing;
 // internal
 use proof_process::{ProofProcessConfig, ProofProcessService};
+use crate::slashing::{SlashingService, SlashingServiceConfig};
 
 // Internal - proto file
 pub mod prover_proto {
@@ -34,7 +45,6 @@ use crate::prover_proto::{
     // RlnAggProof
     rln_aggregator_client::RlnAggregatorClient,
 };
-use crate::slashing::SlashingService;
 
 #[derive(Debug, Clone, Parser)]
 #[command(about = "RLN slasher node", long_about = None)]
@@ -49,11 +59,37 @@ pub struct AppArgs {
     )]
     pub port: u16,
     #[arg(
+        short = 'u',
+        long = "ws-rpc-url",
+        help = "Websocket rpc url (e.g. wss://eth-mainnet.g.alchemy.com/v2/your-api-key)"
+    )]
+    pub rpc_url_ws: Url,
+    #[arg(
         long = "spam_limit",
-        default_value = "",
-        help = "RLN spam limit (or message limit / rate limit in RLN specs)"
+        help = "RLN spam limit (or message limit / rate limit in RLN specs)",
+        help_heading = "rln"
     )]
     pub rln_spam_limit: u64,
+    #[arg(
+        long = "account_to_reward",
+        help = "Account that will receive the reward after a successful slashing",
+        help_heading = "slash"
+    )]
+    pub account_to_reward: Address,
+    #[arg(
+        long = "slash_limit",
+        default_value = "5",
+        help = "Maximum number of concurrent slashing task",
+        help_heading = "slash",
+    )]
+    pub slashing_limit: u64,
+    #[arg(
+        short = 'r',
+        long = "rln_sc",
+        help = "RLN smart contract address",
+        help_heading = "smart contract"
+    )]
+    pub rln_sc_address: Address,
 }
 
 #[tokio::main]
@@ -65,14 +101,34 @@ async fn main() -> anyhow::Result<()> {
 
     // TODO: config
     let (proof_process_tx, proof_process_rx) = tokio::sync::mpsc::channel(128);
-    let (slashing_tx, _slashing_rx) = tokio::sync::mpsc::channel(128);
+    let (slashing_tx, slashing_rx) = tokio::sync::mpsc::channel(128);
     // let db = Arc::new(RwLock::new(HashMap::new()));
 
     let mut set = JoinSet::new();
 
+    // Alloy provider (+ signer)
+    let provider_with_signer = {
+        let pk: Zeroizing<String> =
+            Zeroizing::new(std::env::var("PRIVATE_KEY").expect("Please provide a private key"));
+        let pk_signer = PrivateKeySigner::from_str(pk.as_str())?;
+        let wallet = EthereumWallet::from(pk_signer);
+
+        let ws = WsConnect::new(app_args.rpc_url_ws.as_str());
+        ProviderBuilder::new()
+            .wallet(wallet)
+            .connect_ws(ws)
+            .await
+            .map_err(|e| anyhow!(e))?
+    };
+
     // Slashing service
-    let mut slashing_service = SlashingService::new(_slashing_rx);
-    set.spawn(async move { slashing_service.serve().await });
+    let slashing_service_config = SlashingServiceConfig {
+        rln_sc_address: app_args.rln_sc_address,
+        account_to_reward: app_args.account_to_reward,
+        slashing_limit: app_args.slashing_limit,
+    };
+    let mut slashing_service = SlashingService::new(slashing_rx, slashing_service_config);
+    set.spawn(async move { slashing_service.serve(provider_with_signer).await });
 
     // Proof process service
     let cfg = ProofProcessConfig {

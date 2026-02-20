@@ -4084,7 +4084,10 @@ dependencies = [
  "anyhow",
  "ark-bn254",
  "ark-ff 0.5.0",
+ "ark-groth16",
+ "ark-serialize 0.5.0",
  "clap",
+ "derive_more",
  "prost",
  "rln",
  "thiserror",
@@ -4094,6 +4097,8 @@ dependencies = [
  "tonic-prost-build",
  "tracing",
  "tracing-subscriber 0.3.22",
+ "url",
+ "zeroize",
  "zerokit_utils",
 ]
 
