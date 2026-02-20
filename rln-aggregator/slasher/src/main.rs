@@ -102,7 +102,6 @@ async fn main() -> anyhow::Result<()> {
     // TODO: config
     let (proof_process_tx, proof_process_rx) = tokio::sync::mpsc::channel(128);
     let (slashing_tx, slashing_rx) = tokio::sync::mpsc::channel(128);
-    // let db = Arc::new(RwLock::new(HashMap::new()));
 
     let mut set = JoinSet::new();
 
