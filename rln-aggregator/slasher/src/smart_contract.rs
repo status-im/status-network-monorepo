@@ -1,14 +1,14 @@
+use crate::smart_contract::KarmaSC::KarmaSCErrors;
+use crate::smart_contract::RLN::RLNErrors;
 use alloy::{
     primitives::{Address, U256, keccak256},
     providers::Provider,
     sol,
     sol_types::SolValue,
 };
-use derive_more::Display;
 use ark_ff::PrimeField;
+use derive_more::Display;
 use rln::utils::IdSecret;
-use crate::smart_contract::KarmaSC::KarmaSCErrors;
-use crate::smart_contract::RLN::RLNErrors;
 
 sol! {
 
@@ -67,26 +67,39 @@ sol! {
 }
 
 impl<P: Provider> RLN::RLNInstance<P> {
-
-    pub(crate) async fn slash(&self, account_to_slash: Address, identity_secret_hash: IdSecret, account_for_reward: Address) -> Result<(), SlashError> {
-
+    pub(crate) async fn slash(
+        &self,
+        account_to_slash: Address,
+        identity_secret_hash: IdSecret,
+        account_for_reward: Address,
+    ) -> Result<(), SlashError> {
         let slash_commit_hash = {
-            let to_hash = (U256::from_limbs(identity_secret_hash.into_bigint().0).to_be_bytes::<32>(), account_for_reward);
+            let to_hash = (
+                U256::from_limbs(identity_secret_hash.into_bigint().0).to_be_bytes::<32>(),
+                account_for_reward,
+            );
             let slash_commit_hash_ = to_hash.abi_encode_packed();
             // println!("slash_commit_hash_: {:?}", slash_commit_hash_);
             keccak256(slash_commit_hash_.as_slice())
         };
 
-        let _ = self.slashCommit(account_to_slash, slash_commit_hash.0.into())
-            .send().await?
-            .watch().await?;
+        let _ = self
+            .slashCommit(account_to_slash, slash_commit_hash.0.into())
+            .send()
+            .await?
+            .watch()
+            .await?;
 
         // Now call slashReveal
-        let pkey_fb32 = U256::from_limbs(identity_secret_hash.into_bigint().0).to_be_bytes::<32>().into();
+        let pkey_fb32 = U256::from_limbs(identity_secret_hash.into_bigint().0)
+            .to_be_bytes::<32>()
+            .into();
 
-        let slash_reveal_call_result = self.slashReveal(account_to_slash, pkey_fb32, account_for_reward).call().await;
+        let slash_reveal_call_result = self
+            .slashReveal(account_to_slash, pkey_fb32, account_for_reward)
+            .call()
+            .await;
         if let Err(e) = slash_reveal_call_result {
-
             // Error can come from either RLN SC or Karma SC
             let rln_errors = e.as_decoded_interface_error::<RLN::RLNErrors>();
             if let Some(rln_errors) = rln_errors {
@@ -98,9 +111,12 @@ impl<P: Provider> RLN::RLNInstance<P> {
             };
         }
 
-        let _slash_reveal_tx = self.slashReveal(account_to_slash, pkey_fb32, account_for_reward)
-            .send().await?
-            .watch().await?;
+        let _slash_reveal_tx = self
+            .slashReveal(account_to_slash, pkey_fb32, account_for_reward)
+            .send()
+            .await?
+            .watch()
+            .await?;
 
         Ok(())
     }
@@ -121,12 +137,16 @@ impl From<RLNErrors> for RlnScError {
     fn from(e: RLNErrors) -> Self {
         match e {
             RLNErrors::RLN__MemberNotFound(_) => RlnScError::MemberNotFound,
-            RLNErrors::RLN__IdCommitmentAlreadyRegistered(_) => RlnScError::IdCommitmentAlreadyRegistered,
+            RLNErrors::RLN__IdCommitmentAlreadyRegistered(_) => {
+                RlnScError::IdCommitmentAlreadyRegistered
+            }
             RLNErrors::RLN__Unauthorized(_) => RlnScError::Unauthorized,
             RLNErrors::RLN__InvalidRevealStartTime(_) => RlnScError::InvalidRevealStartTime,
             RLNErrors::RLN__InvalidCommitment(_) => RlnScError::InvalidCommitment,
             RLNErrors::RLN__RevealWindowNotStarted(_) => RlnScError::RevealWindowNotStarted,
-            RLNErrors::RLN__InvalidSlashRevealWindowTime(_) => RlnScError::InvalidSlashRevealWindowTime,
+            RLNErrors::RLN__InvalidSlashRevealWindowTime(_) => {
+                RlnScError::InvalidSlashRevealWindowTime
+            }
         }
     }
 }
@@ -144,7 +164,7 @@ pub enum KarmaScError {
     InvalidSlashRewardPercentage,
     CannotSlashZeroBalance,
     InsufficientTransferBalance,
-    Debug
+    // Debug,
 }
 
 impl From<KarmaSCErrors> for KarmaScError {
@@ -152,13 +172,19 @@ impl From<KarmaSCErrors> for KarmaScError {
         match e {
             KarmaSCErrors::Karma__InvalidAddress(_) => KarmaScError::InvalidAddress,
             KarmaSCErrors::Karma__TransfersNotAllowed(_) => KarmaScError::TransfersNotAllowed,
-            KarmaSCErrors::Karma__DistributorAlreadyAdded(_) => KarmaScError::DistributorAlreadyAdded,
+            KarmaSCErrors::Karma__DistributorAlreadyAdded(_) => {
+                KarmaScError::DistributorAlreadyAdded
+            }
             KarmaSCErrors::Karma__UnknownDistributor(_) => KarmaScError::UnknownDistributor,
             KarmaSCErrors::Karma__Unauthorized(_) => KarmaScError::Unauthorized,
             KarmaSCErrors::Karma__InvalidSlashPercentage(_) => KarmaScError::InvalidSlashPercentage,
-            KarmaSCErrors::Karma__InvalidSlashRewardPercentage(_) => KarmaScError::InvalidSlashRewardPercentage,
+            KarmaSCErrors::Karma__InvalidSlashRewardPercentage(_) => {
+                KarmaScError::InvalidSlashRewardPercentage
+            }
             KarmaSCErrors::Karma__CannotSlashZeroBalance(_) => KarmaScError::CannotSlashZeroBalance,
-            KarmaSCErrors::Karma__InsufficientTransferBalance(_) => KarmaScError::InsufficientTransferBalance,
+            KarmaSCErrors::Karma__InsufficientTransferBalance(_) => {
+                KarmaScError::InsufficientTransferBalance
+            }
         }
     }
 }
@@ -174,7 +200,7 @@ pub enum SlashError {
     #[error(transparent)]
     RlnSc(#[from] RlnScError),
     #[error(transparent)]
-    KarmaSc(#[from] KarmaScError)
+    KarmaSc(#[from] KarmaScError),
 }
 
 sol! {
@@ -238,26 +264,26 @@ sol! {
 #[cfg(feature = "anvil")]
 #[cfg(test)]
 mod tests {
+    use super::*;
     use alloy::dyn_abi::DynSolValue;
     use alloy::eips::BlockNumberOrTag;
     use alloy::network::EthereumWallet;
     use alloy::node_bindings::Anvil;
-    use super::*;
     // third-party
-    use alloy::primitives::{address, keccak256, FixedBytes};
-    use alloy::providers::ProviderBuilder;
-    use alloy::signers::local::PrivateKeySigner;
-    use alloy::sol_types::{SolCall, SolInterface};
-    use ark_bn254::Fr;
-    use rln::protocol::keygen;
-    use ark_ff::{BigInt, BigInteger, One, PrimeField, Zero};
-    use rln::hashers::poseidon_hash;
-    use crate::smart_contract::RLN::{RLNErrors, RLNInstance};
-    use alloy::sol_types::SolValue;
     use crate::smart_contract::KarmaSC::KarmaSCCalls::balanceOf;
     use crate::smart_contract::KarmaSC::KarmaSCInstance;
+    use crate::smart_contract::RLN::{RLNErrors, RLNInstance};
     use crate::smart_contract::tests::KarmaSC::KarmaSCErrors;
     use crate::smart_contract::tests::PoseidonHasher::PoseidonHasherInstance;
+    use alloy::primitives::{FixedBytes, address, keccak256};
+    use alloy::providers::ProviderBuilder;
+    use alloy::signers::local::PrivateKeySigner;
+    use alloy::sol_types::SolValue;
+    use alloy::sol_types::{SolCall, SolInterface};
+    use ark_bn254::Fr;
+    use ark_ff::{BigInt, BigInteger, One, PrimeField, Zero};
+    use rln::hashers::poseidon_hash;
+    use rln::protocol::keygen;
 
     sol! {
 
@@ -305,7 +331,6 @@ mod tests {
     }
     */
 
-
     sol! {
 
         // src: status-network-contracts/lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol
@@ -345,13 +370,10 @@ mod tests {
 
         let contract_0 = KarmaSC::deploy(&provider).await.unwrap();
         let init_data = KarmaSC::initializeCall { _owner: addr_alice }.abi_encode();
-        let contract_proxy = ERC1967Proxy::deploy(
-            &provider,
-            *contract_0.address(),
-            init_data.into(),
-        )
-            .await
-            .unwrap();
+        let contract_proxy =
+            ERC1967Proxy::deploy(&provider, *contract_0.address(), init_data.into())
+                .await
+                .unwrap();
         println!("contract_proxy: {:?}", contract_proxy.address());
         let contract = KarmaSC::new(*contract_proxy.address(), &provider);
         println!("contract KarmaSC: {:?}", contract_proxy.address());
@@ -369,14 +391,11 @@ mod tests {
             _token: *contract.address(),
             _poseidonHasher: *contract_hasher.address(),
         }
-            .abi_encode();
-        let contract_proxy_rln = ERC1967Proxy::deploy(
-            &provider,
-            *contract_rln_0.address(),
-            init_data_1.into(),
-        )
-            .await
-            .unwrap();
+        .abi_encode();
+        let contract_proxy_rln =
+            ERC1967Proxy::deploy(&provider, *contract_rln_0.address(), init_data_1.into())
+                .await
+                .unwrap();
         println!("contract_proxy_rln: {:?}", contract_proxy_rln.address());
         let contract_rln = RLN::new(*contract_proxy_rln.address(), &provider);
 
@@ -400,7 +419,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_hasher() {
-
         let provider = ProviderBuilder::new().connect_anvil_with_wallet();
         // Deploy PoseidonHasher contract
         let contract_hasher = PoseidonHasher::deploy(&provider).await.unwrap();
@@ -648,17 +666,19 @@ mod tests {
     const addr_bob: Address = address!("0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
     const addr_mickey: Address = address!("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC");
 
-    async fn deploy_sc_for_slashing<P: Provider>(provider: &P) -> (PoseidonHasherInstance<&P>, KarmaSCInstance<&P>, RLNInstance<&P>) {
-
+    async fn deploy_sc_for_slashing<P: Provider>(
+        provider: &P,
+    ) -> (
+        PoseidonHasherInstance<&P>,
+        KarmaSCInstance<&P>,
+        RLNInstance<&P>,
+    ) {
         let contract_karma_sc_0 = KarmaSC::deploy(provider).await.unwrap();
         let init_data = KarmaSC::initializeCall { _owner: addr_alice }.abi_encode();
-        let contract_proxy = ERC1967Proxy::deploy(
-            provider,
-            *contract_karma_sc_0.address(),
-            init_data.into(),
-        )
-            .await
-            .unwrap();
+        let contract_proxy =
+            ERC1967Proxy::deploy(provider, *contract_karma_sc_0.address(), init_data.into())
+                .await
+                .unwrap();
         // println!("contract_proxy: {:?}", contract_proxy.address());
         let contract_karma_sc = KarmaSC::new(*contract_proxy.address(), provider);
         // println!("contract KarmaSC: {:?}", contract_proxy.address());
@@ -675,31 +695,37 @@ mod tests {
             _token: *contract_karma_sc.address(),
             _poseidonHasher: *contract_poseidon_hasher.address(),
         }
-            .abi_encode();
-        let contract_proxy_rln = ERC1967Proxy::deploy(
-            provider,
-            *contract_rln_0.address(),
-            init_data_1.into(),
-        )
-            .await
-            .unwrap();
+        .abi_encode();
+        let contract_proxy_rln =
+            ERC1967Proxy::deploy(provider, *contract_rln_0.address(), init_data_1.into())
+                .await
+                .unwrap();
         // println!("contract_proxy_rln: {:?}", contract_proxy_rln.address());
         let contract_rln = RLN::new(*contract_proxy_rln.address(), provider);
 
         // TEMP?
         // Grant slasher role for RLN SC
         let slasher_role = contract_karma_sc.SLASHER_ROLE().call().await.unwrap();
-        contract_karma_sc.grantRole(slasher_role, *contract_rln.address())
-            .send().await.unwrap()
-            .watch().await.unwrap();
+        contract_karma_sc
+            .grantRole(slasher_role, *contract_rln.address())
+            .send()
+            .await
+            .unwrap()
+            .watch()
+            .await
+            .unwrap();
 
         // Add some karma to Bob
         {
             // let token_sc = MockToken::deploy(provider, "Karma".to_string(), "KARMA".to_string()).await.unwrap();
 
             // Note: KarmaDistributor use Karma SC as ERC20 token contract
-            let contract_distributor_1 = KarmaDistributorMock::deploy(provider, *contract_karma_sc.address()).await.unwrap();
-            let call_add_d = contract_karma_sc.addRewardDistributor(*contract_distributor_1.address());
+            let contract_distributor_1 =
+                KarmaDistributorMock::deploy(provider, *contract_karma_sc.address())
+                    .await
+                    .unwrap();
+            let call_add_d =
+                contract_karma_sc.addRewardDistributor(*contract_distributor_1.address());
             let _ = call_add_d.send().await.unwrap().watch().await.unwrap();
 
             // let call_set_rwd = contract_karma_sc.setReward(
@@ -716,7 +742,8 @@ mod tests {
             let _tx_hash_3_1 = call_3_1.send().await.unwrap().watch().await.unwrap();
 
             // Allow transfer
-            let call_tr = contract_karma_sc.setAllowedToTransfer(*contract_distributor_1.address(), true);
+            let call_tr =
+                contract_karma_sc.setAllowedToTransfer(*contract_distributor_1.address(), true);
             let _ = call_tr.send().await.unwrap().watch().await.unwrap();
             // println!("Allowed to transfer: {}", contract_distributor_1.address());
             // let call_tr = contract_karma_sc.setAllowedToTransfer(addr_alice, true);
@@ -725,7 +752,8 @@ mod tests {
             // Let's mint some token for contract_distributor_1 (caller of transfer for reward)
             // In Karma slash function, the contract distributor.redeemRewards() is called first
             // and initiate a transfer
-            let call_3_0 = contract_karma_sc.mint(*contract_distributor_1.address(), U256::from(10000e18));
+            let call_3_0 =
+                contract_karma_sc.mint(*contract_distributor_1.address(), U256::from(10000e18));
             let tx_hash_3 = call_3_0.send().await.unwrap().watch().await.unwrap();
             // println!("tx_hash_3: {:?}", tx_hash_3);
 
@@ -747,7 +775,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_slashing_2() {
-
         let provider = ProviderBuilder::new().connect_anvil_with_wallet();
         /*
         let anvil = Anvil::new()
@@ -763,14 +790,22 @@ mod tests {
             .connect_http("http://localhost:8545".parse().unwrap())
             ;
         */
-        let (contract_poseidon_hasher, contract_karma_sc, contract_rln) = deploy_sc_for_slashing(&provider).await;
+        let (contract_poseidon_hasher, contract_karma_sc, contract_rln) =
+            deploy_sc_for_slashing(&provider).await;
 
         println!("contract rln address: {:?}", contract_rln.address());
 
         // Register Bob in RLN SC
         let (identity_secret_hash_1, id_commitment_1) = keygen();
         let id_co_1 = U256::from_limbs(id_commitment_1.into_bigint().0);
-        let _ = contract_rln.register(id_co_1, addr_bob).send().await.unwrap().watch().await.unwrap();
+        let _ = contract_rln
+            .register(id_co_1, addr_bob)
+            .send()
+            .await
+            .unwrap()
+            .watch()
+            .await
+            .unwrap();
 
         // Check Bob is registered
         let user = contract_rln.members(id_co_1).call().await.unwrap();
@@ -779,19 +814,31 @@ mod tests {
         // Now, Alice will slashCommit Bob
         let slash_commit_hash = {
             // let to_hash = (U256::from_limbs(identity_secret_hash_1.into_bigint().0).to_le_bytes::<32>(), addr_alice);
-            let to_hash = (U256::from_limbs(identity_secret_hash_1.into_bigint().0).to_be_bytes::<32>(), addr_alice);
+            let to_hash = (
+                U256::from_limbs(identity_secret_hash_1.into_bigint().0).to_be_bytes::<32>(),
+                addr_alice,
+            );
             let slash_commit_hash_ = to_hash.abi_encode_packed();
             println!("slash_commit_hash_: {:?}", slash_commit_hash_);
             keccak256(slash_commit_hash_.as_slice())
         };
 
         // Account to be slashed: Bob, hash: keccak256(encodePacked(privateKey of Bob, rewardRecipient = Alice))
-        let _ = contract_rln.slashCommit(addr_bob, slash_commit_hash.0.into())
-            .send().await.unwrap()
-            .watch().await.unwrap();
+        let _ = contract_rln
+            .slashCommit(addr_bob, slash_commit_hash.0.into())
+            .send()
+            .await
+            .unwrap()
+            .watch()
+            .await
+            .unwrap();
 
         // Checks after call to slashCommit
-        let last_reveal_start_time = contract_rln.lastRevealStartTime(addr_bob).call().await.unwrap();
+        let last_reveal_start_time = contract_rln
+            .lastRevealStartTime(addr_bob)
+            .call()
+            .await
+            .unwrap();
         // println!("last_reveal: {}", last_reveal);
         assert!(last_reveal_start_time > 0);
 
@@ -801,20 +848,34 @@ mod tests {
             keccak256(to_hash.as_slice())
         };
 
-        println!("slash_commitments_key: {:?}", slash_commitments_key.as_slice());
-        let last_reveal_start_time_2 = contract_rln.slashCommitments(addr_bob, slash_commitments_key).call().await.unwrap();
+        println!(
+            "slash_commitments_key: {:?}",
+            slash_commitments_key.as_slice()
+        );
+        let last_reveal_start_time_2 = contract_rln
+            .slashCommitments(addr_bob, slash_commitments_key)
+            .call()
+            .await
+            .unwrap();
         assert_eq!(last_reveal_start_time, last_reveal_start_time_2);
 
         // Now call slashReveal
-        let pkey_fb32 = U256::from_limbs(identity_secret_hash_1.into_bigint().0).to_be_bytes::<32>().into();
+        let pkey_fb32 = U256::from_limbs(identity_secret_hash_1.into_bigint().0)
+            .to_be_bytes::<32>()
+            .into();
 
         // First, dry run the call
 
-        let slash_reveal_call_result = contract_rln.slashReveal(addr_bob, pkey_fb32, addr_alice).call().await;
+        let slash_reveal_call_result = contract_rln
+            .slashReveal(addr_bob, pkey_fb32, addr_alice)
+            .call()
+            .await;
 
-        println!("slash_reveal_call_result is_ok?: {}", slash_reveal_call_result.is_ok());
+        println!(
+            "slash_reveal_call_result is_ok?: {}",
+            slash_reveal_call_result.is_ok()
+        );
         if let Err(e) = slash_reveal_call_result {
-
             // Error can come from either RLN SC or Karma SC
 
             let rln_errors = e.as_decoded_interface_error::<RLN::RLNErrors>();
@@ -841,9 +902,13 @@ mod tests {
             (bob_balance_0, alice_balance_0)
         };
 
-        let slash_reveal_tx = contract_rln.slashReveal(addr_bob, pkey_fb32, addr_alice)
-            .send().await.unwrap()
-            .watch().await;
+        let slash_reveal_tx = contract_rln
+            .slashReveal(addr_bob, pkey_fb32, addr_alice)
+            .send()
+            .await
+            .unwrap()
+            .watch()
+            .await;
 
         let (bob_balance_1, alice_balance_1) = {
             let call_4 = contract_karma_sc.balanceOf(addr_bob);
@@ -858,17 +923,21 @@ mod tests {
 
         assert!(bob_balance_1 < bob_balance_0);
         assert!(alice_balance_1 > alice_balance_0);
-}
+    }
 
     fn debug_rln_errors(rln_sc_e: &RLNErrors) {
         match rln_sc_e {
             RLNErrors::RLN__MemberNotFound(_) => println!("MemberNotFound"),
-            RLNErrors::RLN__IdCommitmentAlreadyRegistered(_) => println!("IdCommitmentAlreadyRegistered"),
+            RLNErrors::RLN__IdCommitmentAlreadyRegistered(_) => {
+                println!("IdCommitmentAlreadyRegistered")
+            }
             RLNErrors::RLN__Unauthorized(_) => println!("Unauthorized"),
             RLNErrors::RLN__InvalidRevealStartTime(_) => println!("InvalidRevealStartTime"),
             RLNErrors::RLN__InvalidCommitment(_) => println!("InvalidCommitment"),
             RLNErrors::RLN__RevealWindowNotStarted(_) => println!("RevealWindowNotStarted"),
-            RLNErrors::RLN__InvalidSlashRevealWindowTime(_) => println!("InvalidSlashRevealWindowTime"),
+            RLNErrors::RLN__InvalidSlashRevealWindowTime(_) => {
+                println!("InvalidSlashRevealWindowTime")
+            }
         }
     }
 
@@ -879,26 +948,40 @@ mod tests {
             KarmaSCErrors::Karma__DistributorAlreadyAdded(_) => println!("DistributorAlreadyAdded"),
             KarmaSCErrors::Karma__UnknownDistributor(_) => println!("UnknownDistributor"),
             KarmaSCErrors::Karma__Unauthorized(_) => println!("Unauthorized"),
-            KarmaSCErrors::Karma__InvalidSlashPercentage(_) => { println!("InvalidSlashPercentage"); }
-            KarmaSCErrors::Karma__InvalidSlashRewardPercentage(_) => { println!("InvalidSlashRewardPercentage"); }
-            KarmaSCErrors::Karma__CannotSlashZeroBalance(_) => { println!("CannotSlashZeroBalance"); }
-            KarmaSCErrors::Karma__InsufficientTransferBalance(_) => println!("InsufficientTransferBalance"),
+            KarmaSCErrors::Karma__InvalidSlashPercentage(_) => {
+                println!("InvalidSlashPercentage");
+            }
+            KarmaSCErrors::Karma__InvalidSlashRewardPercentage(_) => {
+                println!("InvalidSlashRewardPercentage");
+            }
+            KarmaSCErrors::Karma__CannotSlashZeroBalance(_) => {
+                println!("CannotSlashZeroBalance");
+            }
+            KarmaSCErrors::Karma__InsufficientTransferBalance(_) => {
+                println!("InsufficientTransferBalance")
+            }
         }
     }
 
     #[tokio::test]
     async fn test_slashing_3() {
-
-
         let provider = ProviderBuilder::new().connect_anvil_with_wallet();
-        let (contract_poseidon_hasher, contract_karma_sc, contract_rln) = deploy_sc_for_slashing(&provider).await;
+        let (contract_poseidon_hasher, contract_karma_sc, contract_rln) =
+            deploy_sc_for_slashing(&provider).await;
 
         // println!("contract rln address: {:?}", contract_rln.address());
 
         // Register Bob in RLN SC
         let (identity_secret_hash_1, id_commitment_1) = keygen();
         let id_co_1 = U256::from_limbs(id_commitment_1.into_bigint().0);
-        let _ = contract_rln.register(id_co_1, addr_bob).send().await.unwrap().watch().await.unwrap();
+        let _ = contract_rln
+            .register(id_co_1, addr_bob)
+            .send()
+            .await
+            .unwrap()
+            .watch()
+            .await
+            .unwrap();
 
         let (bob_balance_0, alice_balance_0) = {
             let call_4 = contract_karma_sc.balanceOf(addr_bob);
@@ -908,7 +991,10 @@ mod tests {
             (bob_balance_0, alice_balance_0)
         };
 
-        contract_rln.slash(addr_bob, identity_secret_hash_1, addr_alice).await.unwrap();
+        contract_rln
+            .slash(addr_bob, identity_secret_hash_1, addr_alice)
+            .await
+            .unwrap();
 
         let (bob_balance_1, alice_balance_1) = {
             let call_4 = contract_karma_sc.balanceOf(addr_bob);

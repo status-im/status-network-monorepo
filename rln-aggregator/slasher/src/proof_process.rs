@@ -325,10 +325,13 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(res, Some(SlashingData {
-            proof_1: proof_2,
-            proof_2: proof_3,
-            sender: addr_1,
-        }));
+        assert_eq!(
+            res,
+            Some(SlashingData {
+                proof_1: proof_2,
+                proof_2: proof_3,
+                sender: addr_1,
+            })
+        );
     }
 }

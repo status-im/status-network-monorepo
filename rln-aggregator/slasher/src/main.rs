@@ -1,12 +1,18 @@
+mod common;
 mod proof_process;
 mod slashing;
 mod smart_contract;
-mod common;
 
 use std::net::IpAddr;
 use std::str::FromStr;
 // third-party
-use anyhow::{anyhow, Context};
+use alloy::{
+    network::EthereumWallet,
+    primitives::Address,
+    providers::{ProviderBuilder, WsConnect},
+    signers::local::PrivateKeySigner,
+};
+use anyhow::{Context, anyhow};
 use clap::Parser;
 use tokio::task::JoinSet;
 use tonic::{IntoRequest, codegen::tokio_stream::StreamExt};
@@ -17,18 +23,12 @@ use tracing::{
     level_filters::LevelFilter,
     warn,
 };
-use alloy::{
-    primitives::Address,
-    network::EthereumWallet,
-    providers::{ProviderBuilder, WsConnect},
-    signers::local::PrivateKeySigner
-};
-use url::Url;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use url::Url;
 use zeroize::Zeroizing;
 // internal
-use proof_process::{ProofProcessConfig, ProofProcessService};
 use crate::slashing::{SlashingService, SlashingServiceConfig};
+use proof_process::{ProofProcessConfig, ProofProcessService};
 
 // Internal - proto file
 pub mod prover_proto {
@@ -80,7 +80,7 @@ pub struct AppArgs {
         long = "slash_limit",
         default_value = "5",
         help = "Maximum number of concurrent slashing task",
-        help_heading = "slash",
+        help_heading = "slash"
     )]
     pub slashing_limit: u64,
     #[arg(

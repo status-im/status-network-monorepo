@@ -1,12 +1,9 @@
-use std::sync::Arc;
-use alloy::{
-    primitives::Address,
-    providers::Provider
-};
+use alloy::{primitives::Address, providers::Provider};
 use anyhow::Context;
 use ark_bn254::Bn254;
 use ark_groth16::Proof;
 use ark_serialize::CanonicalDeserialize;
+use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, warn};
 // RLN
@@ -31,25 +28,25 @@ pub(crate) struct SlashingService {
 }
 
 impl SlashingService {
-    
     pub(crate) fn new(slashing_rx: Receiver<SlashingData>, config: SlashingServiceConfig) -> Self {
         Self {
             slashing_rx,
             slashing_limit: Arc::new(tokio::sync::Semaphore::new(config.slashing_limit as usize)),
-            config
+            config,
         }
     }
-    
-    // #[tracing::instrument(skip(self))]
-    pub(crate) async fn serve<P: Provider + Clone + 'static>(&mut self, provider: P) -> anyhow::Result<()> {
 
+    // #[tracing::instrument(skip(self))]
+    pub(crate) async fn serve<P: Provider + Clone + 'static>(
+        &mut self,
+        provider: P,
+    ) -> anyhow::Result<()> {
         let rln_sc_ = RLN::new(self.config.rln_sc_address, provider);
 
         loop {
             let res = self.slashing_rx.recv().await;
-            
-            if let Some(slashing_data) = res {
 
+            if let Some(slashing_data) = res {
                 let sem_permit = self.slashing_limit.clone().try_acquire_owned();
                 let sem_permit = match sem_permit {
                     Ok(sem_permit) => sem_permit,
@@ -69,7 +66,6 @@ impl SlashingService {
                 let rln_sc = rln_sc_.clone();
 
                 tokio::spawn(async move {
-
                     // Move semaphore permit in async closure so it will only be dropped once
                     // slashing is done
                     let _sem_permit = sem_permit;
@@ -81,43 +77,48 @@ impl SlashingService {
 
                     Ok::<(), anyhow::Error>(())
                 });
-
             } else {
                 warn!("Slashing channel has been closed");
                 break;
             }
         }
-        
+
         Ok(())
     }
 }
 
 fn recover(slashing_data: SlashingData) -> anyhow::Result<IdSecret> {
-
     let proof_1 = slashing_data.proof_1;
     let proof_2 = slashing_data.proof_2;
 
-    let _proof_1_de: Proof<Bn254> = CanonicalDeserialize::deserialize_compressed(&proof_1.proof[..128])
-        .context("Failed to deserialize proof 1")?;
+    let _proof_1_de: Proof<Bn254> =
+        CanonicalDeserialize::deserialize_compressed(&proof_1.proof[..128])
+            .context("Failed to deserialize proof 1")?;
     let proof_1_values_de = deserialize_proof_values(&proof_1.proof.as_slice()[128..]).0;
 
-    let _proof_2_de: Proof<Bn254> = CanonicalDeserialize::deserialize_compressed(&proof_2.proof[..128])
-        .context("Failed to deserialize proof 2")?;
+    let _proof_2_de: Proof<Bn254> =
+        CanonicalDeserialize::deserialize_compressed(&proof_2.proof[..128])
+            .context("Failed to deserialize proof 2")?;
     let proof_2_values_de = deserialize_proof_values(&proof_2.proof.as_slice()[128..]).0;
 
     let recovered_identity_secret_hash = compute_id_secret(
         (proof_1_values_de.x, proof_1_values_de.y),
         (proof_2_values_de.x, proof_2_values_de.y),
-    ).context("Fail to recover identity secret hash")?;
+    )
+    .context("Fail to recover identity secret hash")?;
 
     Ok(recovered_identity_secret_hash)
 }
 
-async fn slash<P: Provider>(rln_sc: RLNInstance<P>, slashing_data: SlashingData, account_to_reward: Address) -> anyhow::Result<()> {
-
+async fn slash<P: Provider>(
+    rln_sc: RLNInstance<P>,
+    slashing_data: SlashingData,
+    account_to_reward: Address,
+) -> anyhow::Result<()> {
     let sender = slashing_data.sender;
-    let recovered_identity_secret_hash= recover(slashing_data)?;
-    rln_sc.slash(sender, recovered_identity_secret_hash, account_to_reward)
+    let recovered_identity_secret_hash = recover(slashing_data)?;
+    rln_sc
+        .slash(sender, recovered_identity_secret_hash, account_to_reward)
         .await
         .context("Failed to call slash on RLN SC")?;
 
@@ -126,18 +127,21 @@ async fn slash<P: Provider>(rln_sc: RLNInstance<P>, slashing_data: SlashingData,
 
 #[cfg(test)]
 mod tests {
-    use std::io::{Cursor, Write};
-    use alloy::primitives::address;
     use super::*;
+    use crate::prover_proto::{RlnAggProof, RlnProof};
+    use alloy::primitives::address;
     use ark_bn254::Fr;
     use ark_serialize::CanonicalSerialize;
-    use rln::circuit::{zkey_from_folder, Curve};
+    use rln::circuit::{Curve, zkey_from_folder};
     use rln::hashers::{hash_to_field_le, poseidon_hash};
     use rln::poseidon_tree::PoseidonTree;
-    use rln::protocol::{generate_proof, keygen, proof_values_from_witness, rln_witness_from_values, serialize_proof_values, RLNProofValues};
+    use rln::protocol::{
+        RLNProofValues, generate_proof, keygen, proof_values_from_witness, rln_witness_from_values,
+        serialize_proof_values,
+    };
     use rln::utils::IdSecret;
+    use std::io::{Cursor, Write};
     use zerokit_utils::{ZerokitMerkleProof, ZerokitMerkleTree};
-    use crate::prover_proto::{RlnAggProof, RlnProof};
 
     const addr_alice: Address = address!("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
     const addr_bob: Address = address!("0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
@@ -155,7 +159,6 @@ mod tests {
 
     #[test]
     fn test_recover() {
-
         let (user_secret, user_co) = keygen();
         let epoch = hash_to_field_le(b"foo");
         let spam_limit = Fr::from(10);
@@ -172,7 +175,12 @@ mod tests {
             // This was copied from rln-0.9.0/resources/tree_depth_20/graph.bin
             let graph_bytes = include_bytes!("../resources/graph.bin");
 
-            (hash_to_field_le(b"rln id test"), pk.clone(), matrices.clone(), graph_bytes)
+            (
+                hash_to_field_le(b"rln id test"),
+                pk.clone(),
+                matrices.clone(),
+                graph_bytes,
+            )
         };
 
         let message_id = Fr::from(1);
@@ -186,21 +194,18 @@ mod tests {
                 hash_to_field_le(b"sig"),
                 external_nullifier,
                 spam_limit,
-                message_id
-            ).unwrap();
+                message_id,
+            )
+            .unwrap();
 
             let proof_values = proof_values_from_witness(&witness).unwrap();
-            let proof = generate_proof(
-                &(pk.clone(), matrices.clone()),
-                &witness,
-                graph_bytes,
-            ).unwrap();
+            let proof =
+                generate_proof(&(pk.clone(), matrices.clone()), &witness, graph_bytes).unwrap();
 
             (proof, proof_values)
         };
 
         let (proof_1, proof_values_1) = {
-
             let external_nullifier = poseidon_hash(&[rln_identifier, epoch]);
             let witness = rln_witness_from_values(
                 user_secret.clone(),
@@ -210,18 +215,13 @@ mod tests {
                 external_nullifier,
                 spam_limit,
                 message_id,
-            ).unwrap();
+            )
+            .unwrap();
 
             let proof_values = proof_values_from_witness(&witness).unwrap();
-            let proof = generate_proof(
-                &(pk, matrices),
-                &witness,
-                graph_bytes,
-            ).unwrap();
+            let proof = generate_proof(&(pk, matrices), &witness, graph_bytes).unwrap();
 
             (proof, proof_values)
-
-
         };
 
         let share1 = (proof_values_0.x, proof_values_0.y);
@@ -251,6 +251,4 @@ mod tests {
         let rec = recover(slashing_data).unwrap();
         assert_eq!(user_secret, rec);
     }
-
-
 }

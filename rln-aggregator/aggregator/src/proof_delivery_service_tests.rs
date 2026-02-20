@@ -5,19 +5,19 @@ mod tests {
     use super::*;
     use crate::MockProverProof;
     use crate::proof_delivery_service::ProofDeliveryServer;
-    use crate::prover_proto::{RlnAggFilter, RlnProofError, RlnProofReply};
     use crate::prover_proto::rln_aggregator_client::RlnAggregatorClient;
-    use futures::StreamExt;
-    use std::time::Duration;
+    use crate::prover_proto::rln_proof_reply::Resp;
+    use crate::prover_proto::{RlnAggFilter, RlnProofError, RlnProofReply};
     use anyhow::Context;
-    use rand::prelude::StdRng;
+    use futures::StreamExt;
     use rand::RngExt;
+    use rand::prelude::StdRng;
+    use std::time::Duration;
     use tokio::io::AsyncWriteExt;
     use tokio::net::TcpListener;
     use tokio::sync::broadcast::error::{RecvError, SendError};
     use tonic::{IntoRequest, Status};
     use tracing::{debug, error, info};
-    use crate::prover_proto::rln_proof_reply::Resp;
 
     #[tokio::test]
     #[tracing_test::traced_test]
@@ -225,7 +225,11 @@ mod tests {
     }
 
     impl FastMockProverProof {
-        fn new(id: u64, url: String, sender: tokio::sync::broadcast::Sender<RlnProofReply>) -> Self {
+        fn new(
+            id: u64,
+            url: String,
+            sender: tokio::sync::broadcast::Sender<RlnProofReply>,
+        ) -> Self {
             Self {
                 id,
                 url: url.clone(),
