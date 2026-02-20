@@ -5,15 +5,19 @@ mod tests {
     use super::*;
     use crate::MockProverProof;
     use crate::proof_delivery_service::ProofDeliveryServer;
-    use crate::prover_proto::RlnAggFilter;
+    use crate::prover_proto::{RlnAggFilter, RlnProofError, RlnProofReply};
     use crate::prover_proto::rln_aggregator_client::RlnAggregatorClient;
     use futures::StreamExt;
     use std::time::Duration;
+    use anyhow::Context;
+    use rand::prelude::StdRng;
+    use rand::RngExt;
     use tokio::io::AsyncWriteExt;
     use tokio::net::TcpListener;
     use tokio::sync::broadcast::error::{RecvError, SendError};
     use tonic::{IntoRequest, Status};
     use tracing::{debug, error, info};
+    use crate::prover_proto::rln_proof_reply::Resp;
 
     #[tokio::test]
     #[tracing_test::traced_test]
@@ -214,6 +218,46 @@ mod tests {
         Ok(())
     }
 
+    struct FastMockProverProof {
+        id: u64,
+        url: String,
+        sender: tokio::sync::broadcast::Sender<RlnProofReply>,
+    }
+
+    impl FastMockProverProof {
+        fn new(id: u64, url: String, sender: tokio::sync::broadcast::Sender<RlnProofReply>) -> Self {
+            Self {
+                id,
+                url: url.clone(),
+                sender,
+            }
+        }
+    }
+
+    impl FastMockProverProof {
+        async fn serve(&mut self) -> anyhow::Result<()> {
+            let mut _rng: StdRng = rand::make_rng();
+
+            let mut i = 0u64;
+            loop {
+                // let proof_reply = RlnProofReply::default();
+                let proof_reply = RlnProofReply {
+                    resp: Some(Resp::Error(RlnProofError {
+                        error: format!("index: {}", i),
+                    })),
+                };
+
+                self.sender.send(proof_reply).context(format!(
+                    "[client {} {}] failed to send proof to channel",
+                    self.id, self.url
+                ))?;
+
+                i += 1;
+            }
+            Ok(())
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     #[tracing_test::traced_test]
     async fn test_client_too_slow() -> anyhow::Result<()> {
@@ -231,36 +275,15 @@ mod tests {
         tokio::spawn(async move { server.serve_with(listener).await });
         // tokio::time::sleep(Duration::from_secs(2)).await;
 
-        let mut mock = MockProverProof::new(0, "Mock".to_string(), tx);
+        let mut mock = FastMockProverProof::new(0, "Mock".to_string(), tx);
         tokio::spawn(async move { mock.serve().await });
         // tokio::time::sleep(Duration::from_secs(2)).await;
 
-        /*
-        let channel_1 = tonic::transport::Channel::from_shared(format!("http://{}", addr))?.connect().await?;
-        let mut client_1 = RlnAggregatorClient::new(channel_1);
-        let filter_1 = RlnAggFilter::default().into_request();
-        */
         let channel_2 = tonic::transport::Channel::from_shared(format!("http://{}", addr))?
             .connect()
             .await?;
         let mut client_2 = RlnAggregatorClient::new(channel_2);
         let filter_2 = RlnAggFilter::default().into_request();
-
-        /*
-        let h_c1 = tokio::spawn(async move {
-            let mut stdout = tokio::io::stdout();
-            let mut count_1 = 0;
-            let mut gp_1 = client_1.get_proofs(filter_1).await?.into_inner();
-            while let Some(p) = gp_1.next().await {
-                p?;
-                count_1 += 1;
-                // println!("[client 1] received {} messages", count_1);
-                // stdout.write_all(format!("[client 1] received {} messages", count_1).as_bytes()).await?;
-                // stdout.flush().await?;
-            }
-            Ok::<u64, Status>(count_1)
-        });
-        */
 
         let h_c2 = tokio::spawn(async move {
             debug!("Client 2 get proof...");
