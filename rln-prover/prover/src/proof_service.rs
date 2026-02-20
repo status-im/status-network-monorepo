@@ -157,6 +157,7 @@ impl ProofService {
                 let epoch_bytes = {
                     let mut v = current_epoch.to_le_bytes().to_vec();
                     // v.extend(current_epoch_slice.to_le_bytes());
+                    #[allow(clippy::let_and_return)]
                     v
                 };
                 let epoch = hash_to_field_le(epoch_bytes.as_slice());
