@@ -130,7 +130,6 @@ services:
       - ../tmp/local/sequencer-data/:/data/:rw
       - ./config/linea-besu-sequencer/rln/:/var/lib/besu/rln/:ro
       - ./config/l2-genesis-initialization:/initialization/:ro
-      - ../tmp/libs_fix/librln_bridge.so:/opt/besu/lib/native/librln_bridge.so
     networks:
       l1network:
       linea:
@@ -228,7 +227,6 @@ services:
       - ./config/l2-genesis-initialization:/initialization/:ro
       - ../config/common/traces-limits-v4.4.toml:/var/lib/besu/traces-limits.toml:ro
       - ../tmp/local/:/data/:rw
-      - ../tmp/libs_fix/librln_bridge.so:/opt/besu/lib/native/librln_bridge.so
     networks:
       l1network:
       linea:
@@ -293,7 +291,6 @@ services:
       - ../config/common/traces-limits-v4.4.toml:/var/lib/besu/traces-limits.toml:ro
       - ./config/l2-genesis-initialization:/initialization/:ro
       - ../tmp/local/:/data/:rw
-      - ../tmp/libs_fix/librln_bridge.so:/opt/besu/lib/native/librln_bridge.so
     networks:
       l1network:
       linea:
