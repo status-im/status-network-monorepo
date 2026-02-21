@@ -73,12 +73,6 @@ describe("RLN Nullifier Tracking", () => {
       throw new Error("Not enough active users");
     })();
 
-  // Timeouts based on actual TX performance (~4-5s per gasless TX, P95: 4.7s)
-  const TEST_TIMEOUT = 20000;
-  const MULTI_TX_TIMEOUT = 60000;
-  // Extended timeout for epoch tests (30s epoch + buffer)
-  const EPOCH_TEST_TIMEOUT = 180000;
-
   beforeAll(async () => {
     logger.info("=== Initializing Nullifier Tracking Test Suite ===");
 
@@ -103,30 +97,42 @@ describe("RLN Nullifier Tracking", () => {
     logMonitor = new DockerLogMonitor();
 
     // PRE-REGISTER ALL USERS NEEDED FOR THIS TEST SUITE
+    // Uses skipRegistrationWait to avoid 20s sleep per user, then does a single wait at the end
     logger.info("Pre-registering test users...");
 
     // Newbie users (6 needed for various tests)
     for (let i = 0; i < 6; i++) {
-      newbieUsers.push(await karmaManager.setupUserForGasless(rpcProvider, "newbie"));
+      newbieUsers.push(
+        await karmaManager.setupUserForGasless(rpcProvider, "newbie", undefined, { skipRegistrationWait: true }),
+      );
       logger.debug(`Pre-registered newbie user ${i + 1}/6`);
     }
     // Entry users (2 needed)
     for (let i = 0; i < 2; i++) {
-      entryUsers.push(await karmaManager.setupUserForGasless(rpcProvider, "entry"));
+      entryUsers.push(
+        await karmaManager.setupUserForGasless(rpcProvider, "entry", undefined, { skipRegistrationWait: true }),
+      );
       logger.debug(`Pre-registered entry user ${i + 1}/2`);
     }
     // Active users (4 needed for high-volume tests)
     for (let i = 0; i < 4; i++) {
-      activeUsers.push(await karmaManager.setupUserForGasless(rpcProvider, "active"));
+      activeUsers.push(
+        await karmaManager.setupUserForGasless(rpcProvider, "active", undefined, { skipRegistrationWait: true }),
+      );
       logger.debug(`Pre-registered active user ${i + 1}/4`);
     }
+
+    // Single registration wait for all users
+    logger.info("Waiting for RLN registrations to complete...");
+    await karmaManager.waitForRlnRegistration("batch-all");
+    logger.info("Registration wait complete");
 
     logger.info("Test suite initialized", {
       newbieUsers: newbieUsers.length,
       entryUsers: entryUsers.length,
       activeUsers: activeUsers.length,
     });
-  }, 180000); // 3 minute setup timeout
+  }, RLN_CONFIG.test.timeouts.setupLarge);
 
   afterAll(async () => {
     logger.info("=== Nullifier Tracking Test Suite Complete ===");
@@ -173,7 +179,7 @@ describe("RLN Nullifier Tracking", () => {
 
       logger.info(`${NULL_001.id}: PASSED ✓`);
     },
-    MULTI_TX_TIMEOUT, // 2 TXs need more buffer for proof generation
+    RLN_CONFIG.test.timeouts.multiTx, // 2 TXs need more buffer for proof generation
   );
 
   it(
@@ -228,7 +234,7 @@ describe("RLN Nullifier Tracking", () => {
       expect(receipt.status).toBe(1);
       logger.info(`${NULL_002.id}: PASSED ✓`);
     },
-    EPOCH_TEST_TIMEOUT, // This test waits for epoch boundary (60s)
+    RLN_CONFIG.test.timeouts.epoch, // This test waits for epoch boundary (60s)
   );
 
   it(
@@ -285,7 +291,7 @@ describe("RLN Nullifier Tracking", () => {
 
       logger.info(`${NULL_003.id}: PASSED ✓`);
     },
-    MULTI_TX_TIMEOUT, // Increased timeout for 2 TXs + failure wait + log check
+    RLN_CONFIG.test.timeouts.multiTx, // Increased timeout for 2 TXs + failure wait + log check
   );
 
   it(
@@ -335,7 +341,7 @@ describe("RLN Nullifier Tracking", () => {
 
       logger.info(`${NULL_004.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.multiTx,
   );
 
   it(
@@ -372,7 +378,7 @@ describe("RLN Nullifier Tracking", () => {
         txEpoch,
       });
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.multiTx,
   );
 
   it(
@@ -414,7 +420,7 @@ describe("RLN Nullifier Tracking", () => {
 
       logger.info(`${NULL_006.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.multiTx,
   );
 
   it(
@@ -451,7 +457,7 @@ describe("RLN Nullifier Tracking", () => {
 
       logger.info(`${NULL_007.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.multiTx,
   );
 
   it(
@@ -491,6 +497,6 @@ describe("RLN Nullifier Tracking", () => {
 
       logger.info(`${NULL_008.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.multiTx,
   );
 });

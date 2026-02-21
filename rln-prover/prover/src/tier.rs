@@ -65,12 +65,14 @@ impl TierLimits {
                     return Err(ValidateTierLimitsError::InvalidMinKarmaAmount);
                 }
 
-                if tier.min_karma >= tier.max_karma {
+                if tier.min_karma > tier.max_karma {
                     return Err(ValidateTierLimitsError::InvalidMaxKarmaAmount);
                 }
 
-                if tier.tx_per_epoch <= *state.prev_tx_per_epoch.unwrap_or(&0) {
-                    return Err(ValidateTierLimitsError::InvalidTierLimit);
+                if let Some(prev) = state.prev_tx_per_epoch {
+                    if tier.tx_per_epoch <= *prev {
+                        return Err(ValidateTierLimitsError::InvalidTierLimit);
+                    }
                 }
 
                 if state.tier_names.contains(&tier.name) {
@@ -163,7 +165,8 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_fails_when_min_karma_equal_or_greater_max_karma() {
+    fn test_validate_allows_min_karma_equal_max_karma() {
+        // Single-point tier (e.g., entry tier where min=max=1 Karma)
         let tier_limits = TierLimits::from([Tier {
             name: "Basic".to_string(),
             min_karma: U256::from(100),
@@ -171,11 +174,11 @@ mod tests {
             tx_per_epoch: 6,
         }]);
 
-        assert_matches!(
-            tier_limits.validate(),
-            Err(ValidateTierLimitsError::InvalidMaxKarmaAmount)
-        );
+        assert!(tier_limits.validate().is_ok());
+    }
 
+    #[test]
+    fn test_validate_fails_when_min_karma_greater_than_max_karma() {
         let tier_limits = TierLimits::from([Tier {
             name: "Basic".to_string(),
             min_karma: U256::from(500),
@@ -308,6 +311,41 @@ mod tests {
             tier_limits.validate(),
             Err(ValidateTierLimitsError::NonUniqueTierName)
         );
+    }
+
+    #[test]
+    fn test_validate_allows_first_tier_with_zero_tx_per_epoch() {
+        let tier_limits = TierLimits::from([
+            Tier {
+                name: "None".to_string(),
+                min_karma: U256::ZERO,
+                max_karma: U256::from(9),
+                tx_per_epoch: 0,
+            },
+            Tier {
+                name: "Basic".to_string(),
+                min_karma: U256::from(10),
+                max_karma: U256::from(49),
+                tx_per_epoch: 6,
+            },
+            Tier {
+                name: "Active".to_string(),
+                min_karma: U256::from(50),
+                max_karma: U256::from(99),
+                tx_per_epoch: 120,
+            },
+        ]);
+
+        assert!(tier_limits.validate().is_ok());
+
+        // Zero-karma user matches tier 0 (None) with tx_per_epoch=0
+        let result = tier_limits.get_tier_by_karma(&U256::ZERO);
+        if let TierMatch::Matched(tier) = result {
+            assert_eq!(tier.name, "None");
+            assert_eq!(tier.tx_per_epoch, 0);
+        } else {
+            panic!("Expected TierMatch::Matched, got {result:?}");
+        }
     }
 
     #[test]

@@ -80,18 +80,6 @@ describe("RLN Deny List and Premium Gas", () => {
     return fundedOnlyUsers[fundedUserIndex++];
   };
 
-  // Timeouts based on actual TX performance (~4-5s per gasless TX, P95: 4.7s)
-  // Single TX tests: 20s (5s TX + 15s buffer)
-  const TEST_TIMEOUT = 20000;
-  // Multi-TX tests: ~5s per TX + buffer
-  const MULTI_TX_TIMEOUT = 60000;
-  // Deny list tests: 2 TXs (~10s) + rejection timeout (~7s) + deny list wait (~20s) = ~40s min
-  const DENY_TEST_TIMEOUT = 90000;
-  // High volume tests (10+ TXs)
-  const HIGH_VOLUME_TIMEOUT = 120000;
-  // Extended timeout for tests that need to wait for epoch boundary (60s epoch + buffer)
-  const EPOCH_TEST_TIMEOUT = 180000;
-
   beforeAll(async () => {
     logger.info("=== Initializing Deny List and Premium Gas Test Suite ===");
 
@@ -115,7 +103,7 @@ describe("RLN Deny List and Premium Gas", () => {
     karmaManager = new KarmaTestManager(contracts.karma, contracts.rln, admin, rlnClient);
 
     // PRE-REGISTER ALL USERS NEEDED FOR THIS TEST SUITE
-    // This happens ONCE before all tests - no waiting during tests
+    // Uses skipRegistrationWait to avoid 20s sleep per user, then does a single wait at the end
     logger.info("Pre-registering test users...");
 
     const REGISTERED_USER_COUNT = 15; // Enough for all DENY tests
@@ -123,7 +111,9 @@ describe("RLN Deny List and Premium Gas", () => {
 
     // Create registered users (with Karma + RLN registration)
     for (let i = 0; i < REGISTERED_USER_COUNT; i++) {
-      const user = await karmaManager.setupUserForGasless(rpcProvider, "entry");
+      const user = await karmaManager.setupUserForGasless(rpcProvider, "entry", undefined, {
+        skipRegistrationWait: true,
+      });
       registeredUsers.push(user);
       logger.debug(`Pre-registered user ${i + 1}/${REGISTERED_USER_COUNT}`, { address: user.address });
     }
@@ -135,11 +125,16 @@ describe("RLN Deny List and Premium Gas", () => {
       logger.debug(`Pre-funded user ${i + 1}/${FUNDED_ONLY_USER_COUNT}`, { address: user.address });
     }
 
+    // Single registration wait for all users
+    logger.info("Waiting for RLN registrations to complete...");
+    await karmaManager.waitForRlnRegistration("batch-all");
+    logger.info("Registration wait complete");
+
     logger.info("Test suite initialized", {
       registeredUsers: registeredUsers.length,
       fundedOnlyUsers: fundedOnlyUsers.length,
     });
-  }, 300000); // 5 minute timeout for setup - 20 users × ~12s each = ~240s
+  }, RLN_CONFIG.test.timeouts.setupLarge);
 
   afterAll(async () => {
     logger.info("=== Deny List and Premium Gas Test Suite Complete ===");
@@ -180,7 +175,7 @@ describe("RLN Deny List and Premium Gas", () => {
 
       logger.info(`${DENY_001.id}: PASSED ✓`);
     },
-    DENY_TEST_TIMEOUT, // 1 TX + deny wait (~20s) = ~25s
+    RLN_CONFIG.test.timeouts.denyList, // 1 TX + deny wait (~20s) = ~25s
   );
 
   it(
@@ -211,11 +206,11 @@ describe("RLN Deny List and Premium Gas", () => {
       });
 
       // Must be rejected - either denied (if deny list synced) or resource_exhausted (quota check)
-      expect(errorMessage).toMatch(/denied|reject|quota|timeout|resource.*exhausted/i);
+      expect(errorMessage).toMatch(/deny|denied|reject|quota|timeout|resource.*exhausted/i);
 
       logger.info(`${DENY_002.id}: PASSED ✓`);
     },
-    DENY_TEST_TIMEOUT, // 1 TX + deny wait + rejection = ~35s
+    RLN_CONFIG.test.timeouts.denyList, // 1 TX + deny wait + rejection = ~35s
   );
 
   it(
@@ -257,7 +252,7 @@ describe("RLN Deny List and Premium Gas", () => {
 
       logger.info(`${DENY_003.id}: PASSED ✓`);
     },
-    DENY_TEST_TIMEOUT, // 2 gasless + rejection + premium + deny waits = ~45s
+    RLN_CONFIG.test.timeouts.denyList, // 2 gasless + rejection + premium + deny waits = ~45s
   );
 
   it(
@@ -294,7 +289,7 @@ describe("RLN Deny List and Premium Gas", () => {
 
       logger.info(`${DENY_004.id}: PASSED ✓`);
     },
-    DENY_TEST_TIMEOUT, // 2 gasless + rejection + deny wait + premium = ~45s
+    RLN_CONFIG.test.timeouts.denyList, // 2 gasless + rejection + deny wait + premium = ~45s
   );
 
   it(
@@ -338,7 +333,7 @@ describe("RLN Deny List and Premium Gas", () => {
 
       logger.info(`${DENY_005.id}: PASSED ✓`);
     },
-    DENY_TEST_TIMEOUT, // 2 gasless + rejection + deny wait + premium + removal wait = ~50s
+    RLN_CONFIG.test.timeouts.denyList, // 2 gasless + rejection + deny wait + premium + removal wait = ~50s
   );
 
   it(
@@ -393,7 +388,7 @@ describe("RLN Deny List and Premium Gas", () => {
 
       logger.info(`${DENY_006.id}: PASSED ✓`);
     },
-    EPOCH_TEST_TIMEOUT, // This test waits for epoch boundary (60s)
+    RLN_CONFIG.test.timeouts.epoch, // This test waits for epoch boundary (60s)
   );
 
   it(
@@ -430,7 +425,7 @@ describe("RLN Deny List and Premium Gas", () => {
 
       logger.info(`${DENY_007.id}: PASSED ✓`);
     },
-    HIGH_VOLUME_TIMEOUT, // 3 users × 3 TXs = 9 TXs = ~36s
+    RLN_CONFIG.test.timeouts.highVolume, // 3 users × 3 TXs = 9 TXs = ~36s
   );
 
   it(
@@ -464,7 +459,7 @@ describe("RLN Deny List and Premium Gas", () => {
 
       logger.info(`${DENY_008.id}: PASSED ✓`);
     },
-    DENY_TEST_TIMEOUT, // 2 gasless + rejection + deny wait + 5 checks = ~45s
+    RLN_CONFIG.test.timeouts.denyList, // 2 gasless + rejection + deny wait + 5 checks = ~45s
   );
 
   it(
@@ -500,7 +495,7 @@ describe("RLN Deny List and Premium Gas", () => {
 
       logger.info(`${DENY_009.id}: PASSED ✓`);
     },
-    HIGH_VOLUME_TIMEOUT, // 3 users × 3 TXs = 9 TXs = ~36s
+    RLN_CONFIG.test.timeouts.highVolume, // 3 users × 3 TXs = 9 TXs = ~36s
   );
 
   // ============================================================================
@@ -531,7 +526,7 @@ describe("RLN Deny List and Premium Gas", () => {
 
       logger.info(`${PREM_001.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 
   it(
@@ -561,7 +556,7 @@ describe("RLN Deny List and Premium Gas", () => {
 
       logger.info(`${PREM_002.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 
   it(
@@ -586,7 +581,7 @@ describe("RLN Deny List and Premium Gas", () => {
 
       logger.info(`${PREM_003.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 
   it(
@@ -615,7 +610,7 @@ describe("RLN Deny List and Premium Gas", () => {
 
       logger.info(`${PREM_004.id}: PASSED ✓`);
     },
-    MULTI_TX_TIMEOUT, // 3 premium TXs = ~12s
+    RLN_CONFIG.test.timeouts.multiTx, // 3 premium TXs = ~12s
   );
 
   it(
@@ -648,7 +643,7 @@ describe("RLN Deny List and Premium Gas", () => {
 
       logger.info(`${PREM_005.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 
   it(
@@ -712,6 +707,6 @@ describe("RLN Deny List and Premium Gas", () => {
         ratio: (Number(deniedGasLimit) / Number(baselineGasLimit)).toFixed(2),
       });
     },
-    DENY_TEST_TIMEOUT, // 2 gasless + rejection + deny wait + estimates = ~45s
+    RLN_CONFIG.test.timeouts.denyList, // 2 gasless + rejection + deny wait + estimates = ~45s
   );
 });

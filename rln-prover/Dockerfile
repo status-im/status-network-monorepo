@@ -20,10 +20,8 @@ COPY proto ./proto
 COPY prover ./prover
 COPY prover_cli ./prover_cli
 COPY prover_client ./prover_client
-COPY prover_db_migration ./prover_db_migration
-COPY prover_db_entity ./prover_db_entity
+COPY prover_db_migration_sqlx ./prover_db_migration_sqlx
 COPY prover_pmtree ./prover_pmtree
-COPY prover_pmtree_db_impl ./prover_pmtree_db_impl
 COPY rln_proof ./rln_proof
 COPY smart_contract ./smart_contract
 

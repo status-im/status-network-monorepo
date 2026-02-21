@@ -20,6 +20,9 @@ import {
 
 const logger = createTestLogger();
 
+// Karma is an ERC20 with 18 decimals
+const ETHER = 10n ** 18n;
+
 /**
  * Test Suite: Karma and Tier System (KARMA_001 to KARMA_008)
  *
@@ -48,9 +51,6 @@ describe("RLN Karma and Tier System", () => {
     (() => {
       throw new Error("Not enough funded users");
     })();
-
-  // Timeouts based on actual TX performance (~4-5s per gasless TX, P95: 4.7s)
-  const TEST_TIMEOUT = 20000;
 
   beforeAll(async () => {
     logger.info("=== Initializing Karma and Tier System Test Suite ===");
@@ -85,7 +85,7 @@ describe("RLN Karma and Tier System", () => {
     logger.info("Test suite initialized", {
       fundedUsers: fundedUsers.length,
     });
-  }, 180000); // 3 minute setup timeout
+  }, RLN_CONFIG.test.timeouts.setup);
 
   afterAll(async () => {
     logger.info("=== Karma and Tier System Test Suite Complete ===");
@@ -104,12 +104,12 @@ describe("RLN Karma and Tier System", () => {
       let karmaBalance = await contracts.karma.balanceOf(user.address);
       expect(karmaBalance).toBe(0n);
 
-      // Mint exactly 1 Karma (Entry tier threshold)
-      await karmaManager.mintKarma(user.address, 1n);
+      // Mint exactly 1 Karma (Entry tier threshold) - Karma has 18 decimals
+      await karmaManager.mintKarma(user.address, 1n * ETHER);
 
       // Verify Karma balance
       karmaBalance = await contracts.karma.balanceOf(user.address);
-      expect(karmaBalance).toBe(1n);
+      expect(karmaBalance).toBe(1n * ETHER);
 
       // Wait for RLN registration
       await karmaManager.waitForRlnRegistration(user.address);
@@ -118,7 +118,7 @@ describe("RLN Karma and Tier System", () => {
       const isRegistered = await karmaManager.isUserRegistered(user.address);
       expect(isRegistered).toBe(true);
 
-      // Verify user can send gasless transaction (Entry tier = 1 quota)
+      // Verify user can send gasless transaction (Entry tier = 2 quota)
       const receipt = await rlnClient.sendGaslessTransaction(user, {
         to: TEST_RECIPIENT,
         value: 0n,
@@ -129,7 +129,7 @@ describe("RLN Karma and Tier System", () => {
 
       logger.info(`${KARMA_001.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.multiTx,
   );
 
   it(
@@ -141,19 +141,19 @@ describe("RLN Karma and Tier System", () => {
         user: user.address,
       });
 
-      // Mint 50 Karma (Basic tier threshold)
-      await karmaManager.mintKarma(user.address, 50n);
+      // Mint 50 Karma (Basic tier threshold) - Karma has 18 decimals
+      await karmaManager.mintKarma(user.address, 50n * ETHER);
 
       // Verify Karma balance
       const karmaBalance = await contracts.karma.balanceOf(user.address);
-      expect(karmaBalance).toBe(50n);
+      expect(karmaBalance).toBe(50n * ETHER);
 
       // Wait for RLN registration
       await karmaManager.waitForRlnRegistration(user.address);
 
       // Verify tier via transaction capability
-      // Basic tier has quota of 15 - send 2 to prove higher than Entry (1)
-      for (let i = 0; i < 2; i++) {
+      // Basic tier has quota of 16 - send 3 to prove higher than Entry (2)
+      for (let i = 0; i < 3; i++) {
         const receipt = await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
@@ -164,7 +164,7 @@ describe("RLN Karma and Tier System", () => {
 
       logger.info(`${KARMA_002.id}: PASSED ✓`);
     },
-    30000, // Extended timeout: mint + wait + 2 TXs
+    RLN_CONFIG.test.timeouts.multiTx,
   );
 
   it(
@@ -180,8 +180,8 @@ describe("RLN Karma and Tier System", () => {
       let isRegistered = await karmaManager.isUserRegistered(user.address);
       expect(isRegistered).toBe(false);
 
-      // Mint Karma
-      await karmaManager.mintKarma(user.address, 1n);
+      // Mint 1 Karma (18 decimals)
+      await karmaManager.mintKarma(user.address, 1n * ETHER);
 
       // Wait for automatic registration
       await karmaManager.waitForRlnRegistration(user.address);
@@ -199,7 +199,7 @@ describe("RLN Karma and Tier System", () => {
         identityCommitment: commitment,
       });
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.multiTx,
   );
 
   it(
@@ -211,21 +211,21 @@ describe("RLN Karma and Tier System", () => {
         user: user.address,
       });
 
-      // Start with Entry tier (1 Karma, quota = 1)
-      await karmaManager.mintKarma(user.address, 1n);
+      // Start with Entry tier (1 Karma, quota = 2) - Karma has 18 decimals
+      await karmaManager.mintKarma(user.address, 1n * ETHER);
       await karmaManager.waitForRlnRegistration(user.address);
 
       // Immediately upgrade to Newbie tier BEFORE using quota
-      // This tests that tier upgrade increases quota from 1 to 5
-      await karmaManager.mintKarma(user.address, 1n);
+      // This tests that tier upgrade increases quota from 2 to 6
+      await karmaManager.mintKarma(user.address, 1n * ETHER);
 
-      // Verify total Karma (2 = Newbie tier)
+      // Verify total Karma (2 Karma = Newbie tier)
       const karmaBalance = await contracts.karma.balanceOf(user.address);
-      expect(karmaBalance).toBe(2n);
+      expect(karmaBalance).toBe(2n * ETHER);
 
-      // Now send 5 transactions (Newbie tier quota)
-      // This proves the tier upgrade from Entry (1) to Newbie (5) worked
-      for (let i = 0; i < 5; i++) {
+      // Now send 6 transactions (Newbie tier quota)
+      // This proves the tier upgrade from Entry (2) to Newbie (6) worked
+      for (let i = 0; i < 6; i++) {
         const receipt = await rlnClient.sendGaslessTransaction(user, {
           to: TEST_RECIPIENT,
           value: 0n,
@@ -236,7 +236,7 @@ describe("RLN Karma and Tier System", () => {
 
       logger.info(`${KARMA_004.id}: PASSED ✓`);
     },
-    40000, // Extended timeout: mint + wait + 5 transactions
+    RLN_CONFIG.test.timeouts.highVolume,
   );
 
   it(
@@ -247,10 +247,10 @@ describe("RLN Karma and Tier System", () => {
       const tiers = RLN_CONFIG.tiers;
       const tierNames = Object.keys(tiers) as TierName[];
 
-      // STRONG ASSERTIONS: Verify exact tier configuration
-      expect(tiers.entry.quota).toBe(1);
-      expect(tiers.newbie.quota).toBe(5);
-      expect(tiers.basic.quota).toBe(15);
+      // STRONG ASSERTIONS: Verify exact tier configuration (quotas match deployed KarmaTiers contract)
+      expect(tiers.entry.quota).toBe(2);
+      expect(tiers.newbie.quota).toBe(6);
+      expect(tiers.basic.quota).toBe(16);
       expect(tiers.active.quota).toBe(96);
       expect(tiers.regular.quota).toBe(480);
       expect(tiers.power.quota).toBe(960);
@@ -259,17 +259,17 @@ describe("RLN Karma and Tier System", () => {
       expect(tiers["s-tier"].quota).toBe(240000);
       expect(tiers.legendary.quota).toBe(480000);
 
-      // Verify karma thresholds are ordered correctly
-      expect(tiers.entry.karma).toBe(1n);
-      expect(tiers.newbie.karma).toBe(2n);
-      expect(tiers.basic.karma).toBe(50n);
-      expect(tiers.active.karma).toBe(500n);
-      expect(tiers.regular.karma).toBe(5000n);
-      expect(tiers.power.karma).toBe(20000n);
-      expect(tiers.pro.karma).toBe(100000n);
-      expect(tiers["high-throughput"].karma).toBe(500000n);
-      expect(tiers["s-tier"].karma).toBe(5000000n);
-      expect(tiers.legendary.karma).toBe(10000000n);
+      // Verify karma thresholds are ordered correctly (18 decimal values)
+      expect(tiers.entry.karma).toBe(1n * ETHER);
+      expect(tiers.newbie.karma).toBe(2n * ETHER);
+      expect(tiers.basic.karma).toBe(50n * ETHER);
+      expect(tiers.active.karma).toBe(500n * ETHER);
+      expect(tiers.regular.karma).toBe(5000n * ETHER);
+      expect(tiers.power.karma).toBe(20000n * ETHER);
+      expect(tiers.pro.karma).toBe(100000n * ETHER);
+      expect(tiers["high-throughput"].karma).toBe(500000n * ETHER);
+      expect(tiers["s-tier"].karma).toBe(5000000n * ETHER);
+      expect(tiers.legendary.karma).toBe(10000000n * ETHER);
 
       // Verify quotas are monotonically increasing with karma
       let prevQuota = 0;
@@ -282,7 +282,7 @@ describe("RLN Karma and Tier System", () => {
         tierCount: tierNames.length,
       });
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.multiTx,
   );
 
   it(
@@ -290,26 +290,28 @@ describe("RLN Karma and Tier System", () => {
     async () => {
       logger.info(`${KARMA_006.id}: Testing tier boundary handling`);
 
-      // Test exact boundary at Entry (1 Karma)
+      // Test exact boundary at Entry (1 Karma = 1e18 wei)
       const user1 = getFundedUser();
-      await karmaManager.mintKarma(user1.address, 1n);
+      await karmaManager.mintKarma(user1.address, 1n * ETHER);
       await karmaManager.waitForRlnRegistration(user1.address);
 
       const balance1 = await contracts.karma.balanceOf(user1.address);
-      expect(balance1).toBe(1n);
+      expect(balance1).toBe(1n * ETHER);
 
-      // Entry tier has quota 1 - send 1 tx (uses entire quota, user added to deny list)
-      const receipt1 = await rlnClient.sendGaslessTransaction(user1, {
-        to: TEST_RECIPIENT,
-        value: 0n,
-        data: uniqueTxData("karma006-entry-1"),
-      });
-      expect(receipt1.status).toBe(1);
+      // Entry tier has quota 2 - send 2 txs (uses entire quota, user added to deny list)
+      for (let i = 0; i < 2; i++) {
+        const receipt = await rlnClient.sendGaslessTransaction(user1, {
+          to: TEST_RECIPIENT,
+          value: 0n,
+          data: uniqueTxData(`karma006-entry-${i}`),
+        });
+        expect(receipt.status).toBe(1);
+      }
 
       // Wait for prover to sync quota state
       await rlnClient.waitForProverSync();
 
-      // 2nd tx should fail (quota exhausted, user now on deny list)
+      // 3rd tx should fail (quota exhausted, user now on deny list)
       const entryError = await rlnClient.sendGaslessTransactionExpectFailure(
         user1,
         {
@@ -319,11 +321,11 @@ describe("RLN Karma and Tier System", () => {
         },
         10000, // 10s timeout
       );
-      expect(entryError).toMatch(/quota|exceeded|denied|timeout/i);
+      expect(entryError).toMatch(/quota|exceeded|deny|denied|timeout/i);
 
       logger.info(`${KARMA_006.id}: PASSED ✓`);
     },
-    30000, // Extended timeout: mint + wait + tx + prover sync + failure tx
+    RLN_CONFIG.test.timeouts.multiTx,
   );
 
   it(
@@ -359,7 +361,7 @@ describe("RLN Karma and Tier System", () => {
 
       logger.info(`${KARMA_007.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.multiTx,
   );
 
   it(
@@ -371,8 +373,8 @@ describe("RLN Karma and Tier System", () => {
       const user1 = getFundedUser();
       const user2 = getFundedUser();
 
-      await karmaManager.mintKarma(user1.address, 1n);
-      await karmaManager.mintKarma(user2.address, 1n);
+      await karmaManager.mintKarma(user1.address, 1n * ETHER);
+      await karmaManager.mintKarma(user2.address, 1n * ETHER);
 
       await karmaManager.waitForRlnRegistration(user1.address);
       await karmaManager.waitForRlnRegistration(user2.address);
@@ -393,6 +395,6 @@ describe("RLN Karma and Tier System", () => {
         commitment2,
       });
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.multiTx,
   );
 });

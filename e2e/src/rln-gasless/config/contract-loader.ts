@@ -30,13 +30,12 @@ const RLN_ABI = [
   "event MemberSlashed(uint256 index, address slasher)",
 ];
 
-// Karma Tiers Contract ABI
+// Karma Tiers Contract ABI (struct order: minKarma, maxKarma, name, txPerEpoch)
 const KARMA_TIERS_ABI = [
-  "function getTier(uint256 karmaBalance) view returns (tuple(string name, uint256 minKarma, uint256 maxKarma, uint32 txPerEpoch))",
-  "function getTierByName(string name) view returns (tuple(string name, uint256 minKarma, uint256 maxKarma, uint32 txPerEpoch))",
-  "function getAllTiers() view returns (tuple(string name, uint256 minKarma, uint256 maxKarma, uint32 txPerEpoch)[])",
-  "function updateTiers(tuple(string name, uint256 minKarma, uint256 maxKarma, uint32 txPerEpoch)[] tiers)",
-  "function tierCount() view returns (uint256)",
+  "function getTierIdByKarmaBalance(uint256 karmaBalance) view returns (uint8)",
+  "function getTierById(uint8 tierId) view returns (tuple(uint256 minKarma, uint256 maxKarma, string name, uint32 txPerEpoch))",
+  "function getTierCount() view returns (uint256)",
+  "function updateTiers(tuple(uint256 minKarma, uint256 maxKarma, string name, uint32 txPerEpoch)[] newTiers)",
   "event TiersUpdated()",
 ];
 
@@ -87,10 +86,10 @@ export async function verifyContracts(contracts: RlnContracts): Promise<boolean>
     await contracts.karma.totalSupply();
 
     // Check RLN contract
-    await contracts.rln.memberCount();
+    await contracts.rln.identityCommitmentIndex();
 
     // Check KarmaTiers contract
-    await contracts.karmaTiers.tierCount();
+    await contracts.karmaTiers.getTierCount();
 
     return true;
   } catch (error) {

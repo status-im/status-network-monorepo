@@ -27,6 +27,9 @@ import {
 
 const logger = createTestLogger();
 
+// Karma is an ERC20 with 18 decimals
+const ETHER = 10n ** 18n;
+
 /**
  * Test Suite: Integration, Error Handling, and Edge Cases
  * (INT_001 to INT_006, ERR_001 to ERR_003, EDGE_001 to EDGE_005)
@@ -85,15 +88,6 @@ describe("RLN Integration and Error Handling", () => {
       throw new Error("Not enough funded users");
     })();
 
-  // Timeouts based on actual TX performance (~4-5s per gasless TX, P95: 4.7s)
-  const TEST_TIMEOUT = 20000;
-  // Multi-TX tests: ~5s per TX + buffer
-  const MULTI_TX_TIMEOUT = 60000;
-  // High volume tests
-  const HIGH_VOLUME_TIMEOUT = 120000;
-  // Extended timeout for epoch tests (30s epoch + buffer + deny list operations)
-  const EPOCH_TEST_TIMEOUT = 240000;
-
   beforeAll(async () => {
     logger.info("=== Initializing Integration and Error Handling Test Suite ===");
 
@@ -117,26 +111,35 @@ describe("RLN Integration and Error Handling", () => {
     karmaManager = new KarmaTestManager(contracts.karma, contracts.rln, admin, rlnClient);
 
     // PRE-REGISTER ALL USERS NEEDED FOR THIS TEST SUITE
+    // Uses skipRegistrationWait to avoid 20s sleep per user, then does a single wait at the end
     logger.info("Pre-registering test users...");
 
     // Entry users (10 needed)
     for (let i = 0; i < 10; i++) {
-      entryUsers.push(await karmaManager.setupUserForGasless(rpcProvider, "entry"));
+      entryUsers.push(
+        await karmaManager.setupUserForGasless(rpcProvider, "entry", undefined, { skipRegistrationWait: true }),
+      );
       logger.debug(`Pre-registered entry user ${i + 1}/10`);
     }
     // Newbie users (5 needed for INT_005)
     for (let i = 0; i < 5; i++) {
-      newbieUsers.push(await karmaManager.setupUserForGasless(rpcProvider, "newbie"));
+      newbieUsers.push(
+        await karmaManager.setupUserForGasless(rpcProvider, "newbie", undefined, { skipRegistrationWait: true }),
+      );
       logger.debug(`Pre-registered newbie user ${i + 1}/5`);
     }
     // Basic users (2 needed)
     for (let i = 0; i < 2; i++) {
-      basicUsers.push(await karmaManager.setupUserForGasless(rpcProvider, "basic"));
+      basicUsers.push(
+        await karmaManager.setupUserForGasless(rpcProvider, "basic", undefined, { skipRegistrationWait: true }),
+      );
       logger.debug(`Pre-registered basic user ${i + 1}/2`);
     }
     // Active users (3 needed for high-volume tests)
     for (let i = 0; i < 3; i++) {
-      activeUsers.push(await karmaManager.setupUserForGasless(rpcProvider, "active"));
+      activeUsers.push(
+        await karmaManager.setupUserForGasless(rpcProvider, "active", undefined, { skipRegistrationWait: true }),
+      );
       logger.debug(`Pre-registered active user ${i + 1}/3`);
     }
     // Funded-only users (5 needed)
@@ -145,6 +148,12 @@ describe("RLN Integration and Error Handling", () => {
       logger.debug(`Pre-funded user ${i + 1}/5`);
     }
 
+    // Single registration wait for all users (prover processes karma events as they arrive,
+    // so by the time we get here, most/all users are already registered)
+    logger.info("Waiting for RLN registrations to complete...");
+    await karmaManager.waitForRlnRegistration("batch-all");
+    logger.info("Registration wait complete");
+
     logger.info("Test suite initialized", {
       entryUsers: entryUsers.length,
       newbieUsers: newbieUsers.length,
@@ -152,7 +161,7 @@ describe("RLN Integration and Error Handling", () => {
       activeUsers: activeUsers.length,
       fundedUsers: fundedUsers.length,
     });
-  }, 300000); // 5 minute setup timeout (more users)
+  }, RLN_CONFIG.test.timeouts.setupLarge);
 
   afterAll(async () => {
     logger.info("=== Integration and Error Handling Test Suite Complete ===");
@@ -172,8 +181,8 @@ describe("RLN Integration and Error Handling", () => {
       const user = getFundedUser();
       logger.info("Step 1: User created", { address: user.address });
 
-      // Step 2: Mint Karma and register (Entry tier)
-      await karmaManager.mintKarma(user.address, 1n);
+      // Step 2: Mint 1 Karma and register (Entry tier) - Karma has 18 decimals
+      await karmaManager.mintKarma(user.address, 1n * ETHER);
       await karmaManager.waitForRlnRegistration(user.address);
       logger.info("Step 2: User registered with Entry tier");
 
@@ -206,7 +215,7 @@ describe("RLN Integration and Error Handling", () => {
         value: 0n,
         data: uniqueTxData("int001-blocked"),
       });
-      expect(errorMessage).toMatch(/denied|reject|quota|timeout|resource.*exhausted/i);
+      expect(errorMessage).toMatch(/deny|denied|reject|quota|timeout|resource.*exhausted/i);
       logger.info("Step 5: Gasless blocked while denied");
 
       // Step 6: Pay premium gas (removes from deny list)
@@ -238,7 +247,7 @@ describe("RLN Integration and Error Handling", () => {
 
       logger.info(`${INT_001.id}: PASSED ✓`);
     },
-    EPOCH_TEST_TIMEOUT, // This test waits for epoch boundary (60s)
+    RLN_CONFIG.test.timeouts.epoch, // This test waits for epoch boundary (60s)
   );
 
   it(
@@ -258,7 +267,7 @@ describe("RLN Integration and Error Handling", () => {
       });
 
       // Send transactions from each user based on their tier quota
-      // Entry: 1 tx (quota = 1)
+      // Entry: 1 tx (quota = 2, using subset)
       const entryReceipt = await rlnClient.sendGaslessTransaction(entryUser, {
         to: TEST_RECIPIENT,
         value: 0n,
@@ -266,7 +275,7 @@ describe("RLN Integration and Error Handling", () => {
       });
       expect(entryReceipt.status).toBe(1);
 
-      // Newbie: 3 tx (quota = 5, using subset)
+      // Newbie: 3 tx (quota = 6, using subset)
       for (let i = 0; i < 3; i++) {
         const receipt = await rlnClient.sendGaslessTransaction(newbieUser, {
           to: TEST_RECIPIENT,
@@ -276,7 +285,7 @@ describe("RLN Integration and Error Handling", () => {
         expect(receipt.status).toBe(1);
       }
 
-      // Basic: 4 tx (quota = 15, using subset)
+      // Basic: 4 tx (quota = 16, using subset)
       for (let i = 0; i < 4; i++) {
         const receipt = await rlnClient.sendGaslessTransaction(basicUser, {
           to: TEST_RECIPIENT,
@@ -288,7 +297,7 @@ describe("RLN Integration and Error Handling", () => {
 
       logger.info(`${INT_002.id}: PASSED ✓`);
     },
-    HIGH_VOLUME_TIMEOUT, // 1 + 3 + 4 = 8 TXs
+    RLN_CONFIG.test.timeouts.highVolume, // 1 + 3 + 4 = 8 TXs
   );
 
   it(
@@ -321,14 +330,14 @@ describe("RLN Integration and Error Handling", () => {
         avgPerTx: `${Math.round(duration / txCount)}ms`,
       });
     },
-    MULTI_TX_TIMEOUT, // 5 TXs = ~20s
+    RLN_CONFIG.test.timeouts.multiTx, // 5 TXs = ~20s
   );
 
   it(
     formatScenario(INT_004),
     async () => {
-      // Use Newbie tier (quota=5) to avoid deny list issues
-      // Entry tier (quota=1) would exhaust quota and hit 60s deny list TTL
+      // Use Newbie tier (quota=6) to avoid deny list issues
+      // Entry tier (quota=2) would exhaust quota and hit 60s deny list TTL
       const user = getNewbieUser();
       const epochDuration = RLN_CONFIG.test.epochDurationSeconds;
 
@@ -366,7 +375,7 @@ describe("RLN Integration and Error Handling", () => {
 
       logger.info(`${INT_004.id}: PASSED ✓`);
     },
-    EPOCH_TEST_TIMEOUT, // This test waits for epoch boundary (30s + buffer)
+    RLN_CONFIG.test.timeouts.epoch, // This test waits for epoch boundary (30s + buffer)
   );
 
   it(
@@ -408,7 +417,7 @@ describe("RLN Integration and Error Handling", () => {
 
       logger.info(`${INT_005.id}: PASSED ✓`);
     },
-    HIGH_VOLUME_TIMEOUT, // 5 users × 3 TXs = 15 TXs = ~60s
+    RLN_CONFIG.test.timeouts.highVolume, // 5 users × 3 TXs = 15 TXs = ~60s
   );
 
   it(
@@ -434,7 +443,7 @@ describe("RLN Integration and Error Handling", () => {
 
       logger.info(`${INT_006.id}: PASSED ✓`);
     },
-    HIGH_VOLUME_TIMEOUT, // 10 TXs = ~40s
+    RLN_CONFIG.test.timeouts.highVolume, // 10 TXs = ~40s
   );
 
   // ============================================================================
@@ -477,7 +486,7 @@ describe("RLN Integration and Error Handling", () => {
 
       logger.info(`${ERR_001.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 
   it(
@@ -510,7 +519,7 @@ describe("RLN Integration and Error Handling", () => {
         durationMs: duration,
       });
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 
   it(
@@ -537,7 +546,7 @@ describe("RLN Integration and Error Handling", () => {
 
       logger.info(`${ERR_003.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 
   // ============================================================================
@@ -565,7 +574,7 @@ describe("RLN Integration and Error Handling", () => {
 
       logger.info(`${EDGE_001.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 
   it(
@@ -589,7 +598,7 @@ describe("RLN Integration and Error Handling", () => {
 
       logger.info(`${EDGE_002.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 
   it(
@@ -614,7 +623,7 @@ describe("RLN Integration and Error Handling", () => {
 
       logger.info(`${EDGE_003.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 
   it(
@@ -632,13 +641,11 @@ describe("RLN Integration and Error Handling", () => {
       }
 
       // Register all users (rapid karma minting)
-      const mintPromises = users.map((user) => karmaManager.mintKarma(user.address, 1n));
+      const mintPromises = users.map((user) => karmaManager.mintKarma(user.address, 1n * ETHER));
       await Promise.all(mintPromises);
 
-      // Wait for all registrations
-      for (const user of users) {
-        await karmaManager.waitForRlnRegistration(user.address);
-      }
+      // Wait for all registrations in parallel
+      await Promise.all(users.map((user) => karmaManager.waitForRlnRegistration(user.address)));
 
       //  All users must be registered
       for (const user of users) {
@@ -648,7 +655,7 @@ describe("RLN Integration and Error Handling", () => {
 
       logger.info(`${EDGE_004.id}: PASSED ✓`);
     },
-    30000, // Extended timeout: 3 users × 4s registration + verification time
+    RLN_CONFIG.test.timeouts.multiTx,
   );
 
   it(
@@ -674,7 +681,7 @@ describe("RLN Integration and Error Handling", () => {
         to: karmaAddress,
         value: 0n,
         data: balanceOfData, // Valid function call to contract
-        gasLimit: 50000, // Increased gas limit for contract call
+        gasLimit: 100000, // Gas limit for contract call (proxies need more gas)
       });
 
       //  Transaction to contract must succeed
@@ -682,6 +689,6 @@ describe("RLN Integration and Error Handling", () => {
 
       logger.info(`${EDGE_005.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 });
