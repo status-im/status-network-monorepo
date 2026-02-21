@@ -1,0 +1,103 @@
+{{- if and .Values.l1.enabled .Values.networkPolicies.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: l1-el-node-policy
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l1-el-node") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "l1-el-node") | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from L1 CL node
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "status-network.componentSelectorLabels" (list . "l1-cl-node") | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.l1.elNode.ports.engine }}
+    # Allow from L2 services (coordinator, maru, shomei-frontend)
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.l1.elNode.ports.http }}
+    # Allow from LoadBalancer (if enabled)
+    {{- if .Values.services.l1RpcLoadBalancer.enabled }}
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.l1.elNode.ports.http }}
+    {{- end }}
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow outbound to any (for external connectivity)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: l1-cl-node-policy
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l1-cl-node") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "l1-cl-node") | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow metrics and REST API access
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.l1.clNode.ports.rest }}
+        - protocol: TCP
+          port: {{ .Values.l1.clNode.ports.metrics }}
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow to L1 EL node
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "status-network.componentSelectorLabels" (list . "l1-el-node") | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.l1.elNode.ports.engine }}
+    # Allow outbound to any (for P2P)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+{{- end }}

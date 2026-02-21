@@ -1,0 +1,61 @@
+{{- if .Values.l1.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: l1-el-node
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l1-el-node") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.l1.elNode.ports.http }}
+      targetPort: http
+      protocol: TCP
+    - name: ws
+      port: {{ .Values.l1.elNode.ports.ws }}
+      targetPort: ws
+      protocol: TCP
+    - name: engine
+      port: {{ .Values.l1.elNode.ports.engine }}
+      targetPort: engine
+      protocol: TCP
+    - name: p2p
+      port: {{ .Values.l1.elNode.ports.p2p }}
+      targetPort: p2p
+      protocol: TCP
+    - name: metrics
+      port: {{ .Values.l1.elNode.ports.metrics }}
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "l1-el-node") | nindent 4 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: l1-cl-node
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l1-cl-node") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: rest
+      port: {{ .Values.l1.clNode.ports.rest }}
+      targetPort: rest
+      protocol: TCP
+    - name: p2p
+      port: {{ .Values.l1.clNode.ports.p2p }}
+      targetPort: p2p
+      protocol: TCP
+    - name: metrics
+      port: {{ .Values.l1.clNode.ports.metrics }}
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "l1-cl-node") | nindent 4 }}
+{{- end }}

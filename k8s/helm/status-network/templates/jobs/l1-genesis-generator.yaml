@@ -1,0 +1,74 @@
+{{- if and .Values.l1.enabled .Values.l1.genesisGenerator.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: l1-genesis-generator
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l1-genesis-generator") | nindent 4 }}
+  annotations:
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "status-network.componentSelectorLabels" (list . "l1-genesis-generator") | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: genesis-generator
+          image: {{ .Values.images.genesisGenerator }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Step 1: Running generate-genesis.sh to update timestamps"
+              bash /config/generate-genesis.sh
+
+              echo "Step 2: Generating genesis.ssz with eth-genesis-state-generator"
+              /usr/local/bin/eth-genesis-state-generator devnet \
+                --config /data/l1-node-config/network-config.yml \
+                --mnemonics /config/mnemonics.yaml \
+                --state-output /data/l1-node-config/genesis.ssz \
+                --eth1-config /data/l1-node-config/genesis.json
+
+              echo "L1 Genesis generation complete"
+              ls -la /data/l1-node-config/
+          volumeMounts:
+            - name: l1-genesis-config
+              mountPath: /config/generate-genesis.sh
+              subPath: generate-genesis.sh
+            - name: l1-genesis-files
+              mountPath: /config/genesis.json
+              subPath: genesis.json
+            - name: l1-genesis-files
+              mountPath: /config/network-config.yml
+              subPath: network-config.yml
+            - name: l1-mnemonics
+              mountPath: /config/mnemonics.yaml
+              subPath: mnemonics.yaml
+            - name: l1-genesis-data
+              mountPath: /data/l1-node-config
+          resources:
+            {{- toYaml .Values.l1.genesisGenerator.resources | nindent 12 }}
+      volumes:
+        - name: l1-genesis-config
+          configMap:
+            name: l1-genesis-config
+            defaultMode: 0755
+        - name: l1-genesis-files
+          configMap:
+            name: l1-genesis-files
+        - name: l1-mnemonics
+          configMap:
+            name: l1-mnemonics
+        - name: l1-genesis-data
+          persistentVolumeClaim:
+            claimName: l1-genesis-data
+      {{- include "status-network.nodeSelector" . | nindent 6 }}
+      {{- include "status-network.tolerations" . | nindent 6 }}
+      {{- include "status-network.affinity" . | nindent 6 }}
+{{- end }}

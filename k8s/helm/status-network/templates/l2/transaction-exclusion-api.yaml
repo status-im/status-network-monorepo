@@ -1,0 +1,92 @@
+{{- if and .Values.l2.enabled .Values.l2.txExclusionApi.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transaction-exclusion-api
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "transaction-exclusion-api") | nindent 4 }}
+spec:
+  replicas: {{ .Values.l2.txExclusionApi.replicas }}
+  selector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "transaction-exclusion-api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "status-network.componentSelectorLabels" (list . "transaction-exclusion-api") | nindent 8 }}
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for PostgreSQL..."
+              until nc -z postgres {{ .Values.l2.postgres.port }}; do
+                echo "PostgreSQL not ready, waiting..."
+                sleep 2
+              done
+              echo "PostgreSQL is ready"
+        - name: wait-for-sequencer
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for sequencer..."
+              until nc -z sequencer {{ .Values.l2.sequencer.ports.http }}; do
+                echo "Sequencer not ready, waiting..."
+                sleep 2
+              done
+              echo "Sequencer is ready"
+      containers:
+        - name: tx-exclusion-api
+          image: {{ .Values.images.txExclusionApi }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command:
+            - java
+            - -Dvertx.configurationFile=/config/vertx-options.json
+            - -Dlog4j2.configurationFile=/config/log4j2.xml
+            - -Duser.timezone=UTC
+            - -jar
+            - /opt/consensys/linea/transaction-exclusion-api/libs/transaction-exclusion-api.jar
+            - /config/transaction-exclusion-app.config.toml
+          env:
+            - name: TZ
+              value: "UTC"
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: observability
+              containerPort: 8090
+              protocol: TCP
+          volumeMounts:
+            - name: tx-exclusion-config
+              mountPath: /config
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            {{- toYaml .Values.l2.txExclusionApi.resources | nindent 12 }}
+      volumes:
+        - name: tx-exclusion-config
+          secret:
+            secretName: tx-exclusion-api-config-secret
+      {{- include "status-network.nodeSelector" . | nindent 6 }}
+      {{- include "status-network.tolerations" . | nindent 6 }}
+      {{- include "status-network.affinity" . | nindent 6 }}
+{{- end }}

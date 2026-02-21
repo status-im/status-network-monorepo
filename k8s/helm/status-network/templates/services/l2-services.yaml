@@ -1,0 +1,351 @@
+{{- if .Values.l2.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "postgres") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: {{ .Values.l2.postgres.port }}
+      targetPort: postgres
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "postgres") | nindent 4 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rln-prover
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "rln-prover") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: grpc
+      port: {{ .Values.l2.rlnProver.ports.grpc }}
+      targetPort: grpc
+      protocol: TCP
+    - name: grpc-alt
+      port: {{ .Values.l2.rlnProver.ports.grpcAlt }}
+      targetPort: grpc-alt
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "rln-prover") | nindent 4 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sequencer
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "sequencer") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.l2.sequencer.ports.http }}
+      targetPort: http
+      protocol: TCP
+    - name: ws
+      port: {{ .Values.l2.sequencer.ports.ws }}
+      targetPort: ws
+      protocol: TCP
+    - name: engine
+      port: {{ .Values.l2.sequencer.ports.engine }}
+      targetPort: engine
+      protocol: TCP
+    - name: p2p-tcp
+      port: {{ .Values.l2.sequencer.ports.p2p }}
+      targetPort: p2p
+      protocol: TCP
+    - name: p2p-udp
+      port: {{ .Values.l2.sequencer.ports.p2p }}
+      targetPort: p2p
+      protocol: UDP
+    - name: metrics
+      port: {{ .Values.l2.sequencer.ports.metrics }}
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "sequencer") | nindent 4 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: maru
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "maru") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: api
+      port: {{ .Values.l2.maru.ports.api }}
+      targetPort: api
+      protocol: TCP
+    - name: debug
+      port: {{ .Values.l2.maru.ports.debug }}
+      targetPort: debug
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "maru") | nindent 4 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: l2-node-besu
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l2-node-besu") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.l2.l2NodeBesu.ports.http }}
+      targetPort: http
+      protocol: TCP
+    - name: ws
+      port: {{ .Values.l2.l2NodeBesu.ports.ws }}
+      targetPort: ws
+      protocol: TCP
+    - name: engine
+      port: {{ .Values.l2.l2NodeBesu.ports.engine }}
+      targetPort: engine
+      protocol: TCP
+    - name: debug
+      port: {{ .Values.l2.l2NodeBesu.ports.debug }}
+      targetPort: debug
+      protocol: TCP
+    - name: p2p
+      port: {{ .Values.l2.l2NodeBesu.ports.p2p }}
+      targetPort: p2p
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "l2-node-besu") | nindent 4 }}
+
+{{- if .Values.l2.l2NodeBesuFollower.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: l2-node-besu-follower
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l2-node-besu-follower") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.l2.l2NodeBesuFollower.ports.http }}
+      targetPort: http
+      protocol: TCP
+    - name: ws
+      port: {{ .Values.l2.l2NodeBesuFollower.ports.ws }}
+      targetPort: ws
+      protocol: TCP
+    - name: engine
+      port: {{ .Values.l2.l2NodeBesuFollower.ports.engine }}
+      targetPort: engine
+      protocol: TCP
+    - name: debug
+      port: {{ .Values.l2.l2NodeBesuFollower.ports.debug }}
+      targetPort: debug
+      protocol: TCP
+    - name: p2p
+      port: {{ .Values.l2.l2NodeBesuFollower.ports.p2p }}
+      targetPort: p2p
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "l2-node-besu-follower") | nindent 4 }}
+{{- end }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: traces-node
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "traces-node") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.l2.tracesNode.ports.http }}
+      targetPort: http
+      protocol: TCP
+    - name: ws
+      port: {{ .Values.l2.tracesNode.ports.ws }}
+      targetPort: ws
+      protocol: TCP
+    - name: engine
+      port: {{ .Values.l2.tracesNode.ports.engine }}
+      targetPort: engine
+      protocol: TCP
+    - name: debug
+      port: {{ .Values.l2.tracesNode.ports.debug }}
+      targetPort: debug
+      protocol: TCP
+    - name: p2p
+      port: {{ .Values.l2.tracesNode.ports.p2p }}
+      targetPort: p2p
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "traces-node") | nindent 4 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zkbesu-shomei
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "zkbesu-shomei") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.l2.zkbesuShomei.ports.http }}
+      targetPort: http
+      protocol: TCP
+    - name: ws
+      port: {{ .Values.l2.zkbesuShomei.ports.ws }}
+      targetPort: ws
+      protocol: TCP
+    - name: engine
+      port: {{ .Values.l2.zkbesuShomei.ports.engine }}
+      targetPort: engine
+      protocol: TCP
+    - name: p2p
+      port: {{ .Values.l2.zkbesuShomei.ports.p2p }}
+      targetPort: p2p
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "zkbesu-shomei") | nindent 4 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shomei
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "shomei") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.l2.shomei.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "shomei") | nindent 4 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shomei-frontend
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "shomei-frontend") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.l2.shomeiFrontend.ports.http }}
+      targetPort: http
+      protocol: TCP
+    - name: metrics
+      port: {{ .Values.l2.shomeiFrontend.ports.metrics }}
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "shomei-frontend") | nindent 4 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coordinator
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "coordinator") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: {{ .Values.l2.coordinator.port }}
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "coordinator") | nindent 4 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web3signer
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "web3signer") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.l2.web3signer.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "web3signer") | nindent 4 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postman
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "postman") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: api
+      port: {{ .Values.l2.postman.ports.api }}
+      targetPort: api
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "postman") | nindent 4 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transaction-exclusion-api
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "transaction-exclusion-api") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.l2.txExclusionApi.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "transaction-exclusion-api") | nindent 4 }}
+{{- end }}

@@ -1,0 +1,268 @@
+{{- if .Values.l1.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: l1-el-config
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l1-el-node") | nindent 4 }}
+data:
+  config.toml: |
+    {{- if eq .Values.network.l1Network "hoodi" }}
+    # Hoodi testnet mode - Besu uses --network=hoodi flag (passed via command)
+    data-path="/opt/besu/data"
+    data-storage-format="FOREST"
+    sync-mode="SNAP"
+    host-allowlist=["*"]
+
+    # engine
+    engine-rpc-enabled=true
+    engine-jwt-secret="/config/jwtsecret.txt"
+    engine-host-allowlist=["*"]
+    engine-rpc-port={{ .Values.l1.elNode.ports.engine }}
+
+    # rpc
+    rpc-http-enabled=true
+    rpc-http-host="0.0.0.0"
+    rpc-http-port={{ .Values.l1.elNode.ports.http }}
+    rpc-http-api=["ADMIN","ETH","NET","DEBUG","TXPOOL","ENGINE","TRACE","WEB3"]
+    rpc-http-cors-origins=["*"]
+    rpc-http-max-active-connections=20000
+    rpc-max-logs-range=0
+
+    # ws
+    rpc-ws-enabled=true
+    rpc-ws-host="0.0.0.0"
+    rpc-ws-port={{ .Values.l1.elNode.ports.ws }}
+    rpc-ws-api=["ADMIN","ETH","NET","DEBUG","TXPOOL","ENGINE","TRACE","WEB3"]
+    rpc-ws-max-active-connections=200
+
+    # p2p - enabled for public testnet
+    p2p-enabled=true
+
+    # graphql
+    graphql-http-enabled=false
+
+    # metrics
+    metrics-enabled=true
+    metrics-host="0.0.0.0"
+    metrics-port={{ .Values.l1.elNode.ports.metrics }}
+
+    node-private-key-file="/config/keys/besu.key"
+
+    # behavior
+    revert-reason-enabled=true
+    plugins=[]
+    {{- else }}
+    # Local mode - private chain with custom genesis
+    genesis-file="/data/l1-node-config/genesis.json"
+    data-path="/opt/besu/data"
+    data-storage-format="FOREST"
+    sync-mode="FULL"
+    host-allowlist=["*"]
+    network-id=31648428
+
+    target-gas-limit=30000000
+    min-gas-price=1000000
+    tx-pool-min-gas-price=0
+    max-peers=10
+    fast-sync-min-peers=0
+
+    # engine
+    engine-rpc-enabled=true
+    engine-jwt-secret="/config/jwtsecret.txt"
+    engine-host-allowlist=["*"]
+    engine-rpc-port={{ .Values.l1.elNode.ports.engine }}
+
+    # rpc
+    rpc-http-enabled=true
+    rpc-http-host="0.0.0.0"
+    rpc-http-port={{ .Values.l1.elNode.ports.http }}
+    rpc-http-api=["ADMIN","CLIQUE","ETH","NET","DEBUG","TXPOOL","ENGINE","TRACE","WEB3"]
+    rpc-http-cors-origins=["*"]
+    rpc-http-max-active-connections=20000
+    rpc-max-logs-range=0
+
+    # ws
+    rpc-ws-enabled=true
+    rpc-ws-host="0.0.0.0"
+    rpc-ws-port={{ .Values.l1.elNode.ports.ws }}
+    rpc-ws-api=["ADMIN","CLIQUE","ETH","NET","DEBUG","TXPOOL","ENGINE","TRACE","WEB3"]
+    rpc-ws-max-active-connections=200
+
+    # p2p
+    p2p-enabled=false
+
+    # graphql
+    graphql-http-enabled=false
+
+    # metrics
+    metrics-enabled=true
+    metrics-host="0.0.0.0"
+    metrics-port={{ .Values.l1.elNode.ports.metrics }}
+
+    Xsynchronizer-fast-sync-full-validation-rate=0.000001
+
+    node-private-key-file="/config/keys/besu.key"
+
+    # behavior
+    revert-reason-enabled=true
+    plugins=[]
+    {{- end }}
+
+  log4j.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <Configuration status="INFO" monitorInterval="30">
+      <Properties>
+        <Property name="root.log.level">INFO</Property>
+      </Properties>
+      <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+          <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZZZ} | %t | %-5level | %c{1} | %msg%n"/>
+        </Console>
+      </Appenders>
+      <Loggers>
+        <Root level="${sys:root.log.level}">
+          <AppenderRef ref="Console"/>
+        </Root>
+      </Loggers>
+    </Configuration>
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: l1-cl-config
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l1-cl-node") | nindent 4 }}
+data:
+  config.yaml: |
+    {{- if eq .Values.network.l1Network "hoodi" }}
+    # Hoodi testnet mode - use --network=hoodi (passed via command)
+    log-destination: "DEFAULT_BOTH"
+    data-storage-mode: "PRUNE"
+
+    p2p-enabled: true
+    p2p-discovery-enabled: true
+
+    rest-api-enabled: true
+    rest-api-docs-enabled: true
+    rest-api-interface: "0.0.0.0"
+    rest-api-port: {{ .Values.l1.clNode.ports.rest }}
+    rest-api-host-allowlist: ["*"]
+
+    data-storage-non-canonical-blocks-enabled: true
+    ee-jwt-secret-file: "/config/jwtsecret.txt"
+    ee-endpoint: "http://l1-el-node:{{ .Values.l1.elNode.ports.engine }}"
+
+    # ETH1 configuration
+    eth1-endpoint: "http://l1-el-node:{{ .Values.l1.elNode.ports.http }}"
+
+    metrics-enabled: true
+    metrics-interface: "0.0.0.0"
+    metrics-host-allowlist: ['*']
+    metrics-categories: ["BEACON","PROCESS","LIBP2P","JVM","NETWORK","PROCESS"]
+    metrics-port: {{ .Values.l1.clNode.ports.metrics }}
+
+    # No validator keys for public testnet (we're not validating)
+    ignore-weak-subjectivity-period-enabled: true
+
+    # Checkpoint sync for faster initial sync
+    initial-state: "https://checkpoint-sync.hoodi.ethpandaops.io/eth/v2/debug/beacon/states/finalized"
+    {{- else }}
+    # Local mode - custom network config
+    log-destination: "DEFAULT_BOTH"
+    network: "/data/l1-node-config/network-config.yml"
+    data-storage-mode: "PRUNE"
+
+    p2p-enabled: true
+    p2p-discovery-enabled: true
+    p2p-subscribe-all-subnets-enabled: true
+    p2p-subscribe-all-custody-subnets-enabled: true
+
+    rest-api-enabled: true
+    rest-api-docs-enabled: true
+    rest-api-interface: "0.0.0.0"
+    rest-api-port: {{ .Values.l1.clNode.ports.rest }}
+    rest-api-host-allowlist: ["*"]
+
+    data-storage-non-canonical-blocks-enabled: true
+    ee-jwt-secret-file: "/config/jwtsecret.txt"
+    ee-endpoint: "http://l1-el-node:{{ .Values.l1.elNode.ports.engine }}"
+
+    # ETH1 configuration - flat format for Teku 25.x
+    eth1-endpoint: "http://l1-el-node:8545"
+    eth1-deposit-contract-address: "0x00000000219ab540356cBB839Cbe05303d7705Fa"
+
+    metrics-enabled: true
+    metrics-interface: "0.0.0.0"
+    metrics-host-allowlist: ['*']
+    metrics-categories: ["BEACON","PROCESS","LIBP2P","JVM","NETWORK","PROCESS"]
+    metrics-port: {{ .Values.l1.clNode.ports.metrics }}
+
+    validator-keys: "/config/keys/teku-keys:/config/keys/teku-secrets"
+    validators-proposer-default-fee-recipient: "0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b"
+    validators-graffiti: "teku"
+    validators-keystore-locking-enabled: false
+
+    beacon-liveness-tracking-enabled: true
+    ignore-weak-subjectivity-period-enabled: true
+    Xlog-wire-cipher-enabled: true
+    Xlog-wire-mux-enabled: true
+    Xlog-wire-gossip-enabled: true
+
+    p2p-private-key-file: /config/keys/teku.key
+    Xstartup-target-peer-count: 0
+    Xstartup-timeout-seconds: 0
+
+    Xnetwork-async-beaconchain-max-threads: 5
+    {{- end }}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: l1-genesis-config
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l1-genesis") | nindent 4 }}
+  annotations:
+data:
+  generate-genesis.sh: |
+    #!/bin/sh
+    # Script to modify config files to enable Prague/Electra to run for the local stack
+    # Runs on the 'l1-node-genesis-generator' Docker image entrypoint
+
+    original_el_genesis_json_path="/config/genesis.json"
+    original_cl_network_config_path="/config/network-config.yml"
+    output_dir="/data/l1-node-config"
+    modified_el_genesis_json_path=$output_dir/$(basename -- $original_el_genesis_json_path)
+    modified_cl_network_config_path=$output_dir/$(basename -- $original_cl_network_config_path)
+
+    mkdir -p $output_dir
+    cp $original_el_genesis_json_path $modified_el_genesis_json_path
+    cp $original_cl_network_config_path $modified_cl_network_config_path
+
+    osaka_time=$(date +%s)
+
+    sed -i -E 's/"timestamp": "[0-9]+"/"timestamp": "'"$osaka_time"'"/' $modified_el_genesis_json_path
+    sed -i 's/\$GENESIS_TIME/'"$osaka_time"'/g' $modified_cl_network_config_path
+
+    echo "Genesis files generated with timestamp: $osaka_time"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: l1-mnemonics
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l1-genesis") | nindent 4 }}
+  annotations:
+data:
+  mnemonics.yaml: |
+    - mnemonic: "test test test test test test test test test test test junk"
+      count: 4
+{{- end }}

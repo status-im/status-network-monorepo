@@ -1,0 +1,47 @@
+{{- if and .Values.l2.enabled .Values.services.l2RpcLoadBalancer.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: l2-rpc-lb
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l2-rpc-lb") | nindent 4 }}
+  {{- if .Values.services.l2RpcLoadBalancer.annotations }}
+  annotations:
+    {{- toYaml .Values.services.l2RpcLoadBalancer.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.services.l2RpcLoadBalancer.type }}
+  ports:
+    - name: http
+      port: {{ .Values.services.l2RpcLoadBalancer.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "sequencer") | nindent 4 }}
+{{- end }}
+
+{{- if and .Values.l1.enabled .Values.services.l1RpcLoadBalancer.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: l1-rpc-lb
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l1-rpc-lb") | nindent 4 }}
+  {{- if .Values.services.l1RpcLoadBalancer.annotations }}
+  annotations:
+    {{- toYaml .Values.services.l1RpcLoadBalancer.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.services.l1RpcLoadBalancer.type }}
+  ports:
+    - name: http
+      port: {{ .Values.services.l1RpcLoadBalancer.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "l1-el-node") | nindent 4 }}
+{{- end }}

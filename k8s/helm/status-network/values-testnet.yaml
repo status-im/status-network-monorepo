@@ -1,0 +1,193 @@
+# Testnet-specific values for status-network
+# Use with: helm install -f values.yaml -f values-testnet.yaml
+
+# Global settings
+global:
+  namespace: status-network-testnet
+
+# Network configuration for testnet
+network:
+  l1ChainId: 1337
+  l2ChainId: 59141
+  forkOffsetSeconds: 180
+
+# Reduced resources for testnet
+l1:
+  elNode:
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    storage:
+      size: 10Gi
+
+  clNode:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
+    storage:
+      size: 2Gi
+
+l2:
+  postgres:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    storage:
+      size: 5Gi
+
+  rlnProver:
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+  sequencer:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    storage:
+      size: 10Gi
+
+  maru:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
+
+  l2NodeBesu:
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    storage:
+      size: 5Gi
+
+  l2NodeBesuFollower:
+    # Disable follower in testnet to save resources
+    enabled: false
+
+  tracesNode:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
+    storage:
+      size: 5Gi
+
+  zkbesuShomei:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+    storage:
+      size: 5Gi
+
+  shomei:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+    storage:
+      size: 5Gi
+
+  shomeiFrontend:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 100m
+        memory: 256Mi
+
+  coordinator:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
+
+  web3signer:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 100m
+        memory: 256Mi
+
+  postman:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 100m
+        memory: 256Mi
+
+  txExclusionApi:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 100m
+        memory: 256Mi
+
+# Prover disabled for testnet (uses dummy proofs)
+prover:
+  enabled: false
+
+# Observability disabled for testnet
+observability:
+  enabled: false
+
+# Services
+services:
+  l2RpcLoadBalancer:
+    enabled: true
+  l1RpcLoadBalancer:
+    enabled: false
+
+# Network policies disabled for testnet
+networkPolicies:
+  enabled: false
+
+# PDBs disabled for testnet
+podDisruptionBudgets:
+  enabled: false

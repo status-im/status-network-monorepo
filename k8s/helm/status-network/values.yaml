@@ -1,0 +1,440 @@
+# Default values for status-network
+# This is a YAML-formatted file.
+
+# Global settings
+global:
+  namespace: status-network
+  # Image pull policy for all containers
+  imagePullPolicy: IfNotPresent
+  # Storage class for persistent volumes
+  storageClass: gp3
+
+# Image versions
+images:
+  besu: hyperledger/besu:25.2.1
+  besuPackage: consensys/linea-besu-package:beta-v4.4-rc7-20251202165721-14b8f4c
+  statusBesu: 0xnadeem/status-network-besu:v1.0.1
+  teku: consensys/teku:25.11.0-jdk24
+  genesisGenerator: ethpandaops/ethereum-genesis-generator:5.1.0
+  maru: consensys/maru:v1.0.0-20260108114606-36f5e2f
+  coordinator: consensys/linea-coordinator:c96a714
+  shomei: consensys/linea-shomei:2.3.0
+  postman: consensys/linea-postman:19735ce
+  web3signer: consensys/web3signer:develop
+  txExclusionApi: consensys/linea-transaction-exclusion-api:8a0bcc8
+  rlnProver: 720430261111.dkr.ecr.us-east-1.amazonaws.com/status-network-rln-prover:v1.0.3
+  postgres: 0xnadeem/status-network-postgres:v1.0.2
+  busybox: busybox:latest
+
+# Network configuration
+network:
+  # Chain IDs
+  l1ChainId: 1337
+  l2ChainId: 59141
+  # Fork configuration
+  forkOffsetSeconds: 180
+  # L1 network mode: "local" (private chain) or "hoodi" (public testnet)
+  l1Network: "local"
+  # External L1 RPC endpoint (used by L2 services when set, overrides internal l1-el-node)
+  l1RpcEndpoint: ""
+  # Contract addresses (Linea rollup on L1, message service on L2)
+  contracts:
+    l1Rollup: "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
+    l2MessageService: "0xe537D669CA013d86EBeF1D64e40fC74CADC91987"
+  # L1 signer keys for coordinator and postman (default: Hardhat test accounts for local dev)
+  signers:
+    blobSubmission: "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
+    aggregation: "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
+    messageAnchoring: "0x4d01ae6487860981699236a58b68f807ee5f17b12df5740b85cf4c4653be0f55"
+    postmanL1: "0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba"
+    postmanL2: "0xfcf854e0a0bc6fd7e97d7050e61a362c915cecd6767a32267b22e8b7af572e58"
+
+# RLN (Rate Limiting Nullifier) Configuration
+rln:
+  enabled: false
+  # Contract address for RLN membership
+  contractAddress: "0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE"
+  # Minimum balance required to be a member and send gasless transactions
+  # Set to 1 karma (1e18 wei = 1 token). Users need at least 1 karma.
+  minMembershipBalance: "1000000000000000000"
+  # Epoch mode: TEST (30s), TIMESTAMP_1H (1 hour)
+  # For production with 24-hour epochs, use TIMESTAMP_1H and configure prover accordingly
+  epochMode: "TIMESTAMP_1H"
+  # RLN prover timeout in milliseconds
+  timeoutMs: 10000
+  # Proof wait timeout in milliseconds
+  proofWaitTimeoutMs: 10000
+  # Premium gas threshold in Gwei (transactions above this bypass RLN checks)
+  premiumGasThresholdGwei: 0
+  # Premium gas multiplier for users on deny list
+  premiumGasMultiplier: "1.5"
+  # Gasless transaction settings
+  gasless:
+    enabled: true
+    allowZeroGasEstimation: true
+
+# L1 Configuration
+l1:
+  enabled: true
+
+  genesisGenerator:
+    enabled: true
+    # Runs as a Helm pre-install hook
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  elNode:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    storage:
+      size: 20Gi
+    ports:
+      http: 8545
+      ws: 8546
+      engine: 8551
+      p2p: 30303
+      metrics: 9001
+    javaOpts: "-Xmx1536m"
+
+  clNode:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    storage:
+      size: 5Gi
+    ports:
+      p2p: 9002
+      metrics: 8008
+      rest: 4003
+
+# L2 Configuration
+l2:
+  enabled: true
+
+  genesisInitialization:
+    enabled: true
+    # Runs as a Helm pre-install hook
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+  postgres:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    storage:
+      size: 10Gi
+    port: 5432
+    credentials:
+      username: postgres
+      password: postgres
+      # List of databases to create
+      databases:
+        - postman_db
+        - prover_db
+        - linea_coordinator
+        - linea_transaction_exclusion
+
+  rlnProver:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    ports:
+      grpc: 50051
+      grpcAlt: 50052
+    logLevel: info
+    # Private key for RLN prover (has REGISTER_ROLE on RLN contract)
+    # Only needed in production mode. Provide via values-secrets.yaml.
+    privateKey: ""
+    # Epoch configuration for production
+    # 86400 seconds = 24 hours per epoch
+    epochDurationSecs: 86400
+    # Epoch slice for internal calculations (1 hour = 3600 seconds)
+    epochSliceSecs: 3600
+    # Maximum burst size (transactions per epoch)
+    maxBurstSize: 100
+
+  sequencer:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: "1"
+        memory: 2Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+    storage:
+      size: 20Gi
+    ports:
+      http: 8545
+      ws: 8546
+      engine: 8550
+      p2p: 30301
+      metrics: 9545
+    javaOpts: "-Xmx2g"
+
+  maru:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    ports:
+      api: 8080
+      debug: 5005
+
+  l2NodeBesu:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    storage:
+      size: 10Gi
+    ports:
+      http: 8545
+      ws: 8546
+      engine: 8550
+      debug: 8551
+      p2p: 30309
+    javaOpts: "-Xmx1g"
+
+  l2NodeBesuFollower:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    storage:
+      size: 10Gi
+    ports:
+      http: 8545
+      ws: 8546
+      engine: 8550
+      debug: 8551
+      p2p: 30310
+    javaOpts: "-Xmx1g"
+
+  tracesNode:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    storage:
+      size: 10Gi
+    ports:
+      http: 8745
+      ws: 8746
+      engine: 8750
+      debug: 8751
+      p2p: 30308
+    javaOpts: "-Xmx512m"
+
+  zkbesuShomei:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    storage:
+      size: 10Gi
+    ports:
+      http: 8945
+      ws: 8946
+      engine: 8950
+      p2p: 30307
+    javaOpts: "-Xmx512m"
+
+  shomei:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    storage:
+      size: 10Gi
+    port: 8998
+
+  shomeiFrontend:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
+    ports:
+      http: 8889
+      metrics: 9545
+
+  coordinator:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    port: 9545
+    javaOpts: "-Xmx512m"
+
+  web3signer:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
+    port: 9000
+
+  postman:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
+    ports:
+      api: 9090
+
+  txExclusionApi:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
+    port: 8082
+
+# Prover configuration (disabled for testnet with dummy proofs)
+prover:
+  enabled: false
+
+# Observability (optional)
+observability:
+  enabled: false
+
+# Contract deployment job
+contractDeployment:
+  enabled: true
+  # Wait for nodes to be healthy before deploying contracts
+  waitForL1: true
+  waitForL2: true
+
+# Service exposure
+services:
+  # LoadBalancer for external RPC access
+  l2RpcLoadBalancer:
+    enabled: true
+    type: LoadBalancer
+    port: 8545
+    # AWS NLB annotations
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+
+  # Optional: Expose L1 RPC for contract deployment
+  l1RpcLoadBalancer:
+    enabled: false
+    type: LoadBalancer
+    port: 8545
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+
+# Network policies (optional for testnet)
+networkPolicies:
+  enabled: false
+
+# Pod disruption budgets
+podDisruptionBudgets:
+  enabled: false
+
+# Node selectors and tolerations
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Secret configuration
+secrets:
+  # Generate secrets automatically if not provided
+  autoGenerate: true
+  # Or provide existing secret names
+  existingSecrets:
+    nodeKeys: ""
+    jwtSecret: ""
+    web3signerKeys: ""
+    postgresCredentials: ""

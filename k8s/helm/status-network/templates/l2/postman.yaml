@@ -1,0 +1,185 @@
+{{- if and .Values.l2.enabled .Values.l2.postman.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postman
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "postman") | nindent 4 }}
+spec:
+  replicas: {{ .Values.l2.postman.replicas }}
+  selector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "postman") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "status-network.componentSelectorLabels" (list . "postman") | nindent 8 }}
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for PostgreSQL..."
+              until nc -z postgres {{ .Values.l2.postgres.port }}; do
+                echo "PostgreSQL not ready, waiting..."
+                sleep 2
+              done
+              echo "PostgreSQL is ready"
+        {{- if not .Values.network.l1RpcEndpoint }}
+        - name: wait-for-l1
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for L1 EL node..."
+              until nc -z l1-el-node {{ .Values.l1.elNode.ports.http }}; do
+                echo "L1 EL node not ready, waiting..."
+                sleep 2
+              done
+              echo "L1 EL node is ready"
+        {{- end }}
+        - name: wait-for-l2
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for L2 node..."
+              until nc -z l2-node-besu {{ .Values.l2.l2NodeBesu.ports.http }}; do
+                echo "L2 node not ready, waiting..."
+                sleep 2
+              done
+              echo "L2 node is ready"
+      containers:
+        - name: postman
+          image: {{ .Values.images.postman }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: api
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: L1_RPC_URL
+              valueFrom:
+                secretKeyRef:
+                  name: network-secrets
+                  key: L1_RPC_ENDPOINT
+            - name: L1_CONTRACT_ADDRESS
+              value: "{{ .Values.network.contracts.l1Rollup }}"
+            - name: L1_SIGNER_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: network-secrets
+                  key: POSTMAN_L1_PRIVATE_KEY
+            - name: L1_LISTENER_INTERVAL
+              value: "2000"
+            - name: L1_LISTENER_INITIAL_FROM_BLOCK
+              value: "0"
+            - name: L1_LISTENER_BLOCK_CONFIRMATION
+              value: "1"
+            - name: L1_MAX_BLOCKS_TO_FETCH_LOGS
+              value: "1000"
+            - name: L1_MAX_GAS_FEE_ENFORCED
+              value: "true"
+            - name: L2_RPC_URL
+              value: "http://l2-node-besu:{{ .Values.l2.l2NodeBesu.ports.http }}"
+            - name: L2_CONTRACT_ADDRESS
+              value: "{{ .Values.network.contracts.l2MessageService }}"
+            - name: L2_SIGNER_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: network-secrets
+                  key: POSTMAN_L2_PRIVATE_KEY
+            - name: L2_LISTENER_INTERVAL
+              value: "2000"
+            - name: L2_LISTENER_INITIAL_FROM_BLOCK
+              value: "0"
+            - name: L2_LISTENER_BLOCK_CONFIRMATION
+              value: "0"
+            - name: L2_MAX_BLOCKS_TO_FETCH_LOGS
+              value: "1000"
+            - name: L2_MAX_GAS_FEE_ENFORCED
+              value: "false"
+            - name: L2_MESSAGE_TREE_DEPTH
+              value: "5"
+            - name: MESSAGE_SUBMISSION_TIMEOUT
+              value: "300000"
+            - name: MAX_FETCH_MESSAGES_FROM_DB
+              value: "1000"
+            - name: MAX_NONCE_DIFF
+              value: "10000"
+            - name: MAX_FEE_PER_GAS_CAP
+              value: "100000000000"
+            - name: GAS_ESTIMATION_PERCENTILE
+              value: "50"
+            - name: PROFIT_MARGIN
+              value: "0.01"
+            - name: MAX_NUMBER_OF_RETRIES
+              value: "100"
+            - name: RETRY_DELAY_IN_SECONDS
+              value: "30"
+            - name: MAX_CLAIM_GAS_LIMIT
+              value: "2560000"
+            - name: L1_L2_EOA_ENABLED
+              value: "true"
+            - name: L1_L2_CALLDATA_ENABLED
+              value: "true"
+            - name: L1_L2_AUTO_CLAIM_ENABLED
+              value: "true"
+            - name: L2_L1_EOA_ENABLED
+              value: "true"
+            - name: L2_L1_CALLDATA_ENABLED
+              value: "true"
+            - name: L2_L1_AUTO_CLAIM_ENABLED
+              value: "true"
+            - name: POSTGRES_HOST
+              value: "postgres"
+            - name: POSTGRES_PORT
+              value: "{{ .Values.l2.postgres.port }}"
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              value: "postman_db"
+            - name: DB_CLEANER_ENABLED
+              value: "false"
+            - name: ENABLE_LINEA_ESTIMATE_GAS
+              value: "true"
+            - name: API_PORT
+              value: "3000"
+            - name: L1_L2_ENABLE_POSTMAN_SPONSORING
+              value: "true"
+            - name: L2_L1_ENABLE_POSTMAN_SPONSORING
+              value: "false"
+            - name: MAX_POSTMAN_SPONSOR_GAS_LIMIT
+              value: "250000"
+          livenessProbe:
+            tcpSocket:
+              port: api
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: api
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.l2.postman.resources | nindent 12 }}
+      {{- include "status-network.nodeSelector" . | nindent 6 }}
+      {{- include "status-network.tolerations" . | nindent 6 }}
+      {{- include "status-network.affinity" . | nindent 6 }}
+{{- end }}

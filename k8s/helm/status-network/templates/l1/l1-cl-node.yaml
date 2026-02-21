@@ -1,0 +1,175 @@
+{{- if and .Values.l1.enabled .Values.l1.clNode.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: l1-cl-node
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l1-cl-node") | nindent 4 }}
+spec:
+  replicas: {{ .Values.l1.clNode.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "l1-cl-node") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "status-network.componentSelectorLabels" (list . "l1-cl-node") | nindent 8 }}
+    spec:
+      initContainers:
+        {{- if ne .Values.network.l1Network "hoodi" }}
+        - name: setup-keys
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              mkdir -p /config/keys/teku-keys /config/keys/teku-secrets
+              # Move validator keys to correct location
+              for f in /tmp/keys/validator_*.json; do
+                if [ -f "$f" ]; then
+                  cp "$f" /config/keys/teku-keys/
+                fi
+              done
+              for f in /tmp/keys/validator_*.txt; do
+                if [ -f "$f" ]; then
+                  cp "$f" /config/keys/teku-secrets/
+                fi
+              done
+              ls -la /config/keys/teku-keys/ /config/keys/teku-secrets/
+          volumeMounts:
+            - name: l1-cl-keys-tmp
+              mountPath: /tmp/keys
+            - name: l1-cl-keys-organized
+              mountPath: /config/keys
+        {{- end }}
+        - name: wait-for-l1-el
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for L1 EL node..."
+              until nc -z l1-el-node {{ .Values.l1.elNode.ports.engine }}; do
+                echo "L1 EL node not ready, waiting..."
+                sleep 2
+              done
+              echo "L1 EL node is ready"
+        {{- if ne .Values.network.l1Network "hoodi" }}
+        - name: wait-for-genesis
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for L1 genesis files..."
+              until [ -f /data/l1-node-config/genesis.ssz ] || [ -f /data/l1-node-config/network-config.yml ]; do
+                echo "Genesis files not ready, waiting..."
+                sleep 2
+              done
+              echo "Genesis files are ready"
+              ls -la /data/l1-node-config/
+          volumeMounts:
+            - name: l1-genesis-data
+              mountPath: /data/l1-node-config
+        {{- end }}
+      containers:
+        - name: teku
+          image: {{ .Values.images.teku }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command:
+            - /opt/teku/bin/teku
+            {{- if eq .Values.network.l1Network "hoodi" }}
+            - --network=hoodi
+            {{- end }}
+            - --config-file=/config/config.yaml
+          ports:
+            - name: p2p
+              containerPort: {{ .Values.l1.clNode.ports.p2p }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.l1.clNode.ports.metrics }}
+              protocol: TCP
+            - name: rest
+              containerPort: {{ .Values.l1.clNode.ports.rest }}
+              protocol: TCP
+          volumeMounts:
+            - name: l1-cl-config
+              mountPath: /config/config.yaml
+              subPath: config.yaml
+            {{- if ne .Values.network.l1Network "hoodi" }}
+            - name: l1-genesis-data
+              mountPath: /data/l1-node-config
+            {{- end }}
+            - name: l1-cl-data
+              mountPath: /opt/teku/data
+            - name: jwt-secret
+              mountPath: /config/jwtsecret.txt
+              subPath: jwtsecret.txt
+            {{- if ne .Values.network.l1Network "hoodi" }}
+            - name: l1-cl-keys-organized
+              mountPath: /config/keys
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /eth/v1/node/health
+              port: rest
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /eth/v1/node/health
+              port: rest
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.l1.clNode.resources | nindent 12 }}
+      volumes:
+        - name: l1-cl-config
+          configMap:
+            name: l1-cl-config
+        {{- if ne .Values.network.l1Network "hoodi" }}
+        - name: l1-genesis-data
+          persistentVolumeClaim:
+            claimName: l1-genesis-data
+        {{- end }}
+        - name: l1-cl-data
+          persistentVolumeClaim:
+            claimName: l1-cl-data
+        - name: jwt-secret
+          secret:
+            secretName: jwt-secret
+        {{- if ne .Values.network.l1Network "hoodi" }}
+        - name: l1-cl-keys-tmp
+          secret:
+            secretName: l1-cl-node-keys
+            items:
+              - key: validator_0.json
+                path: validator_0.json
+              - key: validator_1.json
+                path: validator_1.json
+              - key: validator_2.json
+                path: validator_2.json
+              - key: validator_3.json
+                path: validator_3.json
+              - key: validator_0.txt
+                path: validator_0.txt
+              - key: validator_1.txt
+                path: validator_1.txt
+              - key: validator_2.txt
+                path: validator_2.txt
+              - key: validator_3.txt
+                path: validator_3.txt
+              - key: teku.key
+                path: teku.key
+        - name: l1-cl-keys-organized
+          emptyDir: {}
+        {{- end }}
+      {{- include "status-network.nodeSelector" . | nindent 6 }}
+      {{- include "status-network.tolerations" . | nindent 6 }}
+      {{- include "status-network.affinity" . | nindent 6 }}
+{{- end }}

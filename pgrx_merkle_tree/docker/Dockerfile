@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y \
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.91.0
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-RUN cargo install cargo-pgrx --locked
+RUN cargo install cargo-pgrx --version 0.16.1 --locked
 
 RUN cargo pgrx init --pg18 /usr/lib/postgresql/18/bin/pg_config
 

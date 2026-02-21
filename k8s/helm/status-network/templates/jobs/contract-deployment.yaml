@@ -1,0 +1,95 @@
+{{- if .Values.contractDeployment.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: contract-deployment
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "contract-deployment") | nindent 4 }}
+  annotations:
+spec:
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        {{- include "status-network.componentSelectorLabels" (list . "contract-deployment") | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        {{- if and .Values.contractDeployment.waitForL1 (not .Values.network.l1RpcEndpoint) }}
+        - name: wait-for-l1
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for L1 EL node to be ready..."
+              until nc -z l1-el-node {{ .Values.l1.elNode.ports.http }}; do
+                echo "L1 EL node not ready, waiting..."
+                sleep 5
+              done
+              echo "L1 EL node is ready"
+
+              # Wait for L1 to produce some blocks
+              echo "Waiting for L1 to produce blocks..."
+              sleep 30
+              echo "L1 should be producing blocks now"
+        {{- end }}
+        {{- if .Values.contractDeployment.waitForL2 }}
+        - name: wait-for-l2
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for L2 sequencer to be ready..."
+              until nc -z sequencer {{ .Values.l2.sequencer.ports.http }}; do
+                echo "L2 sequencer not ready, waiting..."
+                sleep 5
+              done
+              echo "L2 sequencer is ready"
+
+              # Wait for L2 to produce some blocks
+              echo "Waiting for L2 to produce blocks..."
+              sleep 30
+              echo "L2 should be producing blocks now"
+        {{- end }}
+      containers:
+        - name: contract-deployer
+          image: {{ .Values.images.busybox }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Contract deployment job"
+              echo "L1 RPC: {{ include "status-network.l1RpcEndpoint" . }}"
+              echo "L2 RPC: http://sequencer:{{ .Values.l2.sequencer.ports.http }}"
+              echo ""
+              echo "NOTE: This is a placeholder job."
+              echo "Contracts are pre-deployed in the genesis configuration."
+              echo ""
+              echo "Contract Addresses:"
+              echo "  L1 Rollup Contract: {{ .Values.network.contracts.l1Rollup }}"
+              echo "  L2 Bridge Contract: {{ .Values.network.contracts.l2MessageService }}"
+              echo "  RLN Contract: {{ .Values.rln.contractAddress }}"
+              echo ""
+              echo "To deploy additional contracts, mount a deployment script and the contract artifacts."
+              echo "Contract deployment complete (placeholder)"
+          env:
+            - name: L1_RPC_URL
+              value: "{{ include "status-network.l1RpcEndpoint" . }}"
+            - name: L2_RPC_URL
+              value: "http://sequencer:{{ .Values.l2.sequencer.ports.http }}"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      {{- include "status-network.nodeSelector" . | nindent 6 }}
+      {{- include "status-network.tolerations" . | nindent 6 }}
+      {{- include "status-network.affinity" . | nindent 6 }}
+{{- end }}

@@ -1,0 +1,116 @@
+{{- if and .Values.l2.enabled .Values.l2.rlnProver.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rln-prover
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "rln-prover") | nindent 4 }}
+spec:
+  replicas: {{ .Values.l2.rlnProver.replicas }}
+  selector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "rln-prover") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "status-network.componentSelectorLabels" (list . "rln-prover") | nindent 8 }}
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for PostgreSQL..."
+              until nc -z postgres {{ .Values.l2.postgres.port }}; do
+                echo "PostgreSQL not ready, waiting..."
+                sleep 2
+              done
+              echo "PostgreSQL is ready"
+      containers:
+        - name: rln-prover
+          image: {{ .Values.images.rlnProver }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          # Command matches docker compose: prover_cli with CLI args
+          command:
+            - /app/prover_cli
+          args:
+            - "--no-config"
+            - "--ip"
+            - "0.0.0.0"
+            - "--port"
+            - "{{ .Values.l2.rlnProver.ports.grpc }}"
+            {{- if .Values.l2.rlnProver.productionMode }}
+            # Production mode - connect to real smart contracts
+            - "--ws-rpc-url"
+            - "ws://sequencer:8546"
+            - "--ksc"
+            - "{{ .Values.l2.rlnProver.karmaContract }}"
+            - "--rlnsc"
+            - "{{ .Values.l2.rlnProver.rlnContract }}"
+            - "--tsc"
+            - "{{ .Values.l2.rlnProver.tiersContract }}"
+            - "--registration-min"
+            - "{{ .Values.l2.rlnProver.registrationMin | default 1 }}"
+            {{- else }}
+            # Mock mode - use mock smart contract and users
+            - "--mock-sc"
+            - "true"
+            - "--mock-user"
+            - "/config/mock_users.json"
+            {{- end }}
+            - "--db"
+            - "$(DATABASE_URL)"
+            - "--epoch-duration-secs"
+            - "{{ .Values.l2.rlnProver.epochDurationSecs }}"
+            - "--epoch-slice-secs"
+            - "{{ .Values.l2.rlnProver.epochSliceSecs }}"
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.l2.rlnProver.ports.grpc }}
+              protocol: TCP
+            - name: grpc-alt
+              containerPort: {{ .Values.l2.rlnProver.ports.grpcAlt }}
+              protocol: TCP
+          env:
+            - name: RUST_LOG
+              value: "{{ .Values.l2.rlnProver.logLevel }}"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: PROVER_DATABASE_URL
+            {{- if .Values.l2.rlnProver.productionMode }}
+            - name: PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: network-secrets
+                  key: RLN_PROVER_PRIVATE_KEY
+            {{- end }}
+          volumeMounts:
+            - name: rln-config
+              mountPath: /config
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            {{- toYaml .Values.l2.rlnProver.resources | nindent 12 }}
+      volumes:
+        - name: rln-config
+          configMap:
+            name: rln-prover-config
+      {{- include "status-network.nodeSelector" . | nindent 6 }}
+      {{- include "status-network.tolerations" . | nindent 6 }}
+      {{- include "status-network.affinity" . | nindent 6 }}
+{{- end }}

@@ -1,0 +1,201 @@
+{{- if and .Values.l2.enabled .Values.l2.sequencer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sequencer
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "sequencer") | nindent 4 }}
+spec:
+  replicas: {{ .Values.l2.sequencer.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "sequencer") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "status-network.componentSelectorLabels" (list . "sequencer") | nindent 8 }}
+    spec:
+      initContainers:
+        - name: fix-permissions
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Fixing data directory permissions..."
+              chown -R 1000:1000 /opt/besu/data
+              chmod -R 755 /opt/besu/data
+              # Create the /var/lib/besu directory if it doesn't exist
+              mkdir -p /var/lib/besu
+              chmod 755 /var/lib/besu
+              echo "Permissions fixed"
+              ls -la /opt/besu/data /var/lib/besu
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: sequencer-data
+              mountPath: /opt/besu/data
+            - name: sequencer-config
+              mountPath: /var/lib/besu
+        - name: wait-for-genesis
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for L2 genesis files..."
+              until [ -f /initialization/genesis-besu.json ]; do
+                echo "Genesis file not ready, waiting..."
+                sleep 2
+              done
+              echo "Genesis files are ready"
+              ls -la /initialization/
+          volumeMounts:
+            - name: l2-genesis-data
+              mountPath: /initialization
+        {{- if and .Values.rln.enabled (not .Values.l2.rlnProver.productionMode) }}
+        - name: wait-for-rln-prover
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for RLN Prover..."
+              until nc -z rln-prover {{ .Values.l2.rlnProver.ports.grpc }}; do
+                echo "RLN Prover not ready, waiting..."
+                sleep 2
+              done
+              echo "RLN Prover is ready"
+        {{- end }}
+      containers:
+        - name: besu
+          image: {{ .Values.images.statusBesu }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          workingDir: /var/lib/besu
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+          command:
+            - /bin/bash
+            - -c
+            - |
+              echo $$ > /tmp/pid
+              exec besu-untuned \
+                --config-file=/var/lib/besu/sequencer.config.toml \
+                --node-private-key-file=/var/lib/besu/key \
+                --plugin-linea-rejected-tx-endpoint=http://transaction-exclusion-api:{{ .Values.l2.txExclusionApi.port }} \
+                --plugin-linea-node-type=SEQUENCER \
+                {{- if .Values.rln.enabled }}
+                --plugin-linea-rln-enabled=true \
+                --plugin-linea-rln-proof-service=rln-prover:{{ .Values.l2.rlnProver.ports.grpc }} \
+                --plugin-linea-rln-karma-service=rln-prover:{{ .Values.l2.rlnProver.ports.grpc }} \
+                --plugin-linea-rln-timeouts-ms={{ .Values.rln.timeoutMs }} \
+                --plugin-linea-rln-proof-wait-timeout-ms={{ .Values.rln.proofWaitTimeoutMs }} \
+                --plugin-linea-rln-epoch-mode={{ .Values.rln.epochMode }} \
+                --plugin-linea-rln-premium-gas-threshold-gwei={{ .Values.rln.premiumGasThresholdGwei }} \
+                --plugin-linea-rpc-gasless-enabled={{ .Values.rln.gasless.enabled }} \
+                --plugin-linea-rpc-rln-prover-forwarder-enabled=true \
+                --plugin-linea-rpc-allow-zero-gas-estimation-gasless={{ .Values.rln.gasless.allowZeroGasEstimation }} \
+                --plugin-linea-rpc-premium-gas-multiplier={{ .Values.rln.premiumGasMultiplier }} \
+                {{- end }}
+                --plugin-linea-min-margin=0 \
+                --plugin-linea-tx-pool-min-margin=0 \
+                --plugin-linea-tx-pool-profitability-check-api-enabled=false \
+                --plugin-linea-tx-pool-profitability-check-p2p-enabled=false \
+                --plugin-linea-profitability-check-enabled=false \
+                --plugin-linea-variable-gas-cost-wei=0 \
+                --plugin-linea-fixed-gas-cost-wei=0 \
+                --plugin-linea-estimate-gas-compatibility-mode-enabled=true \
+                --plugin-linea-estimate-gas-compatibility-mode-multiplier=1.2
+          ports:
+            - name: http
+              containerPort: {{ .Values.l2.sequencer.ports.http }}
+              protocol: TCP
+            - name: ws
+              containerPort: {{ .Values.l2.sequencer.ports.ws }}
+              protocol: TCP
+            - name: engine
+              containerPort: {{ .Values.l2.sequencer.ports.engine }}
+              protocol: TCP
+            - name: p2p
+              containerPort: {{ .Values.l2.sequencer.ports.p2p }}
+              protocol: TCP
+            - name: p2p-udp
+              containerPort: {{ .Values.l2.sequencer.ports.p2p }}
+              protocol: UDP
+            - name: metrics
+              containerPort: {{ .Values.l2.sequencer.ports.metrics }}
+              protocol: TCP
+          env:
+            - name: JAVA_OPTS
+              value: "{{ .Values.l2.sequencer.javaOpts }}"
+            - name: LOG4J_CONFIGURATION_FILE
+              value: "/var/lib/besu/log4j.xml"
+            - name: LD_LIBRARY_PATH
+              value: "/opt/besu/lib/native-amd64:/opt/besu/lib/native-arm64:/opt/besu/lib/native:/usr/local/lib:/usr/lib"
+            - name: JAVA_LIBRARY_PATH
+              value: "/opt/besu/lib/native-amd64:/opt/besu/lib/native-arm64:/opt/besu/lib/native"
+            - name: BESU_USING_JEMALLOC
+              value: "false"
+          volumeMounts:
+            - name: sequencer-config
+              mountPath: /var/lib/besu/sequencer.config.toml
+              subPath: sequencer.config.toml
+            - name: sequencer-keys
+              mountPath: /var/lib/besu/key
+              subPath: key
+            - name: sequencer-config
+              mountPath: /var/lib/besu/log4j.xml
+              subPath: log4j.xml
+            - name: sequencer-config
+              mountPath: /var/lib/besu/traces-limits.toml
+              subPath: traces-limits.toml
+            - name: sequencer-config
+              mountPath: /var/lib/besu/moduleLimitFile.toml
+              subPath: moduleLimitFile.toml
+            - name: sequencer-config
+              mountPath: /var/lib/besu/deny-list.txt
+              subPath: deny-list.txt
+            - name: sequencer-tls-files
+              mountPath: /var/lib/besu/tls-files
+            - name: l2-genesis-data
+              mountPath: /initialization
+            - name: sequencer-data
+              mountPath: /opt/besu/data
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 180
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 90
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.l2.sequencer.resources | nindent 12 }}
+      volumes:
+        - name: sequencer-config
+          configMap:
+            name: sequencer-config
+        - name: sequencer-keys
+          secret:
+            secretName: sequencer-keys
+        - name: sequencer-tls-files
+          configMap:
+            name: sequencer-tls-files
+        - name: l2-genesis-data
+          persistentVolumeClaim:
+            claimName: l2-genesis-data
+        - name: sequencer-data
+          persistentVolumeClaim:
+            claimName: sequencer-data
+      {{- include "status-network.nodeSelector" . | nindent 6 }}
+      {{- include "status-network.tolerations" . | nindent 6 }}
+      {{- include "status-network.affinity" . | nindent 6 }}
+{{- end }}

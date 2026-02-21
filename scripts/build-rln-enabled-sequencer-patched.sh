@@ -38,6 +38,7 @@ BESU_BASE_IMAGE="consensys/linea-besu-package:${BESU_PACKAGE_TAG}"
 
 # Build options
 BUILD_PROVER=${BUILD_PROVER:-false}
+BUILD_POSTGRES=${BUILD_POSTGRES:-false}
 RESTART_SERVICES=${RESTART_SERVICES:-false}
 SKIP_SOURCE_CLONE=${SKIP_SOURCE_CLONE:-false}
 MULTI_ARCH=${MULTI_ARCH:-false}
@@ -48,6 +49,7 @@ REGISTRY=${REGISTRY:-docker.io}
 NAMESPACE=${NAMESPACE:-}
 BESU_IMAGE_NAME=${BESU_IMAGE_NAME:-status-network-besu}
 RLN_PROVER_IMAGE_NAME=${RLN_PROVER_IMAGE_NAME:-status-network-rln-prover}
+POSTGRES_IMAGE_NAME=${POSTGRES_IMAGE_NAME:-status-network-postgres}
 IMAGE_TAG=${IMAGE_TAG:-}
 IMAGE_TAG_SUFFIX=${IMAGE_TAG_SUFFIX:--gasless-fix}
 
@@ -64,8 +66,9 @@ Key info:
   Base Image: ${BESU_BASE_IMAGE}
 
 Options:
-  --all                        Build everything (Besu + RLN Prover) - default: Besu only
-  --with-prover                Same as --all
+  --all                        Build everything (Besu + RLN Prover + Postgres) - default: Besu only
+  --with-prover                Also build the RLN Prover image
+  --with-postgres              Also build the custom PostgreSQL image (pg_merkle_tree)
   --restart                    Restart services after build
   --skip-clone                 Skip cloning if source already exists at correct commit
   --multi-arch                 Build multi-arch images (linux/amd64 + linux/arm64)
@@ -74,6 +77,7 @@ Options:
   --namespace <ns>             Namespace/org (e.g. status-im, statusnetwork)
   --besu-name <name>           Besu image repository name (default: ${BESU_IMAGE_NAME})
   --prover-name <name>         RLN prover image repository name (default: ${RLN_PROVER_IMAGE_NAME})
+  --postgres-name <name>       Postgres image repository name (default: ${POSTGRES_IMAGE_NAME})
   --tag <tag>                  Image tag (e.g. v1.0.1) - overrides tag-suffix
   --tag-suffix <suffix>        Optional tag suffix (default: ${IMAGE_TAG_SUFFIX})
   -h, --help                   Show this help
@@ -85,17 +89,22 @@ Examples:
   # This will push:
   #   statusnetwork/status-network-besu:v1.0.1
   #   statusnetwork/status-network-rln-prover:v1.0.1
+  #   statusnetwork/status-network-postgres:v1.0.1
 
 Environment vars:
-  BUILD_PROVER, PUSH_IMAGES, MULTI_ARCH, REGISTRY, NAMESPACE, BESU_IMAGE_NAME, RLN_PROVER_IMAGE_NAME, IMAGE_TAG, IMAGE_TAG_SUFFIX
+  BUILD_PROVER, BUILD_POSTGRES, PUSH_IMAGES, MULTI_ARCH, REGISTRY, NAMESPACE, BESU_IMAGE_NAME, RLN_PROVER_IMAGE_NAME, POSTGRES_IMAGE_NAME, IMAGE_TAG, IMAGE_TAG_SUFFIX
 USAGE
 }
 
 # Simple args parser
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --all|--with-prover)
+        --all)
+            BUILD_PROVER=true; BUILD_POSTGRES=true; shift ;;
+        --with-prover)
             BUILD_PROVER=true; shift ;;
+        --with-postgres)
+            BUILD_POSTGRES=true; shift ;;
         --restart)
             RESTART_SERVICES=true; shift ;;
         --skip-clone)
@@ -112,6 +121,8 @@ while [[ $# -gt 0 ]]; do
             BESU_IMAGE_NAME="$2"; shift 2 ;;
         --prover-name)
             RLN_PROVER_IMAGE_NAME="$2"; shift 2 ;;
+        --postgres-name)
+            POSTGRES_IMAGE_NAME="$2"; shift 2 ;;
         --tag)
             IMAGE_TAG="$2"; shift 2 ;;
         --tag-suffix)
@@ -617,9 +628,11 @@ fi
 if [[ -n "$NAMESPACE" ]]; then
     BESU_IMAGE_REMOTE="${REGISTRY}/${NAMESPACE}/${BESU_IMAGE_NAME}:${FINAL_TAG}"
     RLN_PROVER_IMAGE_REMOTE="${REGISTRY}/${NAMESPACE}/${RLN_PROVER_IMAGE_NAME}:${FINAL_TAG}"
+    POSTGRES_IMAGE_REMOTE="${REGISTRY}/${NAMESPACE}/${POSTGRES_IMAGE_NAME}:${FINAL_TAG}"
 else
     BESU_IMAGE_REMOTE="${BESU_IMAGE_NAME}:${FINAL_TAG}"
     RLN_PROVER_IMAGE_REMOTE="${RLN_PROVER_IMAGE_NAME}:${FINAL_TAG}"
+    POSTGRES_IMAGE_REMOTE="${POSTGRES_IMAGE_NAME}:${FINAL_TAG}"
 fi
 
 # Create Dockerfile
@@ -779,6 +792,41 @@ if [[ "$BUILD_PROVER" == "true" ]]; then
     fi
 fi
 
+# Build PostgreSQL image if requested
+if [[ "$BUILD_POSTGRES" == "true" ]]; then
+    echo -e "${BLUE}🐘 Building Custom PostgreSQL image (pg_merkle_tree)...${NC}"
+    POSTGRES_DOCKERFILE="${REPO_ROOT}/pgrx_merkle_tree/docker/Dockerfile"
+    POSTGRES_LOCAL="${POSTGRES_IMAGE_NAME}:${FINAL_TAG}"
+
+    if [[ "$MULTI_ARCH" == "true" ]]; then
+        if [[ "$PUSH_IMAGES" == "true" ]]; then
+            echo -e "${YELLOW}  Building and pushing multi-arch PostgreSQL to ${POSTGRES_IMAGE_REMOTE}...${NC}"
+            docker buildx build \
+                --platform linux/amd64,linux/arm64 \
+                --push \
+                -t "$POSTGRES_IMAGE_REMOTE" \
+                -f "$POSTGRES_DOCKERFILE" \
+                "$REPO_ROOT"
+            echo -e "${GREEN}✅ Multi-arch PostgreSQL built and pushed: $POSTGRES_IMAGE_REMOTE${NC}"
+        else
+            docker buildx build --platform linux/amd64 --load -t "${POSTGRES_LOCAL}-amd64" -f "$POSTGRES_DOCKERFILE" "$REPO_ROOT"
+            docker buildx build --platform linux/arm64 --load -t "${POSTGRES_LOCAL}-arm64" -f "$POSTGRES_DOCKERFILE" "$REPO_ROOT"
+            echo -e "${GREEN}✅ Multi-arch PostgreSQL built: ${POSTGRES_LOCAL}-amd64, ${POSTGRES_LOCAL}-arm64${NC}"
+        fi
+    else
+        docker build -t "$POSTGRES_LOCAL" -f "$POSTGRES_DOCKERFILE" "$REPO_ROOT"
+        echo -e "${GREEN}✅ PostgreSQL image built: $POSTGRES_LOCAL${NC}"
+
+        if [[ "$PUSH_IMAGES" == "true" ]]; then
+            docker tag "$POSTGRES_LOCAL" "$POSTGRES_IMAGE_REMOTE"
+            docker push "$POSTGRES_IMAGE_REMOTE"
+            echo -e "${GREEN}✅ PostgreSQL pushed: $POSTGRES_IMAGE_REMOTE${NC}"
+        fi
+    fi
+else
+    echo -e "${YELLOW}⏭️  Skipping PostgreSQL build (use --with-postgres or --all to include)${NC}"
+fi
+
 # Update Docker Compose
 echo -e "${BLUE}📝 Updating Docker Compose...${NC}"
 COMPOSE_FILE="${REPO_ROOT}/docker/compose-spec-l2-services-rln.yml"
@@ -850,6 +898,9 @@ if [[ "$MULTI_ARCH" == "true" ]]; then
     if [[ "$BUILD_PROVER" == "true" ]]; then
         echo -e "  RLN Prover Image: $RLN_PROVER_IMAGE_REMOTE (multi-arch)"
     fi
+    if [[ "$BUILD_POSTGRES" == "true" ]]; then
+        echo -e "  PostgreSQL Image: $POSTGRES_IMAGE_REMOTE (multi-arch)"
+    fi
 else
     echo -e "${BLUE}📋 Built Components (ARM64):${NC}"
     echo -e "  Patched Merge JAR: $(basename "$PATCHED_MERGE_JAR")"
@@ -858,6 +909,9 @@ else
     echo -e "  Besu Image: $BESU_IMAGE_REMOTE (arm64)"
     if [[ -n "$RLN_PROVER_TAG" ]]; then
         echo -e "  RLN Prover Image: $RLN_PROVER_IMAGE_REMOTE"
+    fi
+    if [[ "$BUILD_POSTGRES" == "true" ]]; then
+        echo -e "  PostgreSQL Image: $POSTGRES_IMAGE_REMOTE"
     fi
 fi
 echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"

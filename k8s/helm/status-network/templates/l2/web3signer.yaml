@@ -1,0 +1,72 @@
+{{- if and .Values.l2.enabled .Values.l2.web3signer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web3signer
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "web3signer") | nindent 4 }}
+spec:
+  replicas: {{ .Values.l2.web3signer.replicas }}
+  selector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "web3signer") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "status-network.componentSelectorLabels" (list . "web3signer") | nindent 8 }}
+    spec:
+      containers:
+        - name: web3signer
+          image: {{ .Values.images.web3signer }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command:
+            - /opt/web3signer/bin/web3signer
+            - --http-listen-host=0.0.0.0
+            - --http-listen-port={{ .Values.l2.web3signer.port }}
+            - --http-host-allowlist=*
+            - --tls-keystore-file=/tls/web3signer-keystore.p12
+            - --tls-keystore-password-file=/tls/keystore-password
+            - --tls-known-clients-file=/tls/known-clients.txt
+            - eth1
+            - --chain-id={{ .Values.network.l2ChainId }}
+            - --keystores-path=/keys
+            - --keystores-passwords-path=/keys
+          ports:
+            - name: http
+              containerPort: {{ .Values.l2.web3signer.port }}
+              protocol: TCP
+          volumeMounts:
+            - name: web3signer-keys
+              mountPath: /keys
+            - name: web3signer-tls
+              mountPath: /tls
+          livenessProbe:
+            httpGet:
+              path: /upcheck
+              port: http
+              scheme: HTTPS
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /upcheck
+              port: http
+              scheme: HTTPS
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            {{- toYaml .Values.l2.web3signer.resources | nindent 12 }}
+      volumes:
+        - name: web3signer-keys
+          secret:
+            secretName: web3signer-keys
+        - name: web3signer-tls
+          secret:
+            secretName: web3signer-tls
+      {{- include "status-network.nodeSelector" . | nindent 6 }}
+      {{- include "status-network.tolerations" . | nindent 6 }}
+      {{- include "status-network.affinity" . | nindent 6 }}
+{{- end }}

@@ -1,0 +1,795 @@
+{{- if .Values.l2.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sequencer-config
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "sequencer") | nindent 4 }}
+data:
+  sequencer.config.toml: |
+    genesis-file="/initialization/genesis-besu.json"
+    #logging="DEBUG" log is managed via log4j config file
+    data-path="/opt/besu/data"
+    data-storage-format="FOREST"
+    sync-mode="FULL"
+    host-allowlist=["*"]
+    revert-reason-enabled=true
+
+    target-gas-limit=2000000000
+    min-gas-price=0
+    tx-pool-min-gas-price=0
+    max-peers=10
+    p2p-port={{ .Values.l2.sequencer.ports.p2p }}
+
+    # engine
+    engine-host-allowlist=["*"]
+    engine-rpc-port={{ .Values.l2.sequencer.ports.engine }}
+    engine-jwt-disabled=true
+
+    # rpc
+    rpc-http-enabled=true
+    rpc-http-host="0.0.0.0"
+    rpc-http-port={{ .Values.l2.sequencer.ports.http }}
+    rpc-http-api=["ADMIN","DEBUG","NET","ETH","ENGINE","CLIQUE","MINER","WEB3","TRACE","LINEA"]
+    rpc-http-cors-origins=["*"]
+    rpc-http-max-active-connections=20000
+
+    # ws
+    rpc-ws-enabled=true
+    rpc-ws-host="0.0.0.0"
+    rpc-ws-port={{ .Values.l2.sequencer.ports.ws }}
+    rpc-ws-api=["ADMIN","DEBUG","NET","ETH","CLIQUE","MINER","WEB3","TRACE","LINEA"]
+    rpc-ws-max-active-connections=200
+
+    # graphql
+    graphql-http-enabled=false
+
+    # metrics
+    metrics-enabled=true
+    metrics-host="0.0.0.0"
+    metrics-port={{ .Values.l2.sequencer.ports.metrics }}
+
+    tx-pool-no-local-priority=true
+    poa-block-txs-selection-max-time=80
+
+    # plugins - full set matching docker
+    plugins=["LineaEstimateGasEndpointPlugin","LineaExtraDataPlugin","LineaTransactionPoolValidatorPlugin","LineaBundleEndpointsPlugin","LineaSetExtraDataEndpointPlugin","LineaTransactionSelectorPlugin"]
+    plugin-linea-module-limit-file-path="/var/lib/besu/traces-limits.toml"
+    plugin-linea-deny-list-path="/var/lib/besu/deny-list.txt"
+    plugin-linea-estimate-gas-compatibility-mode-enabled=false
+    plugin-linea-extra-data-pricing-enabled=true
+    plugin-linea-l1l2-bridge-contract="{{ .Values.network.contracts.l2MessageService }}"
+    plugin-linea-l1l2-bridge-topic="e856c2b8bd4eb0027ce32eeaf595c21b0b6b4644b326e5b7bd80a1cf8db72e6c"
+    plugin-linea-tx-pool-profitability-check-api-enabled=false
+    plugin-linea-tx-pool-profitability-check-p2p-enabled=false
+    plugin-linea-tx-pool-simulation-check-api-enabled=false
+    plugin-linea-tx-pool-simulation-check-p2p-enabled=false
+    plugin-linea-max-block-calldata-size=109000
+    plugin-linea-max-tx-calldata-size=60000
+    plugin-linea-max-block-gas=55000000
+    plugin-linea-tx-pool-min-margin="0.8"
+    plugin-linea-min-margin="1.0"
+    plugin-linea-fixed-gas-cost-wei=30000000
+    plugin-linea-variable-gas-cost-wei=1000000000
+    plugin-linea-extra-data-set-min-gas-price-enabled=false
+    plugin-linea-estimate-gas-min-margin="1.2"
+    plugin-linea-limitless-enabled=false
+    strict-tx-replay-protection-enabled=false
+
+    Xplugin-rocksdb-high-spec-enabled=true
+    Xsynchronizer-fast-sync-full-validation-rate=0.000001
+    tx-pool-priority-senders=["0xfe3b557e8fb62b89f4916b721be55ceb828dbd73",
+      "0xd42e308fc964b71e18126df469c21b0d7bcb86cc",
+      "0x1b9abeec3215d8ade8a33607f2cf0f4f60e5f0d0",
+      "0xc8c92fe825d8930b9357c006e0af160dfa727a62"]
+
+    Xin-process-rpc-enabled=true
+    Xin-process-rpc-apis=["ETH", "MINER"]
+
+  log4j.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <Configuration status="DEBUG" monitorInterval="30">
+      <Properties>
+        <Property name="root.log.level">DEBUG</Property>
+      </Properties>
+      <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+          <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZZZ} | %t | %-5level | %c{1} | %msg %throwable%n"/>
+        </Console>
+      </Appenders>
+      <Loggers>
+        <Logger name="net.consensys.linea" level="DEBUG"/>
+        <Root level="${sys:root.log.level}">
+          <AppenderRef ref="Console"/>
+        </Root>
+      </Loggers>
+    </Configuration>
+
+  deny-list.txt: ""
+  gasless-deny-list.txt: ""
+  moduleLimitFile.toml: |
+    [traces-limits]
+    # Module limits of the beta-v4.4 release (Osaka)
+    #
+    # Arithmetization module limits
+    #
+    ADD                 = 262144
+    BIN                 = 262144
+    BLAKE_MODEXP_DATA   = 16384
+    BLOCK_DATA          = 4096
+    BLOCK_HASH          = 2560
+    BLS_DATA            = 65536
+    EC_DATA             = 65536
+    EUC                 = 65536
+    EXP                 = 65536
+    EXT                 = 524288
+    GAS                 = 65536
+    HUB                 = 2097152
+    LOG_DATA            = 65536
+    LOG_INFO            = 4096
+    MMIO                = 2097152
+    MMU                 = 1048576
+    MOD                 = 131072
+    MUL                 = 65536
+    MXP                 = 524288
+    OOB                 = 262144
+    RLP_ADDR            = 4096
+    RLP_TXN             = 131072
+    RLP_TXN_RCPT        = 65536
+    RLP_UTILS           = 131072
+    ROM                 = 8388608
+    ROM_LEX             = 1024
+    SHAKIRA_DATA        = 65536
+    SHF                 = 262144
+    STP                 = 16384
+    TRM                 = 32768
+    TXN_DATA            = 8192
+    WCP                 = 262144
+    #
+    # Precompiles limits
+    #
+    PRECOMPILE_ECRECOVER_EFFECTIVE_CALLS        = 128
+    PRECOMPILE_SHA2_BLOCKS                      = 200
+    PRECOMPILE_RIPEMD_BLOCKS                    = 0
+    PRECOMPILE_MODEXP_EFFECTIVE_CALLS           = 32
+    PRECOMPILE_LARGE_MODEXP_EFFECTIVE_CALLS     = 1
+    PRECOMPILE_ECADD_EFFECTIVE_CALLS            = 256
+    PRECOMPILE_ECMUL_EFFECTIVE_CALLS            = 40
+    PRECOMPILE_ECPAIRING_FINAL_EXPONENTIATIONS  = 16
+    PRECOMPILE_ECPAIRING_G2_MEMBERSHIP_CALLS    = 64
+    PRECOMPILE_ECPAIRING_MILLER_LOOPS           = 64
+    PRECOMPILE_BLAKE_EFFECTIVE_CALLS            = 0
+    PRECOMPILE_BLAKE_ROUNDS                     = 0
+    # Precompiles introduced from beta-v4.0-rc6-CANCUN
+    PRECOMPILE_BLS_POINT_EVALUATION_EFFECTIVE_CALLS     = 1
+    PRECOMPILE_POINT_EVALUATION_FAILURE_EFFECTIVE_CALLS = 2
+    PRECOMPILE_BLS_G1_ADD_EFFECTIVE_CALLS               = 8
+    PRECOMPILE_BLS_G1_MSM_EFFECTIVE_CALLS               = 4
+    PRECOMPILE_BLS_G2_ADD_EFFECTIVE_CALLS               = 8
+    PRECOMPILE_BLS_G2_MSM_EFFECTIVE_CALLS               = 4
+    PRECOMPILE_BLS_PAIRING_CHECK_MILLER_LOOPS           = 8
+    PRECOMPILE_BLS_FINAL_EXPONENTIATIONS                = 2
+    PRECOMPILE_BLS_MAP_FP_TO_G1_EFFECTIVE_CALLS         = 4
+    PRECOMPILE_BLS_MAP_FP2_TO_G2_EFFECTIVE_CALLS        = 4
+    PRECOMPILE_BLS_C1_MEMBERSHIP_CALLS                  = 8
+    PRECOMPILE_BLS_C2_MEMBERSHIP_CALLS                  = 8
+    PRECOMPILE_BLS_G1_MEMBERSHIP_CALLS                  = 8
+    PRECOMPILE_BLS_G2_MEMBERSHIP_CALLS                  = 8
+    # Precompiles introduced from beta-v4.4
+    PRECOMPILE_P256_VERIFY_EFFECTIVE_CALLS              = 128
+    #
+    # Block-specific limits
+    #
+    BLOCK_KECCAK        = 8192
+    BLOCK_L1_SIZE       = 1000000
+    BLOCK_L2_L1_LOGS    = 16
+    BLOCK_TRANSACTIONS  = 300
+  traces-limits.toml: |
+    [traces-limits]
+    # Module limits of the beta-v4.4 release (Osaka)
+    #
+    # Arithmetication module limits
+    #
+    ADD                 = 262144
+    BIN                 = 262144
+    BLAKE_MODEXP_DATA   = 16384
+    BLOCK_DATA          = 4096
+    BLOCK_HASH          = 2560
+    BLS_DATA            = 65536
+    EC_DATA             = 65536
+    EUC                 = 65536
+    EXP                 = 65536
+    EXT                 = 524288
+    GAS                 = 65536
+    HUB                 = 2097152
+    LOG_DATA            = 65536
+    LOG_INFO            = 4096
+    MMIO                = 2097152
+    MMU                 = 1048576
+    MOD                 = 131072
+    MUL                 = 65536
+    MXP                 = 524288
+    OOB                 = 262144
+    RLP_ADDR            = 4096
+    RLP_TXN             = 131072
+    RLP_TXN_RCPT        = 65536
+    RLP_UTILS           = 131072
+    ROM                 = 8388608
+    ROM_LEX             = 1024
+    SHAKIRA_DATA        = 65536
+    SHF                 = 262144
+    STP                 = 16384
+    TRM                 = 32768
+    TXN_DATA            = 8192
+    WCP                 = 262144
+    #
+    # Precompiles limits
+    #
+    PRECOMPILE_ECRECOVER_EFFECTIVE_CALLS        = 128
+    PRECOMPILE_SHA2_BLOCKS                      = 200
+    PRECOMPILE_RIPEMD_BLOCKS                    = 0
+    PRECOMPILE_MODEXP_EFFECTIVE_CALLS           = 32
+    PRECOMPILE_LARGE_MODEXP_EFFECTIVE_CALLS     = 1
+    PRECOMPILE_ECADD_EFFECTIVE_CALLS            = 256
+    PRECOMPILE_ECMUL_EFFECTIVE_CALLS            = 40
+    PRECOMPILE_ECPAIRING_FINAL_EXPONENTIATIONS  = 16
+    PRECOMPILE_ECPAIRING_G2_MEMBERSHIP_CALLS    = 64
+    PRECOMPILE_ECPAIRING_MILLER_LOOPS           = 64
+    PRECOMPILE_BLAKE_EFFECTIVE_CALLS            = 0
+    PRECOMPILE_BLAKE_ROUNDS                     = 0
+    PRECOMPILE_BLS_POINT_EVALUATION_EFFECTIVE_CALLS     = 1
+    PRECOMPILE_POINT_EVALUATION_FAILURE_EFFECTIVE_CALLS = 2
+    PRECOMPILE_BLS_G1_ADD_EFFECTIVE_CALLS               = 8
+    PRECOMPILE_BLS_G1_MSM_EFFECTIVE_CALLS               = 4
+    PRECOMPILE_BLS_G2_ADD_EFFECTIVE_CALLS               = 8
+    PRECOMPILE_BLS_G2_MSM_EFFECTIVE_CALLS               = 4
+    PRECOMPILE_BLS_PAIRING_CHECK_MILLER_LOOPS           = 8
+    PRECOMPILE_BLS_FINAL_EXPONENTIATIONS                = 2
+    PRECOMPILE_BLS_MAP_FP_TO_G1_EFFECTIVE_CALLS         = 4
+    PRECOMPILE_BLS_MAP_FP2_TO_G2_EFFECTIVE_CALLS        = 4
+    PRECOMPILE_BLS_C1_MEMBERSHIP_CALLS                  = 8
+    PRECOMPILE_BLS_C2_MEMBERSHIP_CALLS                  = 8
+    PRECOMPILE_BLS_G1_MEMBERSHIP_CALLS                  = 8
+    PRECOMPILE_BLS_G2_MEMBERSHIP_CALLS                  = 8
+    PRECOMPILE_P256_VERIFY_EFFECTIVE_CALLS              = 128
+    #
+    # Block-specific limits
+    #
+    BLOCK_KECCAK        = 8192
+    BLOCK_L1_SIZE       = 1000000
+    BLOCK_L2_L1_LOGS    = 16
+    BLOCK_TRANSACTIONS  = 300
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traces-limits
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "sequencer") | nindent 4 }}
+data:
+  traces-limits.toml: |
+    [traces-limits]
+    # Module limits of the beta-v4.4 release (Osaka)
+    #
+    # Arithmetication module limits
+    #
+    ADD                 = 262144
+    BIN                 = 262144
+    BLAKE_MODEXP_DATA   = 16384
+    BLOCK_DATA          = 4096
+    BLOCK_HASH          = 2560
+    BLS_DATA            = 65536
+    EC_DATA             = 65536
+    EUC                 = 65536
+    EXP                 = 65536
+    EXT                 = 524288
+    GAS                 = 65536
+    HUB                 = 2097152
+    LOG_DATA            = 65536
+    LOG_INFO            = 4096
+    MMIO                = 2097152
+    MMU                 = 1048576
+    MOD                 = 131072
+    MUL                 = 65536
+    MXP                 = 524288
+    OOB                 = 262144
+    RLP_ADDR            = 4096
+    RLP_TXN             = 131072
+    RLP_TXN_RCPT        = 65536
+    RLP_UTILS           = 131072
+    ROM                 = 8388608
+    ROM_LEX             = 1024
+    SHAKIRA_DATA        = 65536
+    SHF                 = 262144
+    STP                 = 16384
+    TRM                 = 32768
+    TXN_DATA            = 8192
+    WCP                 = 262144
+    #
+    # Precompiles limits
+    #
+    PRECOMPILE_ECRECOVER_EFFECTIVE_CALLS        = 128
+    PRECOMPILE_SHA2_BLOCKS                      = 200
+    PRECOMPILE_RIPEMD_BLOCKS                    = 0
+    PRECOMPILE_MODEXP_EFFECTIVE_CALLS           = 32
+    PRECOMPILE_LARGE_MODEXP_EFFECTIVE_CALLS     = 1
+    PRECOMPILE_ECADD_EFFECTIVE_CALLS            = 256
+    PRECOMPILE_ECMUL_EFFECTIVE_CALLS            = 40
+    PRECOMPILE_ECPAIRING_FINAL_EXPONENTIATIONS  = 16
+    PRECOMPILE_ECPAIRING_G2_MEMBERSHIP_CALLS    = 64
+    PRECOMPILE_ECPAIRING_MILLER_LOOPS           = 64
+    PRECOMPILE_BLAKE_EFFECTIVE_CALLS            = 0
+    PRECOMPILE_BLAKE_ROUNDS                     = 0
+    PRECOMPILE_BLS_POINT_EVALUATION_EFFECTIVE_CALLS     = 1
+    PRECOMPILE_POINT_EVALUATION_FAILURE_EFFECTIVE_CALLS = 2
+    PRECOMPILE_BLS_G1_ADD_EFFECTIVE_CALLS               = 8
+    PRECOMPILE_BLS_G1_MSM_EFFECTIVE_CALLS               = 4
+    PRECOMPILE_BLS_G2_ADD_EFFECTIVE_CALLS               = 8
+    PRECOMPILE_BLS_G2_MSM_EFFECTIVE_CALLS               = 4
+    PRECOMPILE_BLS_PAIRING_CHECK_MILLER_LOOPS           = 8
+    PRECOMPILE_BLS_FINAL_EXPONENTIATIONS                = 2
+    PRECOMPILE_BLS_MAP_FP_TO_G1_EFFECTIVE_CALLS         = 4
+    PRECOMPILE_BLS_MAP_FP2_TO_G2_EFFECTIVE_CALLS        = 4
+    PRECOMPILE_BLS_C1_MEMBERSHIP_CALLS                  = 8
+    PRECOMPILE_BLS_C2_MEMBERSHIP_CALLS                  = 8
+    PRECOMPILE_BLS_G1_MEMBERSHIP_CALLS                  = 8
+    PRECOMPILE_BLS_G2_MEMBERSHIP_CALLS                  = 8
+    PRECOMPILE_P256_VERIFY_EFFECTIVE_CALLS              = 128
+    #
+    # Block-specific limits
+    #
+    BLOCK_KECCAK        = 8192
+    BLOCK_L1_SIZE       = 1000000
+    BLOCK_L2_L1_LOGS    = 16
+    BLOCK_TRANSACTIONS  = 300
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: l2-node-besu-config
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l2-node-besu") | nindent 4 }}
+data:
+  l2-node-besu-config.toml: |
+    data-path="/opt/besu/data"
+    host-allowlist=["*"]
+    sync-mode="FULL"
+    p2p-port={{ .Values.l2.l2NodeBesu.ports.p2p }}
+
+    min-gas-price=0
+    tx-pool-min-gas-price=0
+
+    # engine
+    engine-host-allowlist=["*"]
+    engine-rpc-port={{ .Values.l2.l2NodeBesu.ports.engine }}
+    engine-jwt-disabled=true
+
+    # rpc
+    rpc-http-enabled=true
+    rpc-http-host="0.0.0.0"
+    rpc-http-port={{ .Values.l2.l2NodeBesu.ports.http }}
+    rpc-http-cors-origins=["*"]
+    rpc-http-api=["ADMIN","DEBUG","NET","ETH","ENGINE","WEB3","PLUGINS","LINEA","TXPOOL"]
+    rpc-http-max-active-connections=200
+
+    # ws
+    rpc-ws-enabled=true
+    rpc-ws-host="0.0.0.0"
+    rpc-ws-port={{ .Values.l2.l2NodeBesu.ports.ws }}
+    rpc-ws-api=["ADMIN","TXPOOL","WEB3","ETH","NET","PERM","LINEA"]
+    rpc-ws-max-active-connections=200
+
+    # graphql
+    graphql-http-enabled=false
+
+    # metrics
+    metrics-enabled=true
+    metrics-host="0.0.0.0"
+    metrics-port=9545
+
+    # database
+    data-storage-format="BONSAI"
+
+    # plugins
+    plugins=["LineaEstimateGasEndpointPlugin","LineaExtraDataPlugin","LineaTransactionPoolValidatorPlugin","LineaBundleEndpointsPlugin","LineaSetExtraDataEndpointPlugin","LineaTransactionSelectorPlugin"]
+    plugin-linea-module-limit-file-path="/var/lib/besu/traces-limits.toml"
+    plugin-linea-deny-list-path="/var/lib/besu/deny-list.txt"
+    plugin-linea-l1l2-bridge-contract="{{ .Values.network.contracts.l2MessageService }}"
+    plugin-linea-l1l2-bridge-topic="e856c2b8bd4eb0027ce32eeaf595c21b0b6b4644b326e5b7bd80a1cf8db72e6c"
+    plugin-linea-tx-pool-profitability-check-p2p-enabled=false
+    plugin-linea-tx-pool-profitability-check-api-enabled=false
+    plugin-linea-tx-pool-simulation-check-api-enabled=false
+    plugin-linea-tx-pool-simulation-check-p2p-enabled=false
+    plugin-linea-extra-data-pricing-enabled=false
+    plugin-linea-max-tx-calldata-size=30000
+    plugin-linea-tx-pool-min-margin="0"
+    plugin-linea-min-margin="0"
+    plugin-linea-fixed-gas-cost-wei=0
+    plugin-linea-variable-gas-cost-wei=0
+    plugin-linea-extra-data-set-min-gas-price-enabled=false
+    plugin-linea-estimate-gas-compatibility-mode-enabled=false
+    plugin-linea-estimate-gas-min-margin="1.2"
+    plugin-linea-limitless-enabled=false
+
+    Xin-process-rpc-enabled=true
+    Xin-process-rpc-apis=["ETH", "MINER"]
+
+    cache-last-block-headers-preload-enabled=true
+    cache-last-block-headers=50
+
+    bonsai-limit-trie-logs-enabled=false
+    bonsai-historical-block-limit=1024
+    bonsai-parallel-tx-processing-enabled=false
+
+  log4j.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <Configuration status="INFO" monitorInterval="30">
+      <Properties>
+        <Property name="root.log.level">INFO</Property>
+      </Properties>
+      <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+          <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZZZ} | %t | %-5level | %c{1} | %msg%n"/>
+        </Console>
+      </Appenders>
+      <Loggers>
+        <Root level="${sys:root.log.level}">
+          <AppenderRef ref="Console"/>
+        </Root>
+      </Loggers>
+    </Configuration>
+
+  deny-list.txt: ""
+
+  traces-limits.toml: |
+    [traces-limits]
+    # Module limits of the beta-v4.4 release (Osaka)
+    #
+    # Arithmetication module limits
+    #
+    ADD                 = 262144
+    BIN                 = 262144
+    BLAKE_MODEXP_DATA   = 16384
+    BLOCK_DATA          = 4096
+    BLOCK_HASH          = 2560
+    BLS_DATA            = 65536
+    EC_DATA             = 65536
+    EUC                 = 65536
+    EXP                 = 65536
+    EXT                 = 524288
+    GAS                 = 65536
+    HUB                 = 2097152
+    LOG_DATA            = 65536
+    LOG_INFO            = 4096
+    MMIO                = 2097152
+    MMU                 = 1048576
+    MOD                 = 131072
+    MUL                 = 65536
+    MXP                 = 524288
+    OOB                 = 262144
+    RLP_ADDR            = 4096
+    RLP_TXN             = 131072
+    RLP_TXN_RCPT        = 65536
+    RLP_UTILS           = 131072
+    ROM                 = 8388608
+    ROM_LEX             = 1024
+    SHAKIRA_DATA        = 65536
+    SHF                 = 262144
+    STP                 = 16384
+    TRM                 = 32768
+    TXN_DATA            = 8192
+    WCP                 = 262144
+    #
+    # Precompiles limits
+    #
+    PRECOMPILE_ECRECOVER_EFFECTIVE_CALLS        = 128
+    PRECOMPILE_SHA2_BLOCKS                      = 200
+    PRECOMPILE_RIPEMD_BLOCKS                    = 0
+    PRECOMPILE_MODEXP_EFFECTIVE_CALLS           = 32
+    PRECOMPILE_LARGE_MODEXP_EFFECTIVE_CALLS     = 1
+    PRECOMPILE_ECADD_EFFECTIVE_CALLS            = 256
+    PRECOMPILE_ECMUL_EFFECTIVE_CALLS            = 40
+    PRECOMPILE_ECPAIRING_FINAL_EXPONENTIATIONS  = 16
+    PRECOMPILE_ECPAIRING_G2_MEMBERSHIP_CALLS    = 64
+    PRECOMPILE_ECPAIRING_MILLER_LOOPS           = 64
+    PRECOMPILE_BLAKE_ROUNDS                     = 512
+    PRECOMPILE_BLAKE_EFFECTIVE_CALLS            = 16
+    #
+    # Block limits
+    #
+    BLOCK_KECCAK        = 8192
+    BLOCK_L1_SIZE       = 1000000
+    BLOCK_L2_L1_LOGS    = 16
+    BLOCK_TRANSACTIONS  = 300
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traces-node-config
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "traces-node") | nindent 4 }}
+data:
+  traces-node-config.toml: |
+    data-path="/opt/besu/data"
+    host-allowlist=["*"]
+    sync-mode="FULL"
+    p2p-port={{ .Values.l2.tracesNode.ports.p2p }}
+
+    min-gas-price=0
+
+    # engine
+    engine-host-allowlist=["*"]
+    engine-rpc-port={{ .Values.l2.tracesNode.ports.engine }}
+    engine-jwt-disabled=true
+
+    # rpc
+    rpc-http-enabled=true
+    rpc-http-host="0.0.0.0"
+    rpc-http-port={{ .Values.l2.tracesNode.ports.http }}
+    rpc-http-cors-origins=["*"]
+    rpc-http-api=["ADMIN","DEBUG","NET","ETH","ENGINE","WEB3","PLUGINS","MINER","LINEA"]
+    rpc-http-max-active-connections=200
+
+    # ws
+    rpc-ws-enabled=true
+    rpc-ws-host="0.0.0.0"
+    rpc-ws-port={{ .Values.l2.tracesNode.ports.ws }}
+    rpc-ws-api=["ADMIN","TXPOOL","WEB3","ETH","NET","PERM"]
+    rpc-ws-max-active-connections=200
+
+    # graphql
+    graphql-http-enabled=false
+
+    # metrics
+    metrics-enabled=true
+    metrics-host="0.0.0.0"
+    metrics-port=9545
+
+    # database
+    data-storage-format="BONSAI"
+
+    # plugins - TRACER plugins, NOT sequencer plugins!
+    plugins=["TracerReadinessPlugin","TracesEndpointServicePlugin","LineCountsEndpointServicePlugin","CaptureEndpointServicePlugin"]
+    plugin-linea-conflated-trace-generation-traces-output-path="/opt/besu/data/traces/v2/conflated"
+    plugin-linea-rpc-concurrent-requests-limit=2
+    plugin-linea-tracer-readiness-server-host="0.0.0.0"
+    plugin-linea-tracer-readiness-server-port=8548
+    plugin-linea-tracer-readiness-max-blocks-behind=5
+    plugin-linea-l1l2-bridge-contract="{{ .Values.network.contracts.l2MessageService }}"
+    plugin-linea-l1l2-bridge-topic="e856c2b8bd4eb0027ce32eeaf595c21b0b6b4644b326e5b7bd80a1cf8db72e6c"
+    plugin-linea-limitless-enabled=false
+
+    cache-last-block-headers-preload-enabled=true
+    cache-last-block-headers=50
+
+    bonsai-limit-trie-logs-enabled=false
+    bonsai-historical-block-limit=1024
+    bonsai-parallel-tx-processing-enabled=false
+
+  log4j.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <Configuration status="INFO" monitorInterval="30">
+      <Properties>
+        <Property name="root.log.level">INFO</Property>
+      </Properties>
+      <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+          <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZZZ} | %t | %-5level | %c{1} | %msg%n"/>
+        </Console>
+      </Appenders>
+      <Loggers>
+        <Root level="${sys:root.log.level}">
+          <AppenderRef ref="Console"/>
+        </Root>
+      </Loggers>
+    </Configuration>
+
+  deny-list.txt: ""
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zkbesu-shomei-config
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "zkbesu-shomei") | nindent 4 }}
+data:
+  zkbesu-config.toml: |
+    data-path="/opt/besu/data"
+    host-allowlist=["*"]
+    sync-mode="FULL"
+    p2p-port={{ .Values.l2.zkbesuShomei.ports.p2p }}
+
+    min-gas-price=0
+
+    # engine
+    engine-host-allowlist=["*"]
+    engine-rpc-port={{ .Values.l2.zkbesuShomei.ports.engine }}
+    engine-jwt-disabled=true
+
+    # rpc
+    rpc-http-enabled=true
+    rpc-http-host="0.0.0.0"
+    rpc-http-port={{ .Values.l2.zkbesuShomei.ports.http }}
+    rpc-http-cors-origins=["*"]
+    rpc-http-api=["ADMIN","DEBUG","NET","ETH","ENGINE","WEB3","PLUGINS","MINER","SHOMEI"]
+    rpc-http-max-active-connections=200
+
+    # ws
+    rpc-ws-enabled=true
+    rpc-ws-host="0.0.0.0"
+    rpc-ws-port={{ .Values.l2.zkbesuShomei.ports.ws }}
+    rpc-ws-api=["ADMIN","TXPOOL","WEB3","ETH","NET","PERM"]
+    rpc-ws-max-active-connections=200
+
+    # graphql
+    graphql-http-enabled=false
+
+    # metrics
+    metrics-enabled=true
+    metrics-host="0.0.0.0"
+    metrics-port=9545
+
+    # database
+    data-storage-format="BONSAI"
+
+    # plugins - only Shomei plugins for zkbesu-shomei node
+    plugins=["BesuShomeiRpcPlugin", "ZkTrieLogPlugin"]
+
+    cache-last-block-headers-preload-enabled=true
+    cache-last-block-headers=50
+
+    bonsai-limit-trie-logs-enabled=false
+    bonsai-parallel-tx-processing-enabled=false
+
+  log4j.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <Configuration status="INFO" monitorInterval="30">
+      <Properties>
+        <Property name="root.log.level">INFO</Property>
+      </Properties>
+      <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+          <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZZZ} | %t | %-5level | %c{1} | %msg%n"/>
+        </Console>
+      </Appenders>
+      <Loggers>
+        <Root level="${sys:root.log.level}">
+          <AppenderRef ref="Console"/>
+        </Root>
+      </Loggers>
+    </Configuration>
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: maru-config
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "maru") | nindent 4 }}
+data:
+  sequencer.config.toml: |
+    allow-empty-blocks = true
+
+    [linea]
+    contract-address = "{{ .Values.network.contracts.l1Rollup }}"
+    l1-eth-api = { endpoint = "{{ include "status-network.l1RpcEndpoint" . }}" }
+    l1-polling-interval = "1 seconds"
+    l2-eth-api-endpoint = { endpoint = "http://sequencer:{{ .Values.l2.sequencer.ports.http }}" }
+
+    [persistence]
+    data-path="/tmp/maru-db"
+    private-key-path="/tmp/maru-db/private-key"
+
+    [qbft]
+    fee-recipient = "0x0000000000000000000000000000000000000000"
+
+    [p2p]
+    port = 9000
+    ip-address = "0.0.0.0"
+    static-peers = []
+    reconnect-delay = "500 ms"
+
+    [p2p.discovery]
+    port = 9000
+    refresh-interval = "2 seconds"
+
+    [p2p.reputation]
+    cooldown-period = "2 seconds"
+    ban-period = "30 seconds"
+
+    [payload-validator]
+    engine-api-endpoint = { endpoint = "http://sequencer:{{ .Values.l2.sequencer.ports.engine }}" }
+    eth-api-endpoint = { endpoint = "http://sequencer:{{ .Values.l2.sequencer.ports.http }}" }
+    payload-validation-enabled = true
+
+    [follower-engine-apis]
+    follower-besu = { endpoint = "http://l2-node-besu:{{ .Values.l2.l2NodeBesu.ports.engine }}" }
+    follower-tracer = { endpoint = "http://traces-node:{{ .Values.l2.tracesNode.ports.engine }}" }
+    follower-shomei = { endpoint = "http://zkbesu-shomei:{{ .Values.l2.zkbesuShomei.ports.engine }}" }
+
+    [fork-transition]
+    l2-eth-api-endpoint = { endpoint = "http://sequencer:{{ .Values.l2.sequencer.ports.http }}" }
+
+    [observability]
+    port = 9090
+    jvm-metrics-enabled = true
+    prometheus-metrics-enabled = true
+
+    [api]
+    port = {{ .Values.l2.maru.ports.api }}
+
+    [syncing]
+    peer-chain-height-polling-interval = "1 seconds"
+    el-sync-status-refresh-interval = "1 seconds"
+    use-unconditional-random-download-peer = false
+    sync-target-selection = "Highest"
+
+  log4j.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <Configuration status="INFO" monitorInterval="30">
+      <Properties>
+        <Property name="root.log.level">INFO</Property>
+      </Properties>
+      <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+          <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZZZ} | %t | %-5level | %c{1} | %msg%n"/>
+        </Console>
+      </Appenders>
+      <Loggers>
+        <Root level="${sys:root.log.level}">
+          <AppenderRef ref="Console"/>
+        </Root>
+      </Loggers>
+    </Configuration>
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rln-prover-config
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "rln-prover") | nindent 4 }}
+data:
+  mock_users.json: |
+    []
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shomei-config
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "shomei") | nindent 4 }}
+data:
+  log4j.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <Configuration status="INFO" monitorInterval="30">
+      <Properties>
+        <Property name="root.log.level">INFO</Property>
+      </Properties>
+      <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+          <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZZZ} | %t | %-5level | %c{1} | %msg%n"/>
+        </Console>
+      </Appenders>
+      <Loggers>
+        <Root level="${sys:root.log.level}">
+          <AppenderRef ref="Console"/>
+        </Root>
+      </Loggers>
+    </Configuration>
+
+{{- end }}
