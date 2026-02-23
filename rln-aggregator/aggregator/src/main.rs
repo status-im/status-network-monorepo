@@ -36,7 +36,7 @@ pub struct AppArgs {
     #[arg(
         short = 'p',
         long = "port",
-        default_value = "50067",
+        default_value = "50061",
         help = "Service port"
     )]
     pub port: u16,

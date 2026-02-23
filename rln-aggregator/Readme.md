@@ -22,3 +22,7 @@ An aggregator service collection Rln proof and sending them to slasher nodes
 * Compiling SC (to bytecode)
   * Need openzeppelin-contracts && openzeppelin-contracts-upgradeable
     * Install them with the instruction in: `makefile-contracts.mk` (see section `status-network-contracts-setup`) 
+
+* Docker
+  * `docker build --build-context prover_proto=../rln-prover/proto -t rln_aggregator .`
+  * `docker run --rm rln_aggregator --help`
