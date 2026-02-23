@@ -169,5 +169,8 @@ k8s/helm/status-network/values-secrets-*.yaml
 # Besu source checkout (for local development only)
 .linea-besu-source/
 
+# Generated contract deployment address files
+status-network-contracts/deployments/*.txt
+
 # Backup files
 *.backup.*
