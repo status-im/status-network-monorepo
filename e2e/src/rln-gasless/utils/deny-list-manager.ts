@@ -14,73 +14,93 @@ export interface DenyListEntry {
 /**
  * Deny List Manager for testing deny list functionality
  *
- * The deny list is now stored in the RLN prover's PostgreSQL database and accessed via gRPC.
- * This test manager uses multiple approaches to check deny list status:
+ * The deny list is stored in the RLN prover's PostgreSQL database and accessed via gRPC.
+ * Detection uses `linea_estimateGas` on both the RPC node and sequencer:
  *
- * 1. Primary: Uses `linea_estimateGas` RPC - denied users get premium gas multiplier
- * 2. Secondary: Uses gRPC endpoint via JSON-RPC proxy (if available)
- * 3. Fallback: Behavior-based detection (transaction rejection patterns)
+ * - Registered user with quota:     gasLimit = 0      (eligible for gasless)
+ * - Denied / quota exhausted:       gasLimit = 31500  (premium multiplier applied)
+ * - Not registered / karma unavail: gasLimit = 31500  (premium required)
  *
- * Note: Direct file-based access is no longer supported since the deny list
- * has been migrated from a text file to the prover's database.
+ * The sequencer is checked in addition to the RPC node because the sequencer's
+ * DenyListManager has the deny entry in its local cache (it added it), making it
+ * more reliable than the RPC node which depends on gRPC to the prover.
  */
 export class DenyListTestManager {
-  private provider: ethers.JsonRpcProvider;
+  private rpcProvider: ethers.JsonRpcProvider;
+  private sequencerProvider: ethers.JsonRpcProvider;
   private rlnProverUrl: string;
 
-  constructor(rlnProverUrl: string = RLN_CONFIG.services.rlnProverUrl, rpcUrl: string = RLN_CONFIG.services.rpcUrl) {
+  constructor(
+    rlnProverUrl: string = RLN_CONFIG.services.rlnProverUrl,
+    rpcUrl: string = RLN_CONFIG.services.rpcUrl,
+    sequencerUrl: string = RLN_CONFIG.services.sequencerUrl,
+  ) {
     this.rlnProverUrl = rlnProverUrl;
-    this.provider = new ethers.JsonRpcProvider(rpcUrl);
+    this.rpcProvider = new ethers.JsonRpcProvider(rpcUrl);
+    this.sequencerProvider = new ethers.JsonRpcProvider(sequencerUrl);
   }
 
   /**
-   * Check if an address is on the deny list by comparing gas estimates.
-   * Denied users receive inflated gas estimates with premium multiplier (1.5x).
-   *
-   * For a simple transfer, normal gasLimit is 21000.
-   * Denied users get ~31500 (21000 * 1.5).
-   *
-   * This is the most reliable method since it tests actual system behavior.
+   * Check if an address is denied via linea_estimateGas on a given provider.
+   * Denied users get gasLimit >= 28000 (premium multiplier: 21000 * 1.5 = 31500).
+   * Registered users with quota get gasLimit = 0 (eligible for gasless).
    */
-  async isDeniedViaGasEstimate(address: string): Promise<boolean> {
+  private async isDeniedViaGasEstimateOn(
+    provider: ethers.JsonRpcProvider,
+    address: string,
+    label: string,
+  ): Promise<boolean> {
     try {
-      // Get gas estimate for a simple transfer
-      const estimate = await this.provider.send("linea_estimateGas", [
+      const estimate = await provider.send("linea_estimateGas", [
         {
           from: address,
-          to: "0x0000000000000000000000000000000000000001",
+          to: "0x627306090abab3a6e1400e9345bc60c78a8bef57",
           value: "0x0",
           data: "0x",
         },
       ]);
 
-      // Check if gasLimit is inflated (premium multiplier applied)
-      // Normal simple transfer: 21000
-      // Denied user (1.5x multiplier): ~31500
-      if (estimate.gasLimit) {
-        const gasLimit = BigInt(estimate.gasLimit);
-        const normalGasLimit = 21000n;
-        const premiumThreshold = 28000n; // > 1.3x normal indicates premium
+      const gasLimit = estimate.gasLimit ? BigInt(estimate.gasLimit) : 0n;
+      const premiumThreshold = 28000n; // > 1.3x normal (21000) indicates premium/denied
 
-        if (gasLimit >= premiumThreshold) {
-          logger.debug("User appears to be denied (inflated gas limit)", {
-            address,
-            gasLimit: gasLimit.toString(),
-            normalGasLimit: normalGasLimit.toString(),
-            threshold: premiumThreshold.toString(),
-          });
-          return true;
-        }
+      if (gasLimit >= premiumThreshold) {
+        logger.debug(`User denied via ${label} gas estimate`, {
+          address,
+          gasLimit: gasLimit.toString(),
+        });
+        return true;
       }
 
       return false;
     } catch (error) {
-      logger.debug("Gas estimate check failed, trying other methods", {
+      logger.debug(`Gas estimate check failed on ${label}`, {
         address,
         error: error instanceof Error ? error.message : String(error),
       });
       return false;
     }
+  }
+
+  /**
+   * Check if an address is on the deny list by comparing gas estimates.
+   * Checks both the RPC node and sequencer for reliability.
+   *
+   * The sequencer's DenyListManager has the deny entry in its local cache
+   * (since it was the one that added it during TX validation), making it
+   * more reliable than the RPC node which depends on gRPC to the prover.
+   */
+  async isDeniedViaGasEstimate(address: string): Promise<boolean> {
+    // Check RPC node first (primary)
+    if (await this.isDeniedViaGasEstimateOn(this.rpcProvider, address, "rpc")) {
+      return true;
+    }
+
+    // Check sequencer as fallback (more reliable for deny list detection)
+    if (await this.isDeniedViaGasEstimateOn(this.sequencerProvider, address, "sequencer")) {
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -147,7 +167,7 @@ export class DenyListTestManager {
    * Tries multiple methods for reliability.
    */
   async isDenied(address: string): Promise<boolean> {
-    // Method 1: Check via gas estimate (most reliable)
+    // Method 1: Check via gas estimate on both RPC node and sequencer
     const deniedViaGas = await this.isDeniedViaGasEstimate(address);
     if (deniedViaGas) {
       return true;

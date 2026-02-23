@@ -237,14 +237,18 @@ impl KarmaScEventListener {
 
                     match rem_res {
                         Err(e) => {
-                            // Fails if DB & SC are inconsistent
-                            error!("Fail to remove user ({:?}) from DB: {:?}", to_address, e);
-                            panic!("Fail to register user to SC and to remove it from DB...");
+                            // DB & SC are inconsistent — log critical error but don't crash the prover
+                            error!(
+                                "CRITICAL: DB/SC inconsistency — failed to remove user ({:?}) from DB after SC registration failure: {:?}. Manual intervention may be required.",
+                                to_address, e
+                            );
                         }
                         Ok(res) => {
                             if !res {
-                                error!("Fail to remove user ({:?}) from DB", to_address);
-                                panic!("Fail to register user to SC and to remove it from DB...");
+                                error!(
+                                    "CRITICAL: DB/SC inconsistency — user ({:?}) not found in DB after SC registration failure. Manual intervention may be required.",
+                                    to_address
+                                );
                             } else {
                                 debug!(
                                     "Successfully removed user ({:?}), after failing to register him",
@@ -271,20 +275,19 @@ impl KarmaScEventListener {
                 let rem_res = self.user_db.remove_user(&address_slashed).await;
                 match rem_res {
                     Err(e) => {
-                        // Fails if DB & SC are inconsistent
+                        // DB & SC are inconsistent — log critical error but don't crash the prover
                         error!(
-                            "Fail to remove slashed user ({:?}) from DB: {:?}",
+                            "CRITICAL: Failed to remove slashed user ({:?}) from DB: {:?}. Manual intervention may be required.",
                             address_slashed, e
                         );
-                        panic!("Fail to register user to SC and to remove it from DB...");
                     }
                     Ok(res) => {
                         if !res {
+                            // User not found in DB — may already have been removed or never registered
                             error!(
-                                "Fail to remove slashed user ({:?}) from DB",
+                                "CRITICAL: Slashed user ({:?}) not found in DB. DB/SC may be inconsistent.",
                                 address_slashed
                             );
-                            panic!("Fail to register user to SC and to remove it from DB...");
                         } else {
                             debug!("Removed slashed user ({:?})", address_slashed);
                         }

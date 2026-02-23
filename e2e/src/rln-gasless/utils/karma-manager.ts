@@ -30,9 +30,19 @@ class NonceManager {
 
     try {
       if (this.nonce === -1) {
-        // Use "pending" to include in-flight TXs
-        // On a healthy devnet, TXs confirm in ~1s so pending count ≈ latest count
-        this.nonce = await provider.getTransactionCount(address, "pending");
+        // Wait for any pending TXs from previous runs to clear before starting
+        let latest = await provider.getTransactionCount(address, "latest");
+        let pending = await provider.getTransactionCount(address, "pending");
+        let attempts = 0;
+        while (latest !== pending && attempts < 15) {
+          logger.debug("Waiting for pending TXs to clear", { latest, pending, attempt: attempts + 1 });
+          await new Promise((r) => setTimeout(r, 2000));
+          latest = await provider.getTransactionCount(address, "latest");
+          pending = await provider.getTransactionCount(address, "pending");
+          attempts++;
+        }
+        this.nonce = pending;
+        logger.debug("Nonce manager initialized", { nonce: this.nonce });
       }
       const nextNonce = this.nonce;
       this.nonce++;
@@ -73,21 +83,58 @@ export async function getAdminNonce(provider: ethers.Provider, adminAddress: str
  * Handles Karma minting, tier assignment, and quota management
  */
 export class KarmaTestManager {
-  // Production tier configuration (matches prover database tier_limits)
+  // Production tier configuration (matches deployed KarmaTiers contract)
   // Users can send exactly 'quota' gasless transactions per epoch (no grace transactions)
   // After using quota, they're added to deny list and must pay premium gas
-  // Note: No "none" tier - users with 0 karma are not registered in RLN
+  // Karma is an ERC20 with 18 decimals (1 Karma = 1e18 wei)
+  // Tier 0 ("none") has txPerEpoch=0, users with <1 Karma cannot send gasless transactions
+  static readonly ETHER = 10n ** 18n;
   static readonly TIERS: TierConfig[] = [
-    { name: "entry", minKarma: 0n, maxKarma: 1n, quota: 1 }, // 1 tx/epoch
-    { name: "newbie", minKarma: 2n, maxKarma: 49n, quota: 5 }, // 5 tx/epoch
-    { name: "basic", minKarma: 50n, maxKarma: 499n, quota: 15 }, // 15 tx/epoch
-    { name: "active", minKarma: 500n, maxKarma: 4999n, quota: 96 },
-    { name: "regular", minKarma: 5000n, maxKarma: 19999n, quota: 480 },
-    { name: "power", minKarma: 20000n, maxKarma: 99999n, quota: 960 },
-    { name: "pro", minKarma: 100000n, maxKarma: 499999n, quota: 10080 },
-    { name: "high-throughput", minKarma: 500000n, maxKarma: 4999999n, quota: 108000 },
-    { name: "s-tier", minKarma: 5000000n, maxKarma: 9999999n, quota: 240000 },
-    { name: "legendary", minKarma: 10000000n, maxKarma: ethers.MaxUint256, quota: 480000 },
+    { name: "entry", minKarma: 1n * KarmaTestManager.ETHER, maxKarma: 1n * KarmaTestManager.ETHER, quota: 2 },
+    {
+      name: "newbie",
+      minKarma: 1n * KarmaTestManager.ETHER + 1n,
+      maxKarma: 50n * KarmaTestManager.ETHER - 1n,
+      quota: 6,
+    },
+    { name: "basic", minKarma: 50n * KarmaTestManager.ETHER, maxKarma: 500n * KarmaTestManager.ETHER - 1n, quota: 16 },
+    {
+      name: "active",
+      minKarma: 500n * KarmaTestManager.ETHER,
+      maxKarma: 5000n * KarmaTestManager.ETHER - 1n,
+      quota: 96,
+    },
+    {
+      name: "regular",
+      minKarma: 5000n * KarmaTestManager.ETHER,
+      maxKarma: 20000n * KarmaTestManager.ETHER - 1n,
+      quota: 480,
+    },
+    {
+      name: "power",
+      minKarma: 20000n * KarmaTestManager.ETHER,
+      maxKarma: 100000n * KarmaTestManager.ETHER - 1n,
+      quota: 960,
+    },
+    {
+      name: "pro",
+      minKarma: 100000n * KarmaTestManager.ETHER,
+      maxKarma: 500000n * KarmaTestManager.ETHER - 1n,
+      quota: 10080,
+    },
+    {
+      name: "high-throughput",
+      minKarma: 500000n * KarmaTestManager.ETHER,
+      maxKarma: 5000000n * KarmaTestManager.ETHER - 1n,
+      quota: 108000,
+    },
+    {
+      name: "s-tier",
+      minKarma: 5000000n * KarmaTestManager.ETHER,
+      maxKarma: 10000000n * KarmaTestManager.ETHER - 1n,
+      quota: 240000,
+    },
+    { name: "legendary", minKarma: 10000000n * KarmaTestManager.ETHER, maxKarma: ethers.MaxUint256, quota: 480000 },
   ];
 
   constructor(
@@ -316,20 +363,39 @@ export class KarmaTestManager {
     userAddress: string,
     timeout: number = RLN_CONFIG.test.registrationTimeoutMs,
   ): Promise<void> {
-    // Fixed wait time for prover to register the user
-    // Covers: karma TX mining (~2-4s) + event processing (~1-2s) +
-    // prover registration TX (~2-4s) + buffer for network variance
-    // Use the configured timeout directly (default 8s, can be overridden via env)
-    const waitTimeMs = timeout;
+    const pollIntervalMs = 2000;
 
     logger.debug("Waiting for RLN registration", {
       user: userAddress,
-      waitTimeMs,
+      timeout,
     });
 
-    await new Promise((resolve) => setTimeout(resolve, waitTimeMs));
+    if (userAddress === "batch-all") {
+      // For batch waits, just do a fixed sleep
+      await new Promise((resolve) => setTimeout(resolve, timeout));
+      logger.debug("RLN registration batch wait complete");
+      return;
+    }
 
-    logger.debug("RLN registration wait complete", { user: userAddress });
+    // Poll isUserRegistered until it returns true or timeout
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      const isRegistered = await this.isUserRegistered(userAddress);
+      if (isRegistered) {
+        logger.debug("RLN registration confirmed", {
+          user: userAddress,
+          elapsed: Date.now() - start,
+        });
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+
+    // Timeout - log warning but don't throw (let the test assertion handle it)
+    logger.warn("RLN registration wait timed out", {
+      user: userAddress,
+      timeout,
+    });
   }
 
   /**
@@ -342,17 +408,21 @@ export class KarmaTestManager {
   /**
    * Verify user is registered to RLN by checking MemberRegistered events
    * The RLN contract uses members(uint256 commitment) -> (address, uint256), not users(address)
+   * Queries only recent blocks (last 200) for performance on testnets with many registrations.
    */
   async isUserRegistered(userAddress: string): Promise<boolean> {
     try {
       const normalizedAddress = userAddress.toLowerCase();
+      const provider = this.rlnContract.runner?.provider;
+      const currentBlock = provider ? await provider.getBlockNumber() : 0;
+      const fromBlock = Math.max(0, currentBlock - 200);
 
-      // Query MemberRegistered events to find this user's commitment
       const filter = this.rlnContract.filters.MemberRegistered();
-      const events = await this.rlnContract.queryFilter(filter);
+      const events = await this.rlnContract.queryFilter(filter, fromBlock);
 
-      for (const event of events) {
-        // Only EventLog has args, not Log
+      // Search newest events first (most likely to find recent registrations)
+      for (let i = events.length - 1; i >= 0; i--) {
+        const event = events[i];
         if ("args" in event && event.args) {
           const commitment = event.args[0];
           try {
@@ -375,17 +445,21 @@ export class KarmaTestManager {
 
   /**
    * Get user's RLN identity commitment by checking MemberRegistered events
+   * Queries only recent blocks (last 200) for performance.
    */
   async getUserIdentityCommitment(userAddress: string): Promise<string | null> {
     try {
       const normalizedAddress = userAddress.toLowerCase();
+      const provider = this.rlnContract.runner?.provider;
+      const currentBlock = provider ? await provider.getBlockNumber() : 0;
+      const fromBlock = Math.max(0, currentBlock - 200);
 
-      // Query MemberRegistered events to find this user's commitment
       const filter = this.rlnContract.filters.MemberRegistered();
-      const events = await this.rlnContract.queryFilter(filter);
+      const events = await this.rlnContract.queryFilter(filter, fromBlock);
 
-      for (const event of events) {
-        // Only EventLog has args, not Log
+      // Search newest events first
+      for (let i = events.length - 1; i >= 0; i--) {
+        const event = events[i];
         if ("args" in event && event.args) {
           const commitment = event.args[0];
           try {
@@ -416,6 +490,7 @@ export class KarmaTestManager {
     provider: ethers.Provider,
     tierName: TierName = "entry",
     fundAmount: bigint = ethers.parseEther("1"),
+    options?: { skipRegistrationWait?: boolean },
   ): Promise<ethers.HDNodeWallet> {
     // Create funded wallet
     const wallet = ethers.Wallet.createRandom().connect(provider);
@@ -449,8 +524,10 @@ export class KarmaTestManager {
     // Mint Karma
     await this.mintKarmaToTier(wallet.address, tierName);
 
-    // Wait for RLN registration
-    await this.waitForRlnRegistration(wallet.address);
+    // Wait for RLN registration (skip when batching multiple user setups)
+    if (!options?.skipRegistrationWait) {
+      await this.waitForRlnRegistration(wallet.address);
+    }
 
     // Verify karma balance matches expected tier
     const actualKarma = await this.getKarmaBalance(wallet.address);

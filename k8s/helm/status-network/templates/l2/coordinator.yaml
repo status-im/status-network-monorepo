@@ -1,0 +1,193 @@
+{{- if and .Values.l2.enabled .Values.l2.coordinator.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coordinator
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "coordinator") | nindent 4 }}
+spec:
+  replicas: {{ .Values.l2.coordinator.replicas }}
+  selector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "coordinator") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "status-network.componentSelectorLabels" (list . "coordinator") | nindent 8 }}
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for PostgreSQL..."
+              until nc -z postgres {{ .Values.l2.postgres.port }}; do
+                echo "PostgreSQL not ready, waiting..."
+                sleep 2
+              done
+              echo "PostgreSQL is ready"
+        - name: wait-for-sequencer
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for sequencer..."
+              until nc -z sequencer {{ .Values.l2.sequencer.ports.http }}; do
+                echo "Sequencer not ready, waiting..."
+                sleep 2
+              done
+              echo "Sequencer is ready"
+        {{- if not .Values.network.l1RpcEndpoint }}
+        - name: wait-for-l1
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for L1 EL node..."
+              until nc -z l1-el-node {{ .Values.l1.elNode.ports.http }}; do
+                echo "L1 EL node not ready, waiting..."
+                sleep 2
+              done
+              echo "L1 EL node is ready"
+        {{- end }}
+        - name: wait-for-shomei
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for shomei..."
+              until nc -z shomei {{ .Values.l2.shomei.port }}; do
+                echo "shomei not ready, waiting..."
+                sleep 2
+              done
+              echo "shomei is ready"
+        - name: wait-for-genesis
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for coordinator config..."
+              until [ -f /initialization/coordinator-config-v2-hardforks.toml ]; do
+                echo "Coordinator config not ready, waiting..."
+                sleep 2
+              done
+              echo "Coordinator config is ready"
+              cat /initialization/coordinator-config-v2-hardforks.toml | grep timestamp-based-hard-forks
+          volumeMounts:
+            - name: l2-genesis-data
+              mountPath: /initialization
+        - name: init-prover-dirs
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Creating prover directories..."
+              mkdir -p /data/prover/v3/execution/requests
+              mkdir -p /data/prover/v3/execution/responses
+              mkdir -p /data/prover/v3/compression/requests
+              mkdir -p /data/prover/v3/compression/responses
+              mkdir -p /data/prover/v3/aggregation/requests
+              mkdir -p /data/prover/v3/aggregation/responses
+              echo "Prover directories created"
+              ls -laR /data/
+          volumeMounts:
+            - name: coordinator-data
+              mountPath: /data
+      containers:
+        - name: coordinator
+          image: {{ .Values.images.coordinator }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command:
+            - java
+            - "{{ .Values.l2.coordinator.javaOpts }}"
+            - -Dvertx.configurationFile=/config/vertx-options.json
+            - -Dlog4j2.configurationFile=/config/log4j2.xml
+            - -jar
+            - /opt/consensys/linea/coordinator/libs/coordinator.jar
+            - --traces-limits-v4
+            - /config/traces-limits.toml
+            - --smart-contract-errors
+            - /config/smart-contract-errors.toml
+            - --gas-price-cap-time-of-day-multipliers
+            - /config/gas-price-cap-time-of-day-multipliers.toml
+            - /initialization/coordinator-config-v2-hardforks.toml
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.l2.coordinator.port }}
+              protocol: TCP
+          env:
+            - name: JAVA_OPTS
+              value: "{{ .Values.l2.coordinator.javaOpts }}"
+          volumeMounts:
+            - name: l2-genesis-data
+              mountPath: /initialization
+            - name: coordinator-data
+              mountPath: /data
+            # TLS files not needed when using Web3j signer
+            # - name: coordinator-tls
+            #   mountPath: /tls-files
+            - name: traces-limits-config
+              mountPath: /config/traces-limits.toml
+              subPath: traces-limits.toml
+            - name: coordinator-extra-config
+              mountPath: /config/smart-contract-errors.toml
+              subPath: smart-contract-errors.toml
+            - name: coordinator-extra-config
+              mountPath: /config/gas-price-cap-time-of-day-multipliers.toml
+              subPath: gas-price-cap-time-of-day-multipliers.toml
+            - name: coordinator-extra-config
+              mountPath: /config/vertx-options.json
+              subPath: vertx-options.json
+            - name: coordinator-extra-config
+              mountPath: /config/log4j2.xml
+              subPath: log4j2.xml
+          startupProbe:
+            tcpSocket:
+              port: metrics
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 60
+            timeoutSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.l2.coordinator.resources | nindent 12 }}
+      volumes:
+        - name: l2-genesis-data
+          persistentVolumeClaim:
+            claimName: l2-genesis-data
+        # TLS not needed when using Web3j signer
+        # - name: coordinator-tls
+        #   secret:
+        #     secretName: coordinator-tls
+        #     optional: true
+        - name: traces-limits-config
+          configMap:
+            name: traces-limits
+        - name: coordinator-extra-config
+          secret:
+            secretName: coordinator-config-secret
+        - name: coordinator-data
+          emptyDir: {}
+      {{- include "status-network.nodeSelector" . | nindent 6 }}
+      {{- include "status-network.tolerations" . | nindent 6 }}
+      {{- include "status-network.affinity" . | nindent 6 }}
+{{- end }}

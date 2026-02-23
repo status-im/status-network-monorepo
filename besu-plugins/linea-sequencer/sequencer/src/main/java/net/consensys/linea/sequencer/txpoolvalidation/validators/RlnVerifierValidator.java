@@ -37,6 +37,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import net.consensys.linea.config.GasKillSwitchMonitor;
 import net.consensys.linea.config.LineaRlnValidatorConfiguration;
 import net.consensys.linea.rln.JniRlnVerificationService;
 import net.consensys.linea.rln.RlnVerificationService;
@@ -155,6 +156,9 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
   // Shared nullifier tracker for preventing proof reuse (injected dependency)
   private final NullifierTracker nullifierTracker;
 
+  // Gas kill switch monitor (injected dependency)
+  private final GasKillSwitchMonitor gasKillSwitchMonitor;
+
   private ScheduledExecutorService grpcReconnectionScheduler;
 
   // Exponential backoff state - STATIC to share across all validator instances
@@ -185,13 +189,15 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
       BlockchainService blockchainService,
       DenyListManager denyListManager,
       KarmaServiceClient karmaServiceClient,
-      NullifierTracker nullifierTracker) {
+      NullifierTracker nullifierTracker,
+      GasKillSwitchMonitor gasKillSwitchMonitor) {
     this(
         rlnConfig,
         blockchainService,
         denyListManager,
         karmaServiceClient,
         nullifierTracker,
+        gasKillSwitchMonitor,
         null,
         null);
   }
@@ -218,6 +224,7 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
       DenyListManager denyListManager,
       KarmaServiceClient karmaServiceClient,
       NullifierTracker nullifierTracker,
+      GasKillSwitchMonitor gasKillSwitchMonitor,
       ManagedChannel providedProofChannel,
       RlnVerificationService providedRlnService) {
     this.rlnConfig = rlnConfig;
@@ -225,6 +232,7 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
     this.denyListManager = denyListManager;
     this.karmaServiceClient = karmaServiceClient;
     this.nullifierTracker = nullifierTracker;
+    this.gasKillSwitchMonitor = gasKillSwitchMonitor;
     this.proofServiceChannel = providedProofChannel;
 
     // Initialize RLN verification service
@@ -827,9 +835,9 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
       var currentHeader = blockchainService.getChainHeadHeader();
       long currentBlock = currentHeader.getNumber();
 
-      // For each potential recent block, generate its epoch and compare
+      // For each potential recent block, generate its epoch (with salt) and compare
       for (int i = 0; i <= blockTolerance; i++) {
-        String testBlockStr = "BLOCK:" + (currentBlock - i);
+        String testBlockStr = "BLOCK:" + (currentBlock - i) + ":SALT:" + getSecureEpochSalt();
         String testEpoch = hashToFieldElementHex(testBlockStr);
         if (testEpoch.equals(proofEpoch)) {
           if (i > 0) {
@@ -851,14 +859,16 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
       var currentHeader = blockchainService.getChainHeadHeader();
       long currentTimestamp = currentHeader.getTimestamp();
 
-      // Check current hour and previous hours within tolerance
+      // Check current hour and previous hours within tolerance (with salt)
       for (int i = 0; i <= hourTolerance; i++) {
         long testTimestamp = currentTimestamp - (i * 3600); // Subtract hours
         String testTimeStr =
             "TIME:"
                 + Instant.ofEpochSecond(testTimestamp)
                     .atZone(ZoneOffset.UTC)
-                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH"));
+                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH"))
+                + ":SALT:"
+                + getSecureEpochSalt();
         String testEpoch = hashToFieldElementHex(testTimeStr);
         if (testEpoch.equals(proofEpoch)) {
           if (i > 0) {
@@ -935,16 +945,32 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
     final String txHashString = txHash.toHexString();
 
     // Compute effective gas price (0 indicates gasless intent)
-    final Wei effectiveGasPrice =
-        transaction
-            .getGasPrice()
-            .map(q -> Wei.of(q.getAsBigInteger()))
-            .orElseGet(
-                () ->
-                    transaction
-                        .getMaxFeePerGas()
-                        .map(q -> Wei.of(q.getAsBigInteger()))
-                        .orElse(Wei.ZERO));
+    // For legacy txs: use gasPrice directly
+    // For EIP-1559: min(maxFeePerGas, baseFee + maxPriorityFeePerGas)
+    final Wei effectiveGasPrice = computeEffectiveGasPrice(transaction);
+
+    // Gas Kill Switch Check: when active, only allow premium gas transactions
+    if (gasKillSwitchMonitor != null && gasKillSwitchMonitor.isActive()) {
+      long premiumThresholdWei = rlnConfig.premiumGasPriceThresholdWei();
+      if (effectiveGasPrice.getAsBigInteger().compareTo(BigInteger.valueOf(premiumThresholdWei))
+          >= 0) {
+        LOG.info(
+            "[RLN] Gas kill switch active but tx {} pays premium gas ({} Wei >= {} Wei). Allowing.",
+            txHashString,
+            effectiveGasPrice,
+            premiumThresholdWei);
+        return Optional.empty();
+      } else {
+        LOG.warn(
+            "[RLN] Gas kill switch ACTIVE - rejecting gasless tx {} from {} (gas price {} Wei < premium threshold {} Wei)",
+            txHashString,
+            sender.toHexString(),
+            effectiveGasPrice,
+            premiumThresholdWei);
+        return Optional.of(
+            "Gas kill switch is active. All gasless transactions are temporarily disabled.");
+      }
+    }
 
     // 1. Deny List Check
     if (denyListManager.isDenied(sender)) {
@@ -953,13 +979,14 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
 
       if (effectiveGasPrice.getAsBigInteger().compareTo(BigInteger.valueOf(premiumThresholdWei))
           >= 0) {
-        denyListManager.removeFromDenyList(sender);
+        // Remove from deny list AND reset epoch counter — paying premium gas earns a fresh quota
+        denyListManager.removeFromDenyListAndResetQuota(sender);
         LOG.info(
-            "Sender {} was on deny list but paid premium gas ({} Wei >= {} Wei). Removing from deny list and continuing RLN validation.",
+            "Sender {} paid premium gas ({} Wei >= {} Wei). Removed from deny list and quota reset.",
             sender.toHexString(),
             effectiveGasPrice,
             premiumThresholdWei);
-        // Intentionally continue to RLN validation (no early allow) so spam protection remains
+        return Optional.empty(); // Allow transaction — no RLN proof needed for premium gas
       } else {
         LOG.warn(
             "Sender {} is on deny list. Transaction {} rejected. Effective gas price {} Wei < {} Wei.",
@@ -1036,6 +1063,16 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
     }
     LOG.debug("RLN proof found in cache for txHash: {}", txHashString);
 
+    // Verify sender-proof binding: the proof must be for this sender
+    if (!java.util.Arrays.equals(proof.senderBytes(), sender.toArrayUnsafe())) {
+      LOG.error(
+          "SECURITY VIOLATION: RLN proof sender mismatch for tx {}. Expected: {}, Proof sender: {}",
+          txHashString,
+          sender.toHexString(),
+          org.apache.tuweni.bytes.Bytes.wrap(proof.senderBytes()).toHexString());
+      return Optional.of("RLN proof sender mismatch");
+    }
+
     // Validate proof epoch format first
     if (proof.epochHex() == null || proof.epochHex().trim().isEmpty()) {
       LOG.warn("Invalid proof epoch for tx {}: epoch is null or empty", txHashString);
@@ -1101,7 +1138,10 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
     // At this point, we can trust that the cached proof is valid and the public inputs are correct.
     LOG.info("Using cached and pre-verified RLN proof for tx: {}", txHashString);
 
-    // 3. Karma / Quota Check (via gRPC Karma Service) - with fail-safe circuit breaker
+    // 3. Karma / Quota Check (via gRPC Karma Service) - always fetch fresh data
+    // SECURITY FIX (BP-C2): Do NOT reuse pre-check data here. Between the pre-check
+    // and this point, other transactions from the same sender may have been processed,
+    // making the pre-check data stale (TOCTOU race condition).
     Optional<KarmaInfo> karmaInfoOpt = fetchKarmaInfoFromService(sender);
 
     if (karmaInfoOpt.isEmpty()) {
@@ -1167,6 +1207,45 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
         txHashString,
         sender.toHexString());
     return Optional.empty(); // Transaction is valid from RLN perspective
+  }
+
+  /**
+   * Computes the effective gas price for a transaction, correctly handling both legacy and EIP-1559
+   * transaction types.
+   *
+   * <p>For legacy transactions, returns the gasPrice directly. For EIP-1559 transactions, computes
+   * min(maxFeePerGas, baseFee + maxPriorityFeePerGas) to prevent bypass attacks where a high
+   * maxFeePerGas with zero maxPriorityFeePerGas would appear as premium.
+   *
+   * @param transaction The transaction to compute effective gas price for
+   * @return The effective gas price as Wei
+   */
+  private Wei computeEffectiveGasPrice(Transaction transaction) {
+    // Legacy transaction: use gasPrice directly
+    if (transaction.getGasPrice().isPresent()) {
+      return Wei.of(transaction.getGasPrice().get().getAsBigInteger());
+    }
+    // EIP-1559 transaction: effective = min(maxFeePerGas, baseFee + maxPriorityFeePerGas)
+    if (transaction.getMaxFeePerGas().isPresent()) {
+      Wei maxFeePerGas = Wei.of(transaction.getMaxFeePerGas().get().getAsBigInteger());
+      Wei maxPriorityFeePerGas =
+          transaction
+              .getMaxPriorityFeePerGas()
+              .map(q -> Wei.of(q.getAsBigInteger()))
+              .orElse(Wei.ZERO);
+      Wei baseFee =
+          blockchainService
+              .getChainHeadHeader()
+              .getBaseFee()
+              .map(q -> Wei.of(q.getAsBigInteger()))
+              .orElse(Wei.ZERO);
+      Wei basePlusPriority =
+          Wei.of(baseFee.getAsBigInteger().add(maxPriorityFeePerGas.getAsBigInteger()));
+      return maxFeePerGas.getAsBigInteger().compareTo(basePlusPriority.getAsBigInteger()) <= 0
+          ? maxFeePerGas
+          : basePlusPriority;
+    }
+    return Wei.ZERO;
   }
 
   /**

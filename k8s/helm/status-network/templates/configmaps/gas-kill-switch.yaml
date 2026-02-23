@@ -1,0 +1,11 @@
+{{- if and .Values.rln.enabled .Values.rln.killSwitch.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gas-kill-switch
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "gas-kill-switch") | nindent 4 }}
+data:
+  gas-kill-switch: "false"
+{{- end }}

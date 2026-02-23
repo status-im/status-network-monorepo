@@ -4,26 +4,25 @@
  *
  * This script sets up the karma tier system with the following tiers:
  *
- * | Tier ID | Name           | Karma Range           | TX per Epoch | Grace TX |
- * |---------|----------------|----------------------|--------------|----------|
- * | 0       | entry          | 0 - 1                | 1            | 2        |
- * | 1       | newbie         | 2 - 49               | 5            | 6        |
- * | 2       | basic          | 50 - 499             | 15           | 16       |
- * | 3       | active         | 500 - 4,999          | 96           | 97       |
- * | 4       | regular        | 5,000 - 19,999       | 480          | 481      |
- * | 5       | power          | 20,000 - 99,999      | 960          | 961      |
- * | 6       | pro            | 100,000 - 499,999    | 10,080       | 10,081   |
- * | 7       | high-throughput| 500,000 - 4,999,999  | 108,000      | 108,001  |
- * | 8       | s-tier         | 5,000,000 - 9,999,999| 240,000      | 240,001  |
- * | 9       | legendary      | 10,000,000+          | 480,000      | 480,001  |
+ * | Tier ID | Name           | Karma Range (tokens)     | TX per Epoch |
+ * |---------|----------------|--------------------------|--------------|
+ * | 0       | none           | 0 - <1                   | 0            |
+ * | 1       | entry          | 1                        | 2            |
+ * | 2       | newbie         | >1 - <50                 | 6            |
+ * | 3       | basic          | 50 - <500                | 16           |
+ * | 4       | active         | 500 - <5,000             | 96           |
+ * | 5       | regular        | 5,000 - <20,000          | 480          |
+ * | 6       | power          | 20,000 - <100,000        | 960          |
+ * | 7       | pro            | 100,000 - <500,000       | 10,080       |
+ * | 8       | high-throughput| 500,000 - <5,000,000     | 108,000      |
+ * | 9       | s-tier         | 5,000,000 - <10,000,000  | 240,000      |
+ * | 10      | legendary      | 10,000,000+              | 480,000      |
  *
- * Note: Users with 0 karma are NOT registered in RLN by the registrar service,
- * so they cannot use gasless transactions. The entry tier covers 0-1 karma to
- * satisfy the KarmaTiers.sol contract requirement (tiers must start at minKarma=0),
- * but users with 0 karma cannot actually transact (not registered in RLN).
+ * Tier 0 ("none") has txPerEpoch=0, so users with 0 karma cannot make gasless
+ * transactions. The contract requires tiers to start at minKarma=0.
  *
- * Grace transaction: Sequencer allows quota + 1 transaction, giving users one extra
- * transaction to discover they need premium gas.
+ * Karma amounts use 18 decimals (same as the Karma ERC20 token), so values
+ * are specified via ethers.parseEther() to convert token amounts to wei.
  *
  * Usage: npx ts-node scripts/initialize-karma-tiers.ts
  */
@@ -62,23 +61,24 @@ const KARMA_TIERS_ADDRESS = process.env.KARMA_TIERS_ADDRESS || "";
 // Default: L2 contract deployer account that owns KarmaTiers contract
 const PRIVATE_KEY = process.env.PRIVATE_KEY || "0x1dd171cec7e2995408b5513004e8207fe88d6820aeff0d82463b3e41df251aae";
 
-// Tier definitions based on requirements
+// Tier definitions - matches InitializeKarmaTiers.s.sol (Foundry script)
 // Note: Tiers must be contiguous - each tier's minKarma = previous tier's maxKarma + 1
 // Note: KarmaTiers.sol contract REQUIRES first tier to start at minKarma = 0
-// Note: Users with 0 karma are NOT registered in RLN (registrar service skips them)
-// Note: First tier covers 0-1 karma with quota=1 (users with 0 karma won't register anyway)
-// Note: First 3 tiers have reduced tx counts to account for grace transaction (quota + 1)
+// Note: Karma ERC20 uses 18 decimals, so all amounts are in wei (use parseEther)
+// Note: Tier 0 ("none") has txPerEpoch=0 - users without karma cannot transact gaslessly
+const e = (n: string) => ethers.parseEther(n);
 const KARMA_TIERS = [
-  { name: "entry",           minKarma: 0n,          maxKarma: 1n,          txPerEpoch: 1 },
-  { name: "newbie",          minKarma: 2n,          maxKarma: 49n,         txPerEpoch: 5 },
-  { name: "basic",           minKarma: 50n,         maxKarma: 499n,        txPerEpoch: 15 },
-  { name: "active",          minKarma: 500n,        maxKarma: 4999n,       txPerEpoch: 96 },
-  { name: "regular",         minKarma: 5000n,       maxKarma: 19999n,      txPerEpoch: 480 },
-  { name: "power",           minKarma: 20000n,      maxKarma: 99999n,      txPerEpoch: 960 },
-  { name: "pro",             minKarma: 100000n,     maxKarma: 499999n,     txPerEpoch: 10080 },
-  { name: "high-throughput", minKarma: 500000n,     maxKarma: 4999999n,    txPerEpoch: 108000 },
-  { name: "s-tier",          minKarma: 5000000n,    maxKarma: 9999999n,    txPerEpoch: 240000 },
-  { name: "legendary",       minKarma: 10000000n,   maxKarma: ethers.MaxUint256, txPerEpoch: 480000 },
+  { name: "none",            minKarma: 0n,                        maxKarma: e("1") - 1n,            txPerEpoch: 0 },
+  { name: "entry",           minKarma: e("1"),                    maxKarma: e("1"),                  txPerEpoch: 2 },
+  { name: "newbie",          minKarma: e("1") + 1n,               maxKarma: e("50") - 1n,            txPerEpoch: 6 },
+  { name: "basic",           minKarma: e("50"),                   maxKarma: e("500") - 1n,           txPerEpoch: 16 },
+  { name: "active",          minKarma: e("500"),                  maxKarma: e("5000") - 1n,          txPerEpoch: 96 },
+  { name: "regular",         minKarma: e("5000"),                 maxKarma: e("20000") - 1n,         txPerEpoch: 480 },
+  { name: "power",           minKarma: e("20000"),                maxKarma: e("100000") - 1n,        txPerEpoch: 960 },
+  { name: "pro",             minKarma: e("100000"),               maxKarma: e("500000") - 1n,        txPerEpoch: 10080 },
+  { name: "high-throughput", minKarma: e("500000"),               maxKarma: e("5000000") - 1n,       txPerEpoch: 108000 },
+  { name: "s-tier",          minKarma: e("5000000"),              maxKarma: e("10000000") - 1n,      txPerEpoch: 240000 },
+  { name: "legendary",       minKarma: e("10000000"),             maxKarma: ethers.MaxUint256,       txPerEpoch: 480000 },
 ];
 
 async function main() {
@@ -124,24 +124,25 @@ async function main() {
   }));
   
   console.log("\n📋 Tiers to be set:");
-  console.log("─".repeat(70));
-  console.log("| ID | Name             | Karma Range               | TX/Epoch |");
-  console.log("─".repeat(70));
+  console.log("─".repeat(75));
+  console.log("| ID | Name             | Karma Range (tokens)      | TX/Epoch |");
+  console.log("─".repeat(75));
   KARMA_TIERS.forEach((tier, i) => {
-    const maxDisplay = tier.maxKarma === ethers.MaxUint256 ? "∞" : tier.maxKarma.toString();
-    const range = tier.minKarma === tier.maxKarma 
-      ? tier.minKarma.toString().padEnd(25)
-      : `${tier.minKarma} - ${maxDisplay}`.padEnd(25);
+    const fmt = (v: bigint) => ethers.formatEther(v);
+    const maxDisplay = tier.maxKarma === ethers.MaxUint256 ? "∞" : fmt(tier.maxKarma);
+    const range = tier.minKarma === tier.maxKarma
+      ? fmt(tier.minKarma).padEnd(25)
+      : `${fmt(tier.minKarma)} - ${maxDisplay}`.padEnd(25);
     console.log(`| ${i.toString().padEnd(2)} | ${tier.name.padEnd(16)} | ${range} | ${tier.txPerEpoch.toString().padStart(8)} |`);
   });
-  console.log("─".repeat(70));
+  console.log("─".repeat(75));
   
   // Update tiers
   console.log("\n🚀 Sending updateTiers transaction...");
   
   try {
     const tx = await karmaTiers.updateTiers(tierStructs, {
-      gasLimit: 1000000,
+      gasLimit: 1500000,
       gasPrice: ethers.parseUnits("15", "gwei"), // Premium gas to bypass RLN
     });
     console.log(`📤 TX Hash: ${tx.hash}`);

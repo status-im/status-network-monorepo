@@ -1,0 +1,150 @@
+{{- if and .Values.l2.enabled .Values.l2.l2NodeBesuFollower.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: l2-node-besu-follower
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l2-node-besu-follower") | nindent 4 }}
+spec:
+  replicas: {{ .Values.l2.l2NodeBesuFollower.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "l2-node-besu-follower") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "status-network.componentSelectorLabels" (list . "l2-node-besu-follower") | nindent 8 }}
+    spec:
+      initContainers:
+        - name: fix-permissions
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Current user: $(id)"
+              echo "Before permissions:"
+              ls -la /opt/besu/data
+              echo "Fixing data directory permissions..."
+              chown -R 1000:1000 /opt/besu/data || echo "chown failed"
+              chmod -R 755 /opt/besu/data || echo "chmod failed"
+              echo "After permissions:"
+              ls -la /opt/besu/data
+              echo "Permissions fixed"
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: l2-node-follower-data
+              mountPath: /opt/besu/data
+        - name: wait-for-l2-node
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for L2 node..."
+              until nc -z l2-node-besu {{ .Values.l2.l2NodeBesu.ports.http }}; do
+                echo "L2 node not ready, waiting..."
+                sleep 2
+              done
+              echo "L2 node is ready"
+        - name: wait-for-genesis
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for L2 genesis files..."
+              until [ -f /initialization/genesis-besu.json ]; do
+                echo "Genesis file not ready, waiting..."
+                sleep 2
+              done
+              echo "Genesis files are ready"
+          volumeMounts:
+            - name: l2-genesis-data
+              mountPath: /initialization
+      containers:
+        - name: besu
+          image: {{ .Values.images.statusBesu }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+          command:
+            - /bin/bash
+            - -c
+            - |
+              SEQUENCER_IP=$(getent hosts sequencer | awk '{print $1}')
+              echo "[\"enode://14408801a444dafc44afbccce2eb755f902aed3b5743fed787b3c790e021fef28b8c827ed896aa4e8fb46e22bd67c39f994a73768b4b382f8597b0d44370e15d@${SEQUENCER_IP}:{{ .Values.l2.sequencer.ports.p2p }}\"]" > /opt/besu/data/static-nodes.json
+              besu --config-file=/config/l2-node-besu-config.toml --genesis-file=/initialization/genesis-besu.json --static-nodes-file=/opt/besu/data/static-nodes.json --discovery-enabled=false
+          ports:
+            - name: http
+              containerPort: {{ .Values.l2.l2NodeBesuFollower.ports.http }}
+              protocol: TCP
+            - name: ws
+              containerPort: {{ .Values.l2.l2NodeBesuFollower.ports.ws }}
+              protocol: TCP
+            - name: engine
+              containerPort: {{ .Values.l2.l2NodeBesuFollower.ports.engine }}
+              protocol: TCP
+            - name: debug
+              containerPort: {{ .Values.l2.l2NodeBesuFollower.ports.debug }}
+              protocol: TCP
+            - name: p2p
+              containerPort: {{ .Values.l2.l2NodeBesuFollower.ports.p2p }}
+              protocol: TCP
+          env:
+            - name: JAVA_OPTS
+              value: "{{ .Values.l2.l2NodeBesuFollower.javaOpts }}"
+            - name: LD_LIBRARY_PATH
+              value: "/opt/besu/lib/native-amd64:/opt/besu/lib/native-arm64:/opt/besu/lib/native:/usr/local/lib:/usr/lib"
+            - name: JAVA_LIBRARY_PATH
+              value: "/opt/besu/lib/native-amd64:/opt/besu/lib/native-arm64:/opt/besu/lib/native"
+          volumeMounts:
+            - name: l2-node-config
+              mountPath: /config/l2-node-besu-config.toml
+              subPath: l2-node-besu-config.toml
+            - name: l2-node-config
+              mountPath: /config/log4j.xml
+              subPath: log4j.xml
+            - name: l2-node-config
+              mountPath: /var/lib/besu/deny-list.txt
+              subPath: deny-list.txt
+            - name: l2-node-config
+              mountPath: /var/lib/besu/traces-limits.toml
+              subPath: traces-limits.toml
+            - name: l2-genesis-data
+              mountPath: /initialization
+            - name: l2-node-follower-data
+              mountPath: /opt/besu/data
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.l2.l2NodeBesuFollower.resources | nindent 12 }}
+      volumes:
+        - name: l2-node-config
+          configMap:
+            name: l2-node-besu-config
+        - name: l2-genesis-data
+          persistentVolumeClaim:
+            claimName: l2-genesis-data
+        - name: l2-node-follower-data
+          persistentVolumeClaim:
+            claimName: l2-node-follower-data
+      {{- include "status-network.nodeSelector" . | nindent 6 }}
+      {{- include "status-network.tolerations" . | nindent 6 }}
+      {{- include "status-network.affinity" . | nindent 6 }}
+{{- end }}

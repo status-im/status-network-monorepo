@@ -69,10 +69,6 @@ describe("RLN Proof Verification", () => {
       throw new Error("Not enough funded users");
     })();
 
-  // Timeouts based on actual TX performance (~4-5s per gasless TX, P95: 4.7s)
-  const TEST_TIMEOUT = 20000;
-  const MULTI_TX_TIMEOUT = 60000;
-
   beforeAll(async () => {
     logger.info("=== Initializing RLN Proof Verification Test Suite ===");
 
@@ -96,16 +92,21 @@ describe("RLN Proof Verification", () => {
     logMonitor = new DockerLogMonitor();
 
     // PRE-REGISTER ALL USERS NEEDED FOR THIS TEST SUITE
+    // Uses skipRegistrationWait to avoid 20s sleep per user, then does a single wait at the end
     logger.info("Pre-registering test users...");
 
     // Entry users (10 needed for various tests)
     for (let i = 0; i < 10; i++) {
-      entryUsers.push(await karmaManager.setupUserForGasless(rpcProvider, "entry"));
+      entryUsers.push(
+        await karmaManager.setupUserForGasless(rpcProvider, "entry", undefined, { skipRegistrationWait: true }),
+      );
       logger.debug(`Pre-registered entry user ${i + 1}/10`);
     }
     // Newbie users (2 needed for sequential proof tests)
     for (let i = 0; i < 2; i++) {
-      newbieUsers.push(await karmaManager.setupUserForGasless(rpcProvider, "newbie"));
+      newbieUsers.push(
+        await karmaManager.setupUserForGasless(rpcProvider, "newbie", undefined, { skipRegistrationWait: true }),
+      );
       logger.debug(`Pre-registered newbie user ${i + 1}/2`);
     }
     // Funded-only users (7 needed for proof rejection tests)
@@ -114,12 +115,17 @@ describe("RLN Proof Verification", () => {
       logger.debug(`Pre-funded user ${i + 1}/7`);
     }
 
+    // Single registration wait for all users
+    logger.info("Waiting for RLN registrations to complete...");
+    await karmaManager.waitForRlnRegistration("batch-all");
+    logger.info("Registration wait complete");
+
     logger.info("Test suite initialized", {
       entryUsers: entryUsers.length,
       newbieUsers: newbieUsers.length,
       fundedOnlyUsers: fundedOnlyUsers.length,
     });
-  }, 180000); // 3 minute setup timeout
+  }, RLN_CONFIG.test.timeouts.setupLarge);
 
   afterAll(async () => {
     logger.info("=== RLN Proof Verification Test Suite Complete ===");
@@ -156,7 +162,7 @@ describe("RLN Proof Verification", () => {
         txHash: receipt.hash,
       });
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 
   it(
@@ -189,7 +195,7 @@ describe("RLN Proof Verification", () => {
 
       logger.info(`${RLN_002.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 
   it(
@@ -222,7 +228,7 @@ describe("RLN Proof Verification", () => {
 
       logger.info(`${RLN_003.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 
   it(
@@ -256,7 +262,7 @@ describe("RLN Proof Verification", () => {
         txHash: receipt.hash,
       });
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 
   it(
@@ -293,7 +299,7 @@ describe("RLN Proof Verification", () => {
         expectedMax: `${RLN_CONFIG.test.proofTimeoutMs + 2000}ms`,
       });
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 
   it(
@@ -326,7 +332,7 @@ describe("RLN Proof Verification", () => {
 
       logger.info(`${RLN_006.id}: PASSED ✓`);
     },
-    MULTI_TX_TIMEOUT, // 3 TXs = ~12s
+    RLN_CONFIG.test.timeouts.multiTx, // 3 TXs = ~12s
   );
 
   it(
@@ -358,7 +364,7 @@ describe("RLN Proof Verification", () => {
 
       logger.info(`${RLN_007.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 
   it(
@@ -397,7 +403,7 @@ describe("RLN Proof Verification", () => {
 
       logger.info(`${RLN_008.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 
   it(
@@ -435,7 +441,7 @@ describe("RLN Proof Verification", () => {
 
       logger.info(`${RLN_009.id}: PASSED ✓`);
     },
-    MULTI_TX_TIMEOUT, // Rejection timeout (~7s) + success TX (~4s) = ~11s
+    RLN_CONFIG.test.timeouts.multiTx, // Rejection timeout (~7s) + success TX (~4s) = ~11s
   );
 
   it(
@@ -473,6 +479,6 @@ describe("RLN Proof Verification", () => {
 
       logger.info(`${RLN_010.id}: PASSED ✓`);
     },
-    TEST_TIMEOUT,
+    RLN_CONFIG.test.timeouts.singleTx,
   );
 });

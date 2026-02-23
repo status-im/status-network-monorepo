@@ -113,7 +113,9 @@ class RlnValidatorBasicTest {
             true, // exponentialBackoffEnabled
             30000L, // maxBackoffDelayMs
             "TEST", // defaultEpochForQuota
-            Optional.empty() // rlnJniLibPath
+            Optional.empty(), // rlnJniLibPath
+            "", // gasKillSwitchFilePath (disabled)
+            5L // gasKillSwitchPollSeconds
             );
 
     // Create test transaction
@@ -163,7 +165,9 @@ class RlnValidatorBasicTest {
             true,
             30000L,
             "TEST",
-            Optional.empty());
+            Optional.empty(),
+            "", // gasKillSwitchFilePath (disabled)
+            5L); // gasKillSwitchPollSeconds
 
     RlnVerifierValidator validator =
         new RlnVerifierValidator(
@@ -172,8 +176,9 @@ class RlnValidatorBasicTest {
             denyListManager,
             karmaServiceClient,
             nullifierTracker,
-            null,
-            null);
+            null, // gasKillSwitchMonitor
+            null, // providedProofChannel
+            null); // providedRlnService
 
     Optional<String> result = validator.validateTransaction(testTransaction, true, false);
     assertThat(result).isEmpty();
@@ -188,10 +193,7 @@ class RlnValidatorBasicTest {
   @Test
   void testForwarderValidatorCreation() {
     RlnProverForwarderValidator forwarder =
-        new RlnProverForwarderValidator(
-            rlnConfig,
-            false, // disabled in sequencer mode
-            karmaServiceClient);
+        new RlnProverForwarderValidator(rlnConfig, false); // disabled in sequencer mode
 
     assertThat(forwarder.isEnabled()).isFalse();
     assertThat(forwarder.getValidationCallCount()).isEqualTo(0);

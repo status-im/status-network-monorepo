@@ -100,11 +100,13 @@ class RlnProverForwarderValidatorMeaningfulTest {
             true,
             30000L,
             "TEST",
-            Optional.empty());
+            Optional.empty(),
+            "", // gasKillSwitchFilePath (disabled)
+            5L); // gasKillSwitchPollSeconds
 
     // Create both enabled (RPC mode) and disabled (sequencer mode) validators
-    enabledValidator = new RlnProverForwarderValidator(rlnConfig, true, karmaServiceClient);
-    disabledValidator = new RlnProverForwarderValidator(rlnConfig, false, karmaServiceClient);
+    enabledValidator = new RlnProverForwarderValidator(rlnConfig, true);
+    disabledValidator = new RlnProverForwarderValidator(rlnConfig, false);
   }
 
   @AfterEach
@@ -161,19 +163,12 @@ class RlnProverForwarderValidatorMeaningfulTest {
   }
 
   @Test
-  void testKarmaServiceUnavailableScenario() {
-    // Test behavior when karma service is unavailable (realistic production scenario)
+  void testForwarderWithoutKarmaService() {
+    // Forwarder no longer performs karma checks (P4 fix - removed informational karma call)
+    // It simply forwards to the RLN prover. Karma is checked by the sequencer's verifier.
     org.hyperledger.besu.ethereum.core.Transaction tx = createTestTransaction();
 
-    // Karma service should be available as client but return empty results
-    assertThat(karmaServiceClient.isAvailable()).isTrue();
-
-    // Fetch karma should return empty (no service running)
-    Optional<KarmaServiceClient.KarmaInfo> karmaInfo =
-        karmaServiceClient.fetchKarmaInfo(USER_SENDER);
-    assertThat(karmaInfo).isEmpty();
-
-    // Validator should still attempt forwarding even without karma info
+    // Validator should attempt forwarding without karma check
     Optional<String> result = enabledValidator.validateTransaction(tx, true, false);
     // May succeed or fail depending on gRPC behavior - both are valid
     assertThat(result).isNotNull(); // Tests that it doesn't crash

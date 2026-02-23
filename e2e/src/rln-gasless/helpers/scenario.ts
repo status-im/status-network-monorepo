@@ -55,11 +55,11 @@ export function formatScenario(s: Scenario): string {
 // GASLESS TRANSACTION SCENARIOS (GAS_001 - GAS_010)
 // ============================================================================
 
-export const GAS_001 = scenario("GAS_001", "Entry tier user can send exactly 1 gasless transaction", "GASLESS");
+export const GAS_001 = scenario("GAS_001", "Entry tier user can send exactly 2 gasless transactions", "GASLESS");
 
 export const GAS_002 = scenario(
   "GAS_002",
-  "Entry tier user gets rejected on 2nd transaction (quota exceeded)",
+  "Entry tier user gets rejected on 3rd transaction (quota exceeded)",
   "GASLESS",
 );
 
@@ -67,7 +67,7 @@ export const GAS_003 = scenario("GAS_003", "User exceeding quota is added to den
 
 export const GAS_004 = scenario("GAS_004", "Non-Karma user cannot send gasless transactions", "GASLESS");
 
-export const GAS_005 = scenario("GAS_005", "Basic tier user can send 15 gasless transactions", "GASLESS");
+export const GAS_005 = scenario("GAS_005", "Basic tier user can send 16 gasless transactions", "GASLESS");
 
 export const GAS_006 = scenario("GAS_006", "Quota resets after epoch boundary", "GASLESS");
 
@@ -107,15 +107,15 @@ export const DENY_001 = scenario("DENY_001", "User exceeding quota is added to d
 
 export const DENY_002 = scenario("DENY_002", "Denied user cannot send gasless transactions", "DENY_LIST");
 
-export const DENY_003 = scenario("DENY_003", "Premium gas clears deny status (recovery path)", "DENY_LIST");
+export const DENY_003 = scenario("DENY_003", "Premium gas instantly clears deny status and resets quota", "DENY_LIST");
 
 export const DENY_004 = scenario("DENY_004", "Denied user can send premium gas transaction", "DENY_LIST");
 
-export const DENY_005 = scenario("DENY_005", "Premium gas payment removes user from deny list", "DENY_LIST");
+export const DENY_005 = scenario("DENY_005", "Premium gas payment instantly removes user from deny list", "DENY_LIST");
 
 export const DENY_006 = scenario(
   "DENY_006",
-  "After premium recovery and new epoch, user can send gasless again",
+  "After premium gas payment, user can immediately send gasless again (quota reset)",
   "DENY_LIST",
 );
 

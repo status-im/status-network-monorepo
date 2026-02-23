@@ -158,3 +158,19 @@ lib/openzeppelin-contracts
 lib/openzeppelin-contracts-upgradeable
 # Allow BLS glue testdata generators
 !prover/zkevm/prover/bls/testdata/*.go
+
+k8s/terraform/.terraform
+k8s/terraform/.terraform.lock.hcl
+k8s/terraform/terraform.tfstate*
+k8s/terraform/tfplan
+k8s/helm/status-network/values-secrets.yaml
+k8s/helm/status-network/values-secrets-*.yaml
+
+# Besu source checkout (for local development only)
+.linea-besu-source/
+
+# Generated contract deployment address files
+status-network-contracts/deployments/*.txt
+
+# Backup files
+*.backup.*

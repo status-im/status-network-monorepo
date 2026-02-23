@@ -14,8 +14,12 @@
  */
 package net.consensys.linea.sequencer.txpoolvalidation.shared;
 
+import io.grpc.ManagedChannel;
+import io.grpc.ManagedChannelBuilder;
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.concurrent.TimeUnit;
+import net.consensys.linea.config.GasKillSwitchMonitor;
 import net.consensys.linea.config.LineaRlnValidatorConfiguration;
 import net.consensys.linea.config.LineaRpcConfiguration;
 import org.slf4j.Logger;
@@ -44,6 +48,9 @@ public class SharedServiceManager implements Closeable {
   private DenyListManager denyListManager;
   private KarmaServiceClient karmaServiceClient;
   private NullifierTracker nullifierTracker;
+  private GasKillSwitchMonitor gasKillSwitchMonitor;
+  private ManagedChannel sharedProverChannel; // Shared gRPC channel for prover endpoint (P5)
+  private ManagedChannel sharedKarmaChannel; // Shared gRPC channel for karma endpoint (P5)
   private final boolean gaslessEnabled;
 
   /**
@@ -67,6 +74,19 @@ public class SharedServiceManager implements Closeable {
       initializeSharedServices(rlnConfig, rpcConfig);
     } else {
       LOG.info("Gasless transactions and RLN features disabled - shared services not initialized");
+    }
+
+    // Initialize gas kill switch monitor (independent of gasless being enabled)
+    String killSwitchFile = rlnConfig.gasKillSwitchFilePath();
+    if (killSwitchFile != null && !killSwitchFile.isEmpty()) {
+      this.gasKillSwitchMonitor =
+          new GasKillSwitchMonitor(killSwitchFile, rlnConfig.gasKillSwitchPollSeconds());
+      LOG.info(
+          "Gas kill switch monitor initialized: file={}, pollInterval={}s",
+          killSwitchFile,
+          rlnConfig.gasKillSwitchPollSeconds());
+    } else {
+      LOG.info("Gas kill switch not configured (no file path provided)");
     }
   }
 
@@ -102,8 +122,18 @@ public class SharedServiceManager implements Closeable {
         LOG.warn("Cannot initialize DenyListManager: sharedGaslessConfig is null");
       }
 
-      // Initialize KarmaServiceClient with resilient error handling
-      // Service connection failures should not prevent plugin startup
+      // Create shared gRPC channel for karma service (P5: channel sharing)
+      ManagedChannelBuilder<?> karmaChannelBuilder =
+          ManagedChannelBuilder.forAddress(
+              rlnConfig.karmaServiceHost(), rlnConfig.karmaServicePort());
+      if (rlnConfig.karmaServiceUseTls()) {
+        karmaChannelBuilder.useTransportSecurity();
+      } else {
+        karmaChannelBuilder.usePlaintext();
+      }
+      this.sharedKarmaChannel = karmaChannelBuilder.build();
+
+      // Initialize KarmaServiceClient with shared channel
       try {
         this.karmaServiceClient =
             new KarmaServiceClient(
@@ -111,7 +141,8 @@ public class SharedServiceManager implements Closeable {
                 rlnConfig.karmaServiceHost(),
                 rlnConfig.karmaServicePort(),
                 rlnConfig.karmaServiceUseTls(),
-                rlnConfig.karmaServiceTimeoutMs());
+                rlnConfig.karmaServiceTimeoutMs(),
+                this.sharedKarmaChannel);
         LOG.info(
             "KarmaServiceClient initialized successfully for {}:{} (TLS: {})",
             rlnConfig.karmaServiceHost(),
@@ -184,6 +215,15 @@ public class SharedServiceManager implements Closeable {
   }
 
   /**
+   * Gets the gas kill switch monitor instance.
+   *
+   * @return GasKillSwitchMonitor instance, or null if not configured
+   */
+  public GasKillSwitchMonitor getGasKillSwitchMonitor() {
+    return gasKillSwitchMonitor;
+  }
+
+  /**
    * Checks if gasless features are enabled and shared services are available.
    *
    * @return true if gasless features are enabled, false otherwise
@@ -237,11 +277,43 @@ public class SharedServiceManager implements Closeable {
       }
     }
 
+    if (gasKillSwitchMonitor != null) {
+      try {
+        gasKillSwitchMonitor.close();
+        LOG.info("GasKillSwitchMonitor closed successfully");
+      } catch (IOException e) {
+        LOG.error("Error closing GasKillSwitchMonitor: {}", e.getMessage(), e);
+        if (firstException == null) {
+          firstException = e;
+        }
+      }
+    }
+
+    // Shutdown shared gRPC channels (P5)
+    shutdownChannel(sharedProverChannel, "sharedProverChannel");
+    shutdownChannel(sharedKarmaChannel, "sharedKarmaChannel");
+
     LOG.info("Shared services closed");
 
     // Throw the first exception if any occurred
     if (firstException != null) {
       throw firstException;
+    }
+  }
+
+  /** Shuts down a gRPC channel gracefully. */
+  private void shutdownChannel(ManagedChannel channel, String name) {
+    if (channel != null && !channel.isShutdown()) {
+      channel.shutdown();
+      try {
+        if (!channel.awaitTermination(5, TimeUnit.SECONDS)) {
+          channel.shutdownNow();
+        }
+      } catch (InterruptedException e) {
+        channel.shutdownNow();
+        Thread.currentThread().interrupt();
+      }
+      LOG.info("{} shut down successfully", name);
     }
   }
 

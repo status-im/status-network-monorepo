@@ -1,0 +1,12 @@
+{{- if and .Values.rln.enabled .Values.rln.nativeLib }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rln-native-lib
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "sequencer") | nindent 4 }}
+binaryData:
+  librln_bridge.so: {{ .Values.rln.nativeLib | b64enc | quote }}
+{{- end }}

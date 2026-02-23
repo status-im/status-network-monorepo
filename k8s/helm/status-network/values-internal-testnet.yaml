@@ -1,0 +1,230 @@
+# Internal Testnet-specific values for status-network
+# This is the first gasless ETH layer 2 rollup
+# Use with: helm install -f values.yaml -f values-internal-testnet.yaml
+
+# Global settings
+global:
+  namespace: status-network-internal-testnet
+
+# Image overrides for internal testnet
+images:
+  rlnProver: 720430261111.dkr.ecr.us-east-1.amazonaws.com/status-network-rln-prover:v1.0.3
+  postgres: 720430261111.dkr.ecr.us-east-1.amazonaws.com/status-network-postgres:v1.0.1
+
+# Network configuration for internal testnet
+network:
+  l1ChainId: 560048
+  l2ChainId: 59141
+  forkOffsetSeconds: 180
+  # Use Hoodi public testnet as L1
+  l1Network: "hoodi"
+  # L1 RPC endpoint, signer keys, and other secrets are provided via
+  # a separate values-secrets.yaml file (not committed to git).
+  # See values-secrets.yaml.example for the template.
+  # Contract addresses (deployed 2026-02-21)
+  contracts:
+    l1Rollup: "0x64269d08c795d66A542903AA35B6e775B031872A"
+    l2MessageService: "0x2f6dAaF8A81AB675fbD37Ca6Ed5b72cf86237453"
+
+# RLN Configuration - Enabled for gasless transactions
+rln:
+  enabled: true
+  contractAddress: "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853"
+  minMembershipBalance: "1000000000000000000"
+  epochMode: "TEST"
+  timeoutMs: 10000
+  proofWaitTimeoutMs: 10000
+  # Transactions above 12 gwei bypass RLN proof generation (premium transactions)
+  premiumGasThresholdGwei: 12
+  premiumGasMultiplier: "1.5"
+  gasless:
+    enabled: true
+    allowZeroGasEstimation: true
+
+# L1 disabled - using external Hoodi RPC instead of running own nodes
+l1:
+  enabled: false
+
+l2:
+  postgres:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    storage:
+      size: 20Gi
+
+  rlnProver:
+    enabled: true
+    # Production mode - connects to real smart contracts
+    productionMode: true
+    logLevel: debug
+    # Contract addresses (deployed on fresh L2 chain 2026-02-21)
+    karmaContract: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
+    rlnContract: "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853"
+    tiersContract: "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+    # Prover private key provided via values-secrets.yaml
+    registrationMin: 1
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 2Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+    # Epoch configuration - shorter epochs for testing
+    epochDurationSecs: 300
+    epochSliceSecs: 60
+
+  sequencer:
+    resources:
+      requests:
+        cpu: "1"
+        memory: 2Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+    storage:
+      size: 50Gi
+
+  maru:
+    enabled: true
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+
+  l2NodeBesu:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    storage:
+      size: 20Gi
+
+  l2NodeBesuFollower:
+    enabled: true
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    storage:
+      size: 20Gi
+
+  tracesNode:
+    javaOpts: "-Xmx3g"
+    resources:
+      requests:
+        cpu: "1"
+        memory: 2Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+    storage:
+      size: 20Gi
+
+  zkbesuShomei:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+    storage:
+      size: 20Gi
+
+  shomei:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+    storage:
+      size: 20Gi
+
+  shomeiFrontend:
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+  coordinator:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+
+  # Disable web3signer - no validator keys for internal testnet
+  web3signer:
+    enabled: false
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+  postman:
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+  # Disable transaction-exclusion-api - has startup issues
+  txExclusionApi:
+    enabled: false
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+# Prover disabled (uses dummy proofs)
+prover:
+  enabled: false
+
+# Observability disabled for testnet
+observability:
+  enabled: false
+
+# Services
+services:
+  l2RpcLoadBalancer:
+    enabled: true
+  l1RpcLoadBalancer:
+    enabled: false
+
+# Network policies disabled
+networkPolicies:
+  enabled: false
+
+# PDBs disabled
+podDisruptionBudgets:
+  enabled: false

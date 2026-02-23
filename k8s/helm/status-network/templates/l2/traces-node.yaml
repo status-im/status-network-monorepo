@@ -1,0 +1,134 @@
+{{- if and .Values.l2.enabled .Values.l2.tracesNode.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traces-node
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "traces-node") | nindent 4 }}
+spec:
+  replicas: {{ .Values.l2.tracesNode.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "traces-node") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "status-network.componentSelectorLabels" (list . "traces-node") | nindent 8 }}
+    spec:
+      initContainers:
+        - name: fix-permissions
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Fixing data directory permissions..."
+              chown -R 1000:1000 /opt/besu/data
+              chmod -R 755 /opt/besu/data
+              mkdir -p /var/lib/besu
+              chmod 755 /var/lib/besu
+              echo "Permissions fixed"
+              ls -la /opt/besu/data /var/lib/besu
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: traces-node-data
+              mountPath: /opt/besu/data
+            - name: traces-config
+              mountPath: /var/lib/besu
+        - name: wait-for-genesis
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for L2 genesis files..."
+              until [ -f /initialization/genesis-besu.json ]; do
+                echo "Genesis file not ready, waiting..."
+                sleep 2
+              done
+              echo "Genesis files are ready"
+          volumeMounts:
+            - name: l2-genesis-data
+              mountPath: /initialization
+      containers:
+        - name: besu
+          image: {{ .Values.images.besuPackage }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command:
+            - /bin/bash
+            - -c
+            - |
+              SEQUENCER_IP=$(getent hosts sequencer | awk '{print $1}')
+              echo "[\"enode://14408801a444dafc44afbccce2eb755f902aed3b5743fed787b3c790e021fef28b8c827ed896aa4e8fb46e22bd67c39f994a73768b4b382f8597b0d44370e15d@${SEQUENCER_IP}:{{ .Values.l2.sequencer.ports.p2p }}\"]" > /opt/besu/data/static-nodes.json
+              besu --config-file=/config/traces-node-config.toml --genesis-file=/initialization/genesis-besu.json --static-nodes-file=/opt/besu/data/static-nodes.json --discovery-enabled=false
+          ports:
+            - name: http
+              containerPort: {{ .Values.l2.tracesNode.ports.http }}
+              protocol: TCP
+            - name: ws
+              containerPort: {{ .Values.l2.tracesNode.ports.ws }}
+              protocol: TCP
+            - name: engine
+              containerPort: {{ .Values.l2.tracesNode.ports.engine }}
+              protocol: TCP
+            - name: debug
+              containerPort: {{ .Values.l2.tracesNode.ports.debug }}
+              protocol: TCP
+            - name: p2p
+              containerPort: {{ .Values.l2.tracesNode.ports.p2p }}
+              protocol: TCP
+          env:
+            - name: JAVA_OPTS
+              value: "{{ .Values.l2.tracesNode.javaOpts }}"
+          volumeMounts:
+            - name: traces-config
+              mountPath: /config/traces-node-config.toml
+              subPath: traces-node-config.toml
+            - name: traces-config
+              mountPath: /config/log4j.xml
+              subPath: log4j.xml
+            - name: traces-config
+              mountPath: /var/lib/besu/deny-list.txt
+              subPath: deny-list.txt
+            - name: traces-limits
+              mountPath: /var/lib/besu/traces-limits.toml
+              subPath: traces-limits.toml
+            - name: l2-genesis-data
+              mountPath: /initialization
+            - name: traces-node-data
+              mountPath: /opt/besu/data
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.l2.tracesNode.resources | nindent 12 }}
+      volumes:
+        - name: traces-config
+          configMap:
+            name: traces-node-config
+        - name: traces-limits
+          configMap:
+            name: traces-limits
+        - name: l2-genesis-data
+          persistentVolumeClaim:
+            claimName: l2-genesis-data
+        - name: traces-node-data
+          persistentVolumeClaim:
+            claimName: traces-node-data
+      {{- include "status-network.nodeSelector" . | nindent 6 }}
+      {{- include "status-network.tolerations" . | nindent 6 }}
+      {{- include "status-network.affinity" . | nindent 6 }}
+{{- end }}

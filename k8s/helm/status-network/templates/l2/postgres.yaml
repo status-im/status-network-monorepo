@@ -1,0 +1,105 @@
+{{- if and .Values.l2.enabled .Values.l2.postgres.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "postgres") | nindent 4 }}
+spec:
+  replicas: {{ .Values.l2.postgres.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "postgres") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "status-network.componentSelectorLabels" (list . "postgres") | nindent 8 }}
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.images.postgres }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: postgres
+              containerPort: {{ .Values.l2.postgres.port }}
+              protocol: TCP
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: PGDATA
+              value: /data/pgdata
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /data
+            - name: init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - $(POSTGRES_USER)
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - $(POSTGRES_USER)
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            {{- toYaml .Values.l2.postgres.resources | nindent 12 }}
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-data
+        - name: init-scripts
+          configMap:
+            name: postgres-init-scripts
+      {{- include "status-network.nodeSelector" . | nindent 6 }}
+      {{- include "status-network.tolerations" . | nindent 6 }}
+      {{- include "status-network.affinity" . | nindent 6 }}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-scripts
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "postgres") | nindent 4 }}
+data:
+  init-databases.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "Creating databases..."
+    {{- range .Values.l2.postgres.credentials.databases }}
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "postgres" <<-EOSQL
+        CREATE DATABASE {{ . }};
+    EOSQL
+    echo "Created database: {{ . }}"
+    {{- end }}
+    echo "All databases created successfully"
+
+    echo "Creating pg_merkle_tree extension in prover_db..."
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "prover_db" <<-EOSQL
+        CREATE EXTENSION IF NOT EXISTS pg_merkle_tree;
+    EOSQL
+    echo "pg_merkle_tree extension created successfully"
+{{- end }}

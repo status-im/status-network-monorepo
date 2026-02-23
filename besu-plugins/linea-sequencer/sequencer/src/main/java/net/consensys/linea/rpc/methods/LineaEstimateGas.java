@@ -27,6 +27,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
 import net.consensys.linea.bl.TransactionProfitabilityCalculator;
+import net.consensys.linea.config.GasKillSwitchMonitor;
 import net.consensys.linea.config.LineaProfitabilityConfiguration;
 import net.consensys.linea.config.LineaRpcConfiguration;
 import net.consensys.linea.config.LineaSharedGaslessConfiguration;
@@ -111,6 +112,7 @@ public class LineaEstimateGas {
 
   private DenyListManager denyListManager;
   private KarmaServiceClient karmaServiceClient;
+  private GasKillSwitchMonitor gasKillSwitchMonitor;
 
   public LineaEstimateGas(
       final BesuConfiguration besuConfiguration,
@@ -138,6 +140,7 @@ public class LineaEstimateGas {
         tracerConfiguration,
         worldStateService,
         null,
+        null,
         null);
   }
 
@@ -149,7 +152,8 @@ public class LineaEstimateGas {
       final LineaTracerConfiguration tracerConfiguration,
       final WorldStateService worldStateService,
       final DenyListManager denyListManager,
-      final KarmaServiceClient karmaServiceClient) {
+      final KarmaServiceClient karmaServiceClient,
+      final GasKillSwitchMonitor gasKillSwitchMonitor) {
     this.rpcConfiguration = rpcConfiguration;
     this.txValidatorConf = transactionValidatorConfiguration;
     this.profitabilityConf = profitabilityConf;
@@ -159,14 +163,15 @@ public class LineaEstimateGas {
     this.moduleLineCountValidator =
         new ModuleLineCountValidator(tracerConfiguration.moduleLimitsMap());
     this.worldStateService = worldStateService;
+    this.gasKillSwitchMonitor = gasKillSwitchMonitor;
 
     // Initialize gasless config fields
     this.gaslessTransactionsEnabled = rpcConfiguration.gaslessTransactionsEnabled();
     if (this.gaslessTransactionsEnabled) {
       this.sharedGaslessConfig = rpcConfiguration.sharedGaslessConfig();
       if (this.sharedGaslessConfig == null) {
-        log.warn(
-            "LineaRpcConfiguration provided null sharedGaslessConfig while gasless transactions are enabled.");
+        throw new IllegalStateException(
+            "sharedGaslessConfig cannot be null when gasless transactions are enabled");
       }
       this.premiumGasMultiplier = rpcConfiguration.premiumGasMultiplier();
       this.allowZeroGasEstimationForGasless = rpcConfiguration.allowZeroGasEstimationForGasless();
@@ -216,7 +221,10 @@ public class LineaEstimateGas {
       final var minGasPrice = besuConfiguration.getMinGasPrice();
 
       // --- Linea Gasless Logic Start ---
-      if (gaslessTransactionsEnabled && callParameters.getSender().isPresent()) {
+      boolean killSwitchActive = gasKillSwitchMonitor != null && gasKillSwitchMonitor.isActive();
+      if (gaslessTransactionsEnabled
+          && !killSwitchActive
+          && callParameters.getSender().isPresent()) {
         Address sender = callParameters.getSender().get();
 
         // Check if sender is on deny list (read-only operation)
@@ -228,33 +236,7 @@ public class LineaEstimateGas {
               logId,
               sender.toHexString(),
               premiumGasMultiplier);
-          // Proceed to estimate gas, then multiply.
-          final long originalGasEstimate =
-              getGasEstimation(callParameters, maybeStateOverrides, logId);
-          final long premiumGasEstimate = (long) (originalGasEstimate * premiumGasMultiplier);
-
-          final Wei baseFee =
-              blockchainService
-                  .getNextBlockBaseFee()
-                  .orElseThrow(
-                      () ->
-                          new PluginRpcEndpointException(
-                              RpcErrorType.INVALID_REQUEST, "Not on a baseFee market"));
-
-          final Transaction tempTxForFeeEstimation =
-              createTransactionForFeeEstimation(callParameters, premiumGasEstimate, baseFee, logId);
-          final Wei estimatedPriorityFee =
-              getEstimatedPriorityFee(
-                  tempTxForFeeEstimation, baseFee, minGasPrice, premiumGasEstimate);
-
-          log.info(
-              "[{}] Deny list sender {}: Original estimate {}, Premium estimate {}.",
-              logId,
-              sender.toHexString(),
-              originalGasEstimate,
-              premiumGasEstimate);
-          return new Response(
-              create(premiumGasEstimate), create(baseFee), create(estimatedPriorityFee));
+          return buildPremiumGasResponse(callParameters, maybeStateOverrides, logId, minGasPrice);
         }
 
         // Not on deny list - check if user has quota available for gasless eligibility
@@ -286,24 +268,41 @@ public class LineaEstimateGas {
                 karmaInfo.tier(),
                 karmaInfo.epochTxCount(),
                 karmaInfo.dailyQuota());
-            return new Response(create(0L), create(Wei.ZERO), create(Wei.ZERO));
+
+            // Validate line counts even for zero-gas responses
+            final var zeroGasCallParams =
+                ImmutableCallParameter.builder().from(callParameters).gas(21000L);
+            if (callParameters.getGasPrice().isEmpty()
+                && callParameters.getMaxFeePerBlobGas().isEmpty()) {
+              zeroGasCallParams.gasPrice(Wei.ZERO);
+              zeroGasCallParams.maxFeePerGas(Wei.ZERO);
+            }
+            validateLineCounts(maybeStateOverrides, zeroGasCallParams.build(), logId);
+
+            // Return actual baseFee instead of Wei.ZERO
+            final Wei actualBaseFee = blockchainService.getNextBlockBaseFee().orElse(Wei.ZERO);
+            return new Response(create(0L), create(actualBaseFee), create(Wei.ZERO));
           }
-          // User has no quota available or ineligible tier - proceed to normal gas estimation below
+          // User has no quota available or ineligible tier - return premium gas estimate.
+          // The sequencer rejects any gas price between 0 and the premium threshold,
+          // so users who are not eligible for gasless must pay premium.
           log.info(
-              "[{}] Sender {} has tier '{}' with quota usage ({}/{}) but will receive standard gas estimation.",
+              "[{}] Sender {} has tier '{}' with quota usage ({}/{}). Not eligible for gasless. Returning premium gas estimate.",
               logId,
               sender.toHexString(),
               karmaInfo.tier(),
               karmaInfo.epochTxCount(),
               karmaInfo.dailyQuota());
+          return buildPremiumGasResponse(callParameters, maybeStateOverrides, logId, minGasPrice);
         } else {
-          // SECURITY: When karma service is unavailable, we should be more cautious
-          // For gas estimation, we can proceed with standard estimation since it's not validation
-          // But we should log this for monitoring purposes
-          log.debug(
-              "[{}] Karma service unavailable for user {}. Proceeding with standard gas estimation.",
+          // Karma service unavailable - return premium gas estimate for safety.
+          // Users cannot transact gaslessly without karma verification, and the sequencer
+          // rejects any gas price between 0 and the premium threshold.
+          log.warn(
+              "[{}] Karma service unavailable for user {}. Returning premium gas estimate.",
               logId,
               sender.toHexString());
+          return buildPremiumGasResponse(callParameters, maybeStateOverrides, logId, minGasPrice);
         }
       }
       // --- Linea Gasless Logic End ---
@@ -633,6 +632,65 @@ public class LineaEstimateGas {
         String.format("Do not know what to do with result %s", moduleLimitResult.getResult());
     log.error(internalErrorMsg);
     throw new PluginRpcEndpointException(RpcErrorType.PLUGIN_INTERNAL_ERROR, internalErrorMsg);
+  }
+
+  /**
+   * Ensures the priority fee meets the premium gas price threshold. On chains with zero base fee
+   * and zero min gas price (like Status Network), the standard priority fee estimation returns
+   * near-zero values. This would cause wallets to submit transactions with gas prices in the "dead
+   * zone" between 0 and the premium threshold, which the sequencer rejects.
+   *
+   * @param estimatedPriorityFee the priority fee computed by standard estimation
+   * @return the higher of the estimated fee and the premium threshold (converted to Wei)
+   */
+  private Wei enforcePremiumMinPriorityFee(final Wei estimatedPriorityFee) {
+    if (sharedGaslessConfig == null) {
+      return estimatedPriorityFee;
+    }
+    final Wei premiumThresholdWei =
+        Wei.of(
+            BigInteger.valueOf(sharedGaslessConfig.premiumGasPriceThresholdGWei())
+                .multiply(BigInteger.valueOf(1_000_000_000L)));
+    return Wei.of(
+        estimatedPriorityFee.getAsBigInteger().max(premiumThresholdWei.getAsBigInteger()));
+  }
+
+  /**
+   * Builds a premium gas response with validateLineCounts enforcement. Consolidates the repeated
+   * pattern of computing gas estimate, applying multiplier, and creating the response.
+   */
+  private Response buildPremiumGasResponse(
+      final CallParameter callParameters,
+      final Optional<StateOverrideMap> maybeStateOverrides,
+      final long logId,
+      final Wei minGasPrice) {
+    final long originalGasEstimate = getGasEstimation(callParameters, maybeStateOverrides, logId);
+    final long premiumGasEstimate = (long) (originalGasEstimate * premiumGasMultiplier);
+
+    final Wei baseFee =
+        blockchainService
+            .getNextBlockBaseFee()
+            .orElseThrow(
+                () ->
+                    new PluginRpcEndpointException(
+                        RpcErrorType.INVALID_REQUEST, "Not on a baseFee market"));
+
+    // Validate line counts for gasless paths
+    final var updatedCallParams =
+        ImmutableCallParameter.builder().from(callParameters).gas(premiumGasEstimate);
+    if (callParameters.getGasPrice().isEmpty() && callParameters.getMaxFeePerBlobGas().isEmpty()) {
+      updatedCallParams.gasPrice(baseFee);
+      updatedCallParams.maxFeePerGas(baseFee);
+    }
+    validateLineCounts(maybeStateOverrides, updatedCallParams.build(), logId);
+
+    final Transaction tempTx =
+        createTransactionForFeeEstimation(callParameters, premiumGasEstimate, baseFee, logId);
+    final Wei estimatedPriorityFee =
+        enforcePremiumMinPriorityFee(
+            getEstimatedPriorityFee(tempTx, baseFee, minGasPrice, premiumGasEstimate));
+
+    return new Response(create(premiumGasEstimate), create(baseFee), create(estimatedPriorityFee));
   }
 
   /**

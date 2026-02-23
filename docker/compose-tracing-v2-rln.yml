@@ -5,6 +5,7 @@ volumes:
     name: "linea-logs"
   rln-data:
     name: "rln-data"
+  gas-kill-switch:
 
 networks:
   linea:

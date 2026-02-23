@@ -56,7 +56,9 @@ public record LineaRlnValidatorConfiguration(
     boolean exponentialBackoffEnabled,
     long maxBackoffDelayMs,
     String defaultEpochForQuota,
-    Optional<String> rlnJniLibPath)
+    Optional<String> rlnJniLibPath,
+    String gasKillSwitchFilePath,
+    long gasKillSwitchPollSeconds)
     implements LineaOptionsConfiguration {
 
   public static LineaRlnValidatorConfiguration V1_DEFAULT =
@@ -79,7 +81,9 @@ public record LineaRlnValidatorConfiguration(
           true, // exponentialBackoffEnabled
           60000L, // maxBackoffDelayMs (60 seconds)
           "TIMESTAMP_1H", // defaultEpochForQuota
-          Optional.empty() // rlnJniLibPath
+          Optional.empty(), // rlnJniLibPath
+          "", // gasKillSwitchFilePath (empty = disabled)
+          5L // gasKillSwitchPollSeconds
           );
 
   // Accessor for premium gas price threshold in Wei for convenience (converting from GWei)

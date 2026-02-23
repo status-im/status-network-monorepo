@@ -1,0 +1,126 @@
+{{- if and .Values.l2.enabled .Values.l2.maru.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maru
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "maru") | nindent 4 }}
+spec:
+  replicas: {{ .Values.l2.maru.replicas }}
+  selector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "maru") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "status-network.componentSelectorLabels" (list . "maru") | nindent 8 }}
+    spec:
+      initContainers:
+        - name: wait-for-sequencer
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for sequencer..."
+              until nc -z sequencer {{ .Values.l2.sequencer.ports.http }}; do
+                echo "Sequencer not ready, waiting..."
+                sleep 2
+              done
+              echo "Sequencer is ready"
+        {{- if not .Values.network.l1RpcEndpoint }}
+        - name: wait-for-l1
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for L1 EL node..."
+              until nc -z l1-el-node {{ .Values.l1.elNode.ports.http }}; do
+                echo "L1 EL node not ready, waiting..."
+                sleep 2
+              done
+              echo "L1 EL node is ready"
+        {{- end }}
+        - name: copy-genesis
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Copying genesis and private key to Maru data directory..."
+              mkdir -p /tmp/maru-db
+              cp /initialization/genesis-maru.json /tmp/maru-db/genesis.json
+              cp /keys/0x083e11f14b68d5ebeb4be3e3e0237ebbc5675ab5.key /tmp/maru-db/private-key
+              chmod 600 /tmp/maru-db/private-key
+              ls -la /tmp/maru-db/
+          volumeMounts:
+            - name: l2-genesis-data
+              mountPath: /initialization
+            - name: maru-keys
+              mountPath: /keys
+            - name: maru-data
+              mountPath: /tmp/maru-db
+      containers:
+        - name: maru
+          image: {{ .Values.images.maru }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command:
+            - java
+            - -Dlog4j2.configurationFile=/config/log4j.xml
+            - -jar
+            - maru.jar
+            - --genesis-file
+            - /tmp/maru-db/genesis.json
+            - --config
+            - /config/sequencer.config.toml
+          ports:
+            - name: api
+              containerPort: {{ .Values.l2.maru.ports.api }}
+              protocol: TCP
+            - name: debug
+              containerPort: {{ .Values.l2.maru.ports.debug }}
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          volumeMounts:
+            - name: maru-config
+              mountPath: /config/sequencer.config.toml
+              subPath: sequencer.config.toml
+            - name: maru-config
+              mountPath: /config/log4j.xml
+              subPath: log4j.xml
+            - name: maru-data
+              mountPath: /tmp/maru-db
+          livenessProbe:
+            tcpSocket:
+              port: api
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: api
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.l2.maru.resources | nindent 12 }}
+      volumes:
+        - name: maru-config
+          configMap:
+            name: maru-config
+        - name: l2-genesis-data
+          persistentVolumeClaim:
+            claimName: l2-genesis-data
+        - name: maru-keys
+          secret:
+            secretName: maru-keys
+        - name: maru-data
+          emptyDir: {}
+      {{- include "status-network.nodeSelector" . | nindent 6 }}
+      {{- include "status-network.tolerations" . | nindent 6 }}
+      {{- include "status-network.affinity" . | nindent 6 }}
+{{- end }}

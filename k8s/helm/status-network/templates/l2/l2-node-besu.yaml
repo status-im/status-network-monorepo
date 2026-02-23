@@ -1,0 +1,196 @@
+{{- if and .Values.l2.enabled .Values.l2.l2NodeBesu.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: l2-node-besu
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l2-node-besu") | nindent 4 }}
+spec:
+  replicas: {{ .Values.l2.l2NodeBesu.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "l2-node-besu") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "status-network.componentSelectorLabels" (list . "l2-node-besu") | nindent 8 }}
+    spec:
+      initContainers:
+        - name: fix-permissions
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Current user: $(id)"
+              echo "Before permissions:"
+              ls -la /opt/besu/data
+              echo "Fixing data directory permissions..."
+              chown -R 1000:1000 /opt/besu/data || echo "chown failed"
+              chmod -R 755 /opt/besu/data || echo "chmod failed"
+              echo "After permissions:"
+              ls -la /opt/besu/data
+              echo "Permissions fixed"
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: l2-node-data
+              mountPath: /opt/besu/data
+        - name: wait-for-sequencer
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for sequencer..."
+              until nc -z sequencer {{ .Values.l2.sequencer.ports.http }}; do
+                echo "Sequencer not ready, waiting..."
+                sleep 2
+              done
+              echo "Sequencer is ready"
+        - name: wait-for-genesis
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for L2 genesis files..."
+              until [ -f /initialization/genesis-besu.json ]; do
+                echo "Genesis file not ready, waiting..."
+                sleep 2
+              done
+              echo "Genesis files are ready"
+          volumeMounts:
+            - name: l2-genesis-data
+              mountPath: /initialization
+        {{- if .Values.rln.enabled }}
+        - name: wait-for-rln-prover
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for RLN Prover..."
+              until nc -z rln-prover {{ .Values.l2.rlnProver.ports.grpc }}; do
+                echo "RLN Prover not ready, waiting..."
+                sleep 2
+              done
+              echo "RLN Prover is ready"
+        {{- end }}
+      containers:
+        - name: besu
+          image: {{ .Values.images.statusBesu }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+          command:
+            - /bin/bash
+            - -c
+            - |
+              SEQUENCER_IP=$(getent hosts sequencer | awk '{print $1}')
+              echo "[\"enode://14408801a444dafc44afbccce2eb755f902aed3b5743fed787b3c790e021fef28b8c827ed896aa4e8fb46e22bd67c39f994a73768b4b382f8597b0d44370e15d@${SEQUENCER_IP}:{{ .Values.l2.sequencer.ports.p2p }}\"]" > /opt/besu/data/static-nodes.json
+              exec besu \
+                --config-file=/config/l2-node-besu-config.toml \
+                --genesis-file=/initialization/genesis-besu.json \
+                --static-nodes-file=/opt/besu/data/static-nodes.json \
+                --discovery-enabled=false \
+                --plugin-linea-node-type=RPC \
+                {{- if .Values.rln.enabled }}
+                --plugin-linea-rln-enabled=true \
+                --plugin-linea-rln-proof-service=rln-prover:{{ .Values.l2.rlnProver.ports.grpc }} \
+                --plugin-linea-rln-karma-service=rln-prover:{{ .Values.l2.rlnProver.ports.grpc }} \
+                --plugin-linea-rln-timeouts-ms={{ .Values.rln.timeoutMs }} \
+                --plugin-linea-rln-proof-wait-timeout-ms={{ .Values.rln.proofWaitTimeoutMs }} \
+                --plugin-linea-rln-epoch-mode={{ .Values.rln.epochMode }} \
+                --plugin-linea-rln-premium-gas-threshold-gwei={{ .Values.rln.premiumGasThresholdGwei }} \
+                --plugin-linea-rpc-gasless-enabled={{ .Values.rln.gasless.enabled }} \
+                --plugin-linea-rpc-rln-prover-forwarder-enabled=true \
+                --plugin-linea-rpc-allow-zero-gas-estimation-gasless={{ .Values.rln.gasless.allowZeroGasEstimation }} \
+                --plugin-linea-rpc-premium-gas-multiplier={{ .Values.rln.premiumGasMultiplier }} \
+                {{- if .Values.rln.killSwitch.enabled }}
+                --plugin-linea-gas-kill-switch-file={{ .Values.rln.killSwitch.filePath }} \
+                --plugin-linea-gas-kill-switch-poll-seconds={{ .Values.rln.killSwitch.pollSeconds }} \
+                {{- end }}
+                {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.l2.l2NodeBesu.ports.http }}
+              protocol: TCP
+            - name: ws
+              containerPort: {{ .Values.l2.l2NodeBesu.ports.ws }}
+              protocol: TCP
+            - name: engine
+              containerPort: {{ .Values.l2.l2NodeBesu.ports.engine }}
+              protocol: TCP
+            - name: debug
+              containerPort: {{ .Values.l2.l2NodeBesu.ports.debug }}
+              protocol: TCP
+            - name: p2p
+              containerPort: {{ .Values.l2.l2NodeBesu.ports.p2p }}
+              protocol: TCP
+          env:
+            - name: JAVA_OPTS
+              value: "{{ .Values.l2.l2NodeBesu.javaOpts }}"
+            - name: LD_LIBRARY_PATH
+              value: "/opt/besu/lib/native-amd64:/opt/besu/lib/native-arm64:/opt/besu/lib/native:/usr/local/lib:/usr/lib"
+            - name: JAVA_LIBRARY_PATH
+              value: "/opt/besu/lib/native-amd64:/opt/besu/lib/native-arm64:/opt/besu/lib/native"
+          volumeMounts:
+            - name: l2-node-config
+              mountPath: /config/l2-node-besu-config.toml
+              subPath: l2-node-besu-config.toml
+            - name: l2-node-config
+              mountPath: /config/log4j.xml
+              subPath: log4j.xml
+            - name: l2-node-config
+              mountPath: /var/lib/besu/deny-list.txt
+              subPath: deny-list.txt
+            - name: l2-node-config
+              mountPath: /var/lib/besu/traces-limits.toml
+              subPath: traces-limits.toml
+            - name: l2-genesis-data
+              mountPath: /initialization
+            - name: l2-node-data
+              mountPath: /opt/besu/data
+            {{- if and .Values.rln.enabled .Values.rln.killSwitch.enabled }}
+            - name: gas-kill-switch
+              mountPath: /var/lib/besu/kill-switch
+              readOnly: true
+            {{- end }}
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.l2.l2NodeBesu.resources | nindent 12 }}
+      volumes:
+        - name: l2-node-config
+          configMap:
+            name: l2-node-besu-config
+        - name: l2-genesis-data
+          persistentVolumeClaim:
+            claimName: l2-genesis-data
+        - name: l2-node-data
+          persistentVolumeClaim:
+            claimName: l2-node-data
+        {{- if and .Values.rln.enabled .Values.rln.killSwitch.enabled }}
+        - name: gas-kill-switch
+          configMap:
+            name: gas-kill-switch
+        {{- end }}
+      {{- include "status-network.nodeSelector" . | nindent 6 }}
+      {{- include "status-network.tolerations" . | nindent 6 }}
+      {{- include "status-network.affinity" . | nindent 6 }}
+{{- end }}

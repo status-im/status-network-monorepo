@@ -1,0 +1,148 @@
+{{- if and .Values.l2.enabled .Values.networkPolicies.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-policy
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "postgres") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "postgres") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow from all pods in the namespace
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.l2.postgres.port }}
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sequencer-policy
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "sequencer") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "sequencer") | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from all L2 services
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.l2.sequencer.ports.http }}
+        - protocol: TCP
+          port: {{ .Values.l2.sequencer.ports.ws }}
+        - protocol: TCP
+          port: {{ .Values.l2.sequencer.ports.engine }}
+        - protocol: TCP
+          port: {{ .Values.l2.sequencer.ports.p2p }}
+        - protocol: TCP
+          port: {{ .Values.l2.sequencer.ports.metrics }}
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow to RLN prover
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "status-network.componentSelectorLabels" (list . "rln-prover") | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.l2.rlnProver.ports.grpc }}
+    # Allow outbound
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: l2-node-besu-policy
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l2-node-besu") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "l2-node-besu") | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from all L2 services
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.l2.l2NodeBesu.ports.http }}
+        - protocol: TCP
+          port: {{ .Values.l2.l2NodeBesu.ports.ws }}
+        - protocol: TCP
+          port: {{ .Values.l2.l2NodeBesu.ports.engine }}
+        - protocol: TCP
+          port: {{ .Values.l2.l2NodeBesu.ports.p2p }}
+    # Allow from LoadBalancer
+    {{- if .Values.services.l2RpcLoadBalancer.enabled }}
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.l2.l2NodeBesu.ports.http }}
+    {{- end }}
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow to sequencer
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "status-network.componentSelectorLabels" (list . "sequencer") | nindent 14 }}
+    # Allow outbound
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: {{ include "status-network.namespace" . }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress: []
+{{- end }}

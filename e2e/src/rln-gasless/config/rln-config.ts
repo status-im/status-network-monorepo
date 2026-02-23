@@ -39,6 +39,9 @@ const getEnvNumber = (envVar: string, defaultVal: number): number => {
   return val ? parseInt(val, 10) : defaultVal;
 };
 
+// Karma is an ERC20 with 18 decimals
+const ETHER = 10n ** 18n;
+
 export const RLN_CONFIG = {
   // Mode detection - default to production mode for real testing
   isProductionMode: process.env.RLN_PRODUCTION_MODE !== "false",
@@ -68,7 +71,7 @@ export const RLN_CONFIG = {
   // Service URLs
   // Note: RLN Prover handles both proof generation and karma/deny-list services
   services: {
-    rpcUrl: process.env.RPC_URL || "http://localhost:9045",
+    rpcUrl: process.env.RPC_URL || "http://localhost:8545",
     sequencerUrl: process.env.SEQUENCER_URL || "http://localhost:8545",
     rlnProverUrl: process.env.RLN_PROVER_URL || "http://localhost:50051",
     // karmaServiceUrl points to the same RLN prover (unified service)
@@ -104,42 +107,61 @@ export const RLN_CONFIG = {
     proofTimeoutMs: getEnvNumber("RLN_PROOF_TIMEOUT_MS", 5000),
     // Fixed wait time for prover to register user after karma mint
     registrationTimeoutMs: getEnvNumber("RLN_REGISTRATION_TIMEOUT_MS", 8000), // 8s fixed wait
-    transactionTimeoutMs: getEnvNumber("RLN_TX_TIMEOUT_MS", 15000), // 15s for tx mining (includes proof generation)
+    transactionTimeoutMs: getEnvNumber("RLN_TX_TIMEOUT_MS", 40000), // 40s for tx mining (concurrent proof generation can queue up)
     // Wait times for polling operations
-    denyListPollIntervalMs: 200,
-    maxWaitForDenyListMs: 15000, // 15s for deny list propagation
+    denyListPollIntervalMs: 1000, // 1s between polls
+    // Deny list entries expire via TTL (denyListEntryMaxAgeMinutes=1 = 60s).
+    // Premium gas removes from deny list AND resets epoch counter (quota refresh).
+    // 70s allows for 60s TTL + buffer (still needed for natural TTL expiry tests like GAS_006).
+    maxWaitForDenyListMs: 70000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1), // 70s local, 210s remote (3x)
+    // Jest test timeouts, scaled by TEST_TIMEOUT_MULTIPLIER for remote testnets
+    // Local Docker: TEST_TIMEOUT_MULTIPLIER=1 (default)
+    // Remote testnet: TEST_TIMEOUT_MULTIPLIER=3
+    timeouts: {
+      singleTx: 15_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      multiTx: 45_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      denyList: 90_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      highVolume: 90_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      epoch: 120_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      setup: 120_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      setupLarge: 180_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+    },
   },
 
   // Karma tiers with quotas per epoch
-  // These match the prover database tier configuration exactly (no grace transactions)
+  // These match the deployed KarmaTiers contract exactly
   // Users can send exactly 'quota' gasless transactions per epoch, then they're added to deny list
-  // Note: Users with 0 karma are not registered in RLN, so no "none" tier
-  // Entry tier starts at min=0 but users need 1+ karma to be registered
+  // Tier 0 ("none") has txPerEpoch=0, users with <1 Karma cannot send gasless transactions
+  // Karma is an ERC20 with 18 decimals, so all karma values are in wei (1 Karma = 1e18)
   tiers: {
-    entry: { karma: 1n, quota: 1, name: "entry" }, // 1 gasless tx per epoch
-    newbie: { karma: 2n, quota: 5, name: "newbie" }, // 5 gasless txs per epoch
-    basic: { karma: 50n, quota: 15, name: "basic" }, // 15 gasless txs per epoch
-    active: { karma: 500n, quota: 96, name: "active" },
-    regular: { karma: 5000n, quota: 480, name: "regular" },
-    power: { karma: 20000n, quota: 960, name: "power" },
-    pro: { karma: 100000n, quota: 10080, name: "pro" },
-    "high-throughput": { karma: 500000n, quota: 108000, name: "high-throughput" },
-    "s-tier": { karma: 5000000n, quota: 240000, name: "s-tier" },
-    legendary: { karma: 10000000n, quota: 480000, name: "legendary" },
+    entry: { karma: 1n * ETHER, quota: 2, name: "entry" }, // 2 gasless txs per epoch
+    newbie: { karma: 2n * ETHER, quota: 6, name: "newbie" }, // 6 gasless txs per epoch
+    basic: { karma: 50n * ETHER, quota: 16, name: "basic" }, // 16 gasless txs per epoch
+    active: { karma: 500n * ETHER, quota: 96, name: "active" },
+    regular: { karma: 5000n * ETHER, quota: 480, name: "regular" },
+    power: { karma: 20000n * ETHER, quota: 960, name: "power" },
+    pro: { karma: 100000n * ETHER, quota: 10080, name: "pro" },
+    "high-throughput": { karma: 500000n * ETHER, quota: 108000, name: "high-throughput" },
+    "s-tier": { karma: 5000000n * ETHER, quota: 240000, name: "s-tier" },
+    legendary: { karma: 10000000n * ETHER, quota: 480000, name: "legendary" },
   } as const,
 
-  // Tier boundaries for testing edge cases (max karma for each tier)
+  // Tier boundaries for testing edge cases (matches deployed KarmaTiers contract)
+  // All values are in wei (18 decimals)
   tierBoundaries: {
-    entry: { min: 0n, max: 1n },
-    newbie: { min: 2n, max: 49n },
-    basic: { min: 50n, max: 499n },
-    active: { min: 500n, max: 4999n },
-    regular: { min: 5000n, max: 19999n },
-    power: { min: 20000n, max: 99999n },
-    pro: { min: 100000n, max: 499999n },
-    "high-throughput": { min: 500000n, max: 4999999n },
-    "s-tier": { min: 5000000n, max: 9999999n },
-    legendary: { min: 10000000n, max: BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff") },
+    entry: { min: 1n * ETHER, max: 1n * ETHER },
+    newbie: { min: 1n * ETHER + 1n, max: 50n * ETHER - 1n },
+    basic: { min: 50n * ETHER, max: 500n * ETHER - 1n },
+    active: { min: 500n * ETHER, max: 5000n * ETHER - 1n },
+    regular: { min: 5000n * ETHER, max: 20000n * ETHER - 1n },
+    power: { min: 20000n * ETHER, max: 100000n * ETHER - 1n },
+    pro: { min: 100000n * ETHER, max: 500000n * ETHER - 1n },
+    "high-throughput": { min: 500000n * ETHER, max: 5000000n * ETHER - 1n },
+    "s-tier": { min: 5000000n * ETHER, max: 10000000n * ETHER - 1n },
+    legendary: {
+      min: 10000000n * ETHER,
+      max: BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
+    },
   } as const,
 
   // Test accounts (from genesis file - private keys)

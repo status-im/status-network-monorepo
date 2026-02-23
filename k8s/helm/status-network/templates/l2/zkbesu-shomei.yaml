@@ -1,0 +1,146 @@
+{{- if and .Values.l2.enabled .Values.l2.zkbesuShomei.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zkbesu-shomei
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "zkbesu-shomei") | nindent 4 }}
+spec:
+  replicas: {{ .Values.l2.zkbesuShomei.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "zkbesu-shomei") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "status-network.componentSelectorLabels" (list . "zkbesu-shomei") | nindent 8 }}
+    spec:
+      initContainers:
+        - name: fix-permissions
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Current user: $(id)"
+              echo "Before permissions:"
+              ls -la /opt/besu/data
+              echo "Fixing data directory permissions..."
+              chown -R 1000:1000 /opt/besu/data || echo "chown failed"
+              chmod -R 755 /opt/besu/data || echo "chmod failed"
+              echo "After permissions:"
+              ls -la /opt/besu/data
+              echo "Permissions fixed"
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: zkbesu-data
+              mountPath: /opt/besu/data
+        - name: wait-for-sequencer
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for sequencer..."
+              until nc -z sequencer {{ .Values.l2.sequencer.ports.http }}; do
+                echo "Sequencer not ready, waiting..."
+                sleep 2
+              done
+              echo "Sequencer is ready"
+        - name: wait-for-genesis
+          image: {{ .Values.images.busybox }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for L2 genesis files..."
+              until [ -f /initialization/genesis-besu.json ]; do
+                echo "Genesis file not ready, waiting..."
+                sleep 2
+              done
+              echo "Genesis files are ready"
+          volumeMounts:
+            - name: l2-genesis-data
+              mountPath: /initialization
+      containers:
+        - name: besu
+          image: {{ .Values.images.besuPackage }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+          command:
+            - /bin/bash
+            - -c
+            - |
+              SEQUENCER_IP=$(getent hosts sequencer | awk '{print $1}')
+              SHOMEI_IP=$(getent hosts shomei | awk '{print $1}')
+              echo "[\"enode://14408801a444dafc44afbccce2eb755f902aed3b5743fed787b3c790e021fef28b8c827ed896aa4e8fb46e22bd67c39f994a73768b4b382f8597b0d44370e15d@${SEQUENCER_IP}:{{ .Values.l2.sequencer.ports.p2p }}\"]" > /opt/besu/data/static-nodes.json
+              besu \
+                --config-file=/config/zkbesu-config.toml \
+                --genesis-file=/initialization/genesis-besu.json \
+                --plugin-shomei-http-host=${SHOMEI_IP} \
+                --plugin-shomei-http-port=8888 \
+                --bonsai-limit-trie-logs-enabled=false \
+                --plugin-shomei-zktrace-comparison-mode=31 \
+                --static-nodes-file=/opt/besu/data/static-nodes.json \
+                --discovery-enabled=false
+          ports:
+            - name: http
+              containerPort: {{ .Values.l2.zkbesuShomei.ports.http }}
+              protocol: TCP
+            - name: ws
+              containerPort: {{ .Values.l2.zkbesuShomei.ports.ws }}
+              protocol: TCP
+            - name: engine
+              containerPort: {{ .Values.l2.zkbesuShomei.ports.engine }}
+              protocol: TCP
+            - name: p2p
+              containerPort: {{ .Values.l2.zkbesuShomei.ports.p2p }}
+              protocol: TCP
+          env:
+            - name: JAVA_OPTS
+              value: "{{ .Values.l2.zkbesuShomei.javaOpts }}"
+          volumeMounts:
+            - name: zkbesu-config
+              mountPath: /config/zkbesu-config.toml
+              subPath: zkbesu-config.toml
+            - name: zkbesu-config
+              mountPath: /config/log4j.xml
+              subPath: log4j.xml
+            - name: l2-genesis-data
+              mountPath: /initialization
+            - name: zkbesu-data
+              mountPath: /opt/besu/data
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.l2.zkbesuShomei.resources | nindent 12 }}
+      volumes:
+        - name: zkbesu-config
+          configMap:
+            name: zkbesu-shomei-config
+        - name: l2-genesis-data
+          persistentVolumeClaim:
+            claimName: l2-genesis-data
+        - name: zkbesu-data
+          persistentVolumeClaim:
+            claimName: zkbesu-shomei-data
+      {{- include "status-network.nodeSelector" . | nindent 6 }}
+      {{- include "status-network.tolerations" . | nindent 6 }}
+      {{- include "status-network.affinity" . | nindent 6 }}
+{{- end }}

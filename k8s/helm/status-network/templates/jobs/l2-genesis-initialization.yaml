@@ -1,0 +1,77 @@
+{{- if and .Values.l2.enabled .Values.l2.genesisInitialization.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: l2-genesis-initialization
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l2-genesis-initialization") | nindent 4 }}
+  annotations:
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "status-network.componentSelectorLabels" (list . "l2-genesis-initialization") | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: genesis-init
+          image: {{ .Values.images.busybox }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Initialization of timestamp in genesis files for Maru, Besu, and config file for coordinator"
+              date
+              cd /initialization || exit
+
+              # Only generate genesis if it doesn't already exist (idempotent)
+              if [ -f genesis-besu.json ]; then
+                echo "Genesis files already exist, skipping regeneration"
+                ls -la /initialization/
+                echo "--- genesis-besu.json ---"
+                head -50 /initialization/genesis-besu.json
+                exit 0
+              fi
+
+              cp "/templates/genesis-maru.json.template" "genesis-maru.json"
+              cp "/templates/genesis-besu.json.template" "genesis-besu.json"
+              cp "/coordinator/coordinator-config-v2.toml" "coordinator-config-v2-hardforks.toml"
+
+              fork_timestamp=$(($(date +%s) + {{ .Values.network.forkOffsetSeconds }}))
+              echo "Fork Timestamp: $fork_timestamp"
+              sed -i "s/%FORK_TIME%/$fork_timestamp/g" genesis-maru.json
+              sed -i "s/%FORK_TIME%/$fork_timestamp/g" genesis-besu.json
+
+              sed -i "s/^\(timestamp-based-hard-forks[ ]*=[ ]*\).*/\1[${fork_timestamp}]/" coordinator-config-v2-hardforks.toml
+
+              echo "Genesis initialization complete"
+              ls -la /initialization/
+              echo "--- genesis-besu.json ---"
+              head -50 /initialization/genesis-besu.json
+          volumeMounts:
+            - name: l2-genesis-templates
+              mountPath: /templates
+            - name: coordinator-config
+              mountPath: /coordinator
+            - name: l2-genesis-data
+              mountPath: /initialization
+          resources:
+            {{- toYaml .Values.l2.genesisInitialization.resources | nindent 12 }}
+      volumes:
+        - name: l2-genesis-templates
+          configMap:
+            name: l2-genesis-files
+        - name: coordinator-config
+          secret:
+            secretName: coordinator-config-secret
+        - name: l2-genesis-data
+          persistentVolumeClaim:
+            claimName: l2-genesis-data
+      {{- include "status-network.nodeSelector" . | nindent 6 }}
+      {{- include "status-network.tolerations" . | nindent 6 }}
+      {{- include "status-network.affinity" . | nindent 6 }}
+{{- end }}

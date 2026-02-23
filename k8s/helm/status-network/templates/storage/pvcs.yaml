@@ -1,0 +1,194 @@
+{{- if .Values.l1.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: l1-el-data
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l1-el-node") | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+
+  resources:
+    requests:
+      storage: {{ .Values.l1.elNode.storage.size }}
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: l1-cl-data
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l1-cl-node") | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+
+  resources:
+    requests:
+      storage: {{ .Values.l1.clNode.storage.size }}
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: l1-genesis-data
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l1-genesis") | nindent 4 }}
+  annotations:
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+
+  resources:
+    requests:
+      storage: 1Gi
+{{- end }}
+
+{{- if .Values.l2.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "postgres") | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+
+  resources:
+    requests:
+      storage: {{ .Values.l2.postgres.storage.size }}
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sequencer-data
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "sequencer") | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+
+  resources:
+    requests:
+      storage: {{ .Values.l2.sequencer.storage.size }}
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: l2-node-data
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l2-node-besu") | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+
+  resources:
+    requests:
+      storage: {{ .Values.l2.l2NodeBesu.storage.size }}
+
+{{- if .Values.l2.l2NodeBesuFollower.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: l2-node-follower-data
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l2-node-besu-follower") | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+
+  resources:
+    requests:
+      storage: {{ .Values.l2.l2NodeBesuFollower.storage.size }}
+{{- end }}
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: traces-node-data
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "traces-node") | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+
+  resources:
+    requests:
+      storage: {{ .Values.l2.tracesNode.storage.size }}
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: zkbesu-shomei-data
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "zkbesu-shomei") | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+
+  resources:
+    requests:
+      storage: {{ .Values.l2.zkbesuShomei.storage.size }}
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: shomei-data
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "shomei") | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+
+  resources:
+    requests:
+      storage: {{ .Values.l2.shomei.storage.size }}
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: l2-genesis-data
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "l2-genesis") | nindent 4 }}
+  annotations:
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+
+  resources:
+    requests:
+      storage: 1Gi
+{{- end }}
