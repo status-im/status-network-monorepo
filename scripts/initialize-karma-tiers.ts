@@ -142,7 +142,7 @@ async function main() {
   
   try {
     const tx = await karmaTiers.updateTiers(tierStructs, {
-      gasLimit: 1000000,
+      gasLimit: 1500000,
       gasPrice: ethers.parseUnits("15", "gwei"), // Premium gas to bypass RLN
     });
     console.log(`📤 TX Hash: ${tx.hash}`);

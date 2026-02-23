@@ -344,6 +344,51 @@ public class DenyListManager implements Closeable {
   }
 
   /**
+   * Removes an address from the deny list AND resets their epoch transaction counter.
+   *
+   * <p>This is used when a user pays premium gas — they earn a fresh gasless quota for the current
+   * epoch. The operation is atomic on the prover side (single gRPC call).
+   *
+   * @param address The address to remove and reset quota for
+   * @return true if the address was removed, false if it wasn't on the list
+   */
+  public boolean removeFromDenyListAndResetQuota(org.hyperledger.besu.datatypes.Address address) {
+    // Remove from local cache immediately
+    CachedDenyEntry removed = localCache.remove(address);
+
+    // Persist via gRPC with reset_epoch_counter flag
+    if (grpcAvailable.get() && blockingStub != null) {
+      try {
+        RemoveFromDenyListRequest request =
+            RemoveFromDenyListRequest.newBuilder()
+                .setAddress(toProtoAddress(address))
+                .setResetEpochCounter(true)
+                .build();
+
+        RemoveFromDenyListReply reply = blockingStub.removeFromDenyList(request);
+
+        LOG.info(
+            "{}: Address {} {} from deny list via gRPC (with epoch counter reset)",
+            serviceName,
+            address.toHexString(),
+            reply.getWasPresent() ? "removed" : "was not");
+
+        return reply.getWasPresent();
+      } catch (StatusRuntimeException e) {
+        LOG.warn(
+            "{}: gRPC removeFromDenyListAndResetQuota call failed for {}: {}",
+            serviceName,
+            address.toHexString(),
+            e.getStatus());
+        grpcAvailable.set(false);
+        scheduleGrpcReconnect();
+      }
+    }
+
+    return removed != null;
+  }
+
+  /**
    * Gets the current size of the local deny list cache (for monitoring/debugging).
    *
    * @return Number of addresses currently in the local cache

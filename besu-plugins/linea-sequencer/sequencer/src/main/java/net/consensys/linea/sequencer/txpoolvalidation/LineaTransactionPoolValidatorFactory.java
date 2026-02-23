@@ -112,12 +112,12 @@ public class LineaTransactionPoolValidatorFactory implements PluginTransactionPo
           new RlnProverForwarderValidator(
               rlnValidatorConf,
               true, // enabled
-              sharedServiceManager.getKarmaServiceClient(),
               transactionSimulationService,
               blockchainService,
               worldStateService,
               tracerConfiguration,
-              l1L2BridgeConfiguration));
+              l1L2BridgeConfiguration,
+              sharedServiceManager.getGasKillSwitchMonitor()));
     }
 
     validatorsList.add(new TraceLineLimitValidator(invalidTransactionByLineCountCache));
@@ -138,7 +138,8 @@ public class LineaTransactionPoolValidatorFactory implements PluginTransactionPo
               blockchainService,
               sharedServiceManager.getDenyListManager(),
               sharedServiceManager.getKarmaServiceClient(),
-              sharedServiceManager.getNullifierTracker()));
+              sharedServiceManager.getNullifierTracker(),
+              sharedServiceManager.getGasKillSwitchMonitor()));
     }
 
     validatorsList.add(

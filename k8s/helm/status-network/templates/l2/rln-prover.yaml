@@ -67,6 +67,12 @@ spec:
             - "{{ .Values.l2.rlnProver.epochDurationSecs }}"
             - "--epoch-slice-secs"
             - "{{ .Values.l2.rlnProver.epochSliceSecs }}"
+            {{- if .Values.rln.killSwitch.enabled }}
+            - "--kill-switch-file"
+            - "{{ .Values.rln.killSwitch.filePath }}"
+            - "--kill-switch-poll-secs"
+            - "{{ .Values.rln.killSwitch.pollSeconds }}"
+            {{- end }}
           ports:
             - name: grpc
               containerPort: {{ .Values.l2.rlnProver.ports.grpc }}
@@ -92,6 +98,11 @@ spec:
           volumeMounts:
             - name: rln-config
               mountPath: /config
+            {{- if .Values.rln.killSwitch.enabled }}
+            - name: gas-kill-switch
+              mountPath: /var/lib/besu/kill-switch
+              readOnly: true
+            {{- end }}
           livenessProbe:
             tcpSocket:
               port: grpc
@@ -110,6 +121,11 @@ spec:
         - name: rln-config
           configMap:
             name: rln-prover-config
+        {{- if .Values.rln.killSwitch.enabled }}
+        - name: gas-kill-switch
+          configMap:
+            name: gas-kill-switch
+        {{- end }}
       {{- include "status-network.nodeSelector" . | nindent 6 }}
       {{- include "status-network.tolerations" . | nindent 6 }}
       {{- include "status-network.affinity" . | nindent 6 }}

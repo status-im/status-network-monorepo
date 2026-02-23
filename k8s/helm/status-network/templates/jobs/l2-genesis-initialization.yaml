@@ -66,8 +66,8 @@ spec:
           configMap:
             name: l2-genesis-files
         - name: coordinator-config
-          configMap:
-            name: coordinator-config
+          secret:
+            secretName: coordinator-config-secret
         - name: l2-genesis-data
           persistentVolumeClaim:
             claimName: l2-genesis-data

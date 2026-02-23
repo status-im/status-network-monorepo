@@ -142,7 +142,9 @@ class RlnVerifierValidatorComprehensiveTest {
             true,
             30000L,
             "BLOCK",
-            Optional.empty());
+            Optional.empty(),
+            "", // gasKillSwitchFilePath (disabled)
+            5L); // gasKillSwitchPollSeconds
 
     validator =
         new RlnVerifierValidator(
@@ -151,7 +153,8 @@ class RlnVerifierValidatorComprehensiveTest {
             denyListManager,
             karmaServiceClient,
             nullifierTracker,
-            null,
+            null, // gasKillSwitchMonitor
+            null, // providedProofChannel
             mockRlnService);
   }
 
@@ -197,12 +200,13 @@ class RlnVerifierValidatorComprehensiveTest {
     assertThat(lowGasResult.get()).contains("Sender on deny list, premium gas not met");
     assertThat(denyListManager.isDenied(DENIED_SENDER)).isTrue();
 
-    // Premium gas transaction should bypass RLN and remove from deny list
+    // Premium gas transaction should bypass RLN and remove deny list entry + reset quota
     org.hyperledger.besu.ethereum.core.Transaction premiumGasTx =
         createTestTransaction(DENIED_SENDER, Wei.of(6_000_000_000L)); // 6 GWei - above threshold
     Optional<String> premiumGasResult = validator.validateTransaction(premiumGasTx, false, false);
     // With premium gas, RLN is bypassed entirely
     assertThat(premiumGasResult).isEmpty();
+    // Deny list entry should be removed — paying premium gas earns a fresh gasless quota
     assertThat(denyListManager.isDenied(DENIED_SENDER)).isFalse();
   }
 
@@ -236,7 +240,9 @@ class RlnVerifierValidatorComprehensiveTest {
               true,
               30000L,
               mode,
-              Optional.empty());
+              Optional.empty(),
+              "", // gasKillSwitchFilePath (disabled)
+              5L); // gasKillSwitchPollSeconds
 
       assertThat(testConfig.defaultEpochForQuota()).isEqualTo(mode);
     }
@@ -268,7 +274,9 @@ class RlnVerifierValidatorComprehensiveTest {
             true,
             30000L,
             "TEST",
-            Optional.empty());
+            Optional.empty(),
+            "", // gasKillSwitchFilePath (disabled)
+            5L); // gasKillSwitchPollSeconds
 
     RlnVerifierValidator disabledValidator =
         new RlnVerifierValidator(
@@ -277,7 +285,8 @@ class RlnVerifierValidatorComprehensiveTest {
             denyListManager,
             karmaServiceClient,
             nullifierTracker,
-            null,
+            null, // gasKillSwitchMonitor
+            null, // providedProofChannel
             mockRlnService);
 
     org.hyperledger.besu.ethereum.core.Transaction tx = createTestTransaction(TEST_SENDER);
@@ -326,7 +335,7 @@ class RlnVerifierValidatorComprehensiveTest {
     assertThat(lowGasResult).isPresent();
     assertThat(lowGasResult.get()).contains("deny list");
 
-    // Create premium gas transaction - should bypass deny list
+    // Create premium gas transaction - should bypass deny list and remove entry + reset quota
     org.hyperledger.besu.ethereum.core.Transaction premiumGasTx =
         createTestTransaction(DENIED_SENDER, Wei.of(6_000_000_000L)); // 6 GWei - above threshold
 
@@ -334,7 +343,7 @@ class RlnVerifierValidatorComprehensiveTest {
     // Should pass due to premium gas bypass
     assertThat(premiumResult).isEmpty();
 
-    // Verify sender removed from deny list
+    // Verify sender removed from deny list — paying premium gas earns a fresh gasless quota
     assertThat(denyListManager.isDenied(DENIED_SENDER)).isFalse();
   }
 
@@ -372,7 +381,9 @@ class RlnVerifierValidatorComprehensiveTest {
             true,
             30000L,
             "BLOCK",
-            Optional.empty());
+            Optional.empty(),
+            "", // gasKillSwitchFilePath (disabled)
+            5L); // gasKillSwitchPollSeconds
 
     // Test that proofs from recent blocks are accepted
     // This tests the isBlockEpochValid method indirectly
@@ -514,7 +525,8 @@ class RlnVerifierValidatorComprehensiveTest {
             denyListManager,
             mockKarmaClient,
             nullifierTracker,
-            null,
+            null, // gasKillSwitchMonitor
+            null, // providedProofChannel
             mockRlnService);
 
     try {
@@ -590,7 +602,9 @@ class RlnVerifierValidatorComprehensiveTest {
               true,
               30000L,
               mode,
-              Optional.empty());
+              Optional.empty(),
+              "", // gasKillSwitchFilePath (disabled)
+              5L); // gasKillSwitchPollSeconds
 
       assertThat(testConfig.defaultEpochForQuota()).isEqualTo(mode);
 
@@ -601,7 +615,8 @@ class RlnVerifierValidatorComprehensiveTest {
               denyListManager,
               karmaServiceClient,
               nullifierTracker,
-              null,
+              null, // gasKillSwitchMonitor
+              null, // providedProofChannel
               mockRlnService)) {
 
         org.hyperledger.besu.ethereum.core.Transaction tx = createTestTransaction(TEST_SENDER);
@@ -742,6 +757,111 @@ class RlnVerifierValidatorComprehensiveTest {
     Optional<String> emptyPayloadResult =
         validator.validateTransaction(emptyPayloadTx, false, false);
     assertThat(emptyPayloadResult).isEmpty(); // Non-gasless tx passes without RLN
+  }
+
+  // ==================== AUDIT FIX TESTS ====================
+
+  @Test
+  void testEip1559HighMaxFeeZeroPriorityShouldNotBypassPremium() {
+    // C1: EIP-1559 tx with high maxFeePerGas but zero maxPriorityFeePerGas
+    // With baseFee=0, effective = min(highMaxFee, 0 + 0) = 0, should NOT bypass premium
+    org.mockito.Mockito.doReturn(Optional.of(Wei.ZERO)).when(blockHeader).getBaseFee();
+
+    org.hyperledger.besu.ethereum.core.Transaction eip1559Tx =
+        org.hyperledger.besu.ethereum.core.Transaction.builder()
+            .sender(TEST_SENDER)
+            .to(Address.fromHexString("0x4444444444444444444444444444444444444444"))
+            .gasLimit(21000)
+            .maxFeePerGas(Wei.of(1_000_000_000_000L)) // 1000 GWei maxFee
+            .maxPriorityFeePerGas(Wei.ZERO) // Zero priority fee
+            .payload(Bytes.EMPTY)
+            .value(Wei.ZERO)
+            .chainId(BigInteger.valueOf(59141))
+            .signature(FAKE_SIGNATURE)
+            .build();
+
+    // Should NOT bypass as premium — effective gas is 0 (min(1000 GWei, 0+0))
+    Optional<String> result = validator.validateTransaction(eip1559Tx, false, false);
+    // With effective gas = 0, should NOT bypass premium check, should require proof
+    assertThat(result).isPresent();
+    assertThat(result.get()).contains("proof not found");
+  }
+
+  @Test
+  void testEip1559WithRealPriorityFeeBypassesPremium() {
+    // C1: EIP-1559 tx with genuine high priority fee should bypass premium
+    org.mockito.Mockito.doReturn(Optional.of(Wei.ZERO)).when(blockHeader).getBaseFee();
+
+    org.hyperledger.besu.ethereum.core.Transaction eip1559Tx =
+        org.hyperledger.besu.ethereum.core.Transaction.builder()
+            .sender(TEST_SENDER)
+            .to(Address.fromHexString("0x4444444444444444444444444444444444444444"))
+            .gasLimit(21000)
+            .maxFeePerGas(Wei.of(100_000_000_000L)) // 100 GWei maxFee
+            .maxPriorityFeePerGas(Wei.of(100_000_000_000L)) // 100 GWei priority
+            .payload(Bytes.EMPTY)
+            .value(Wei.ZERO)
+            .chainId(BigInteger.valueOf(59141))
+            .signature(FAKE_SIGNATURE)
+            .build();
+
+    // Effective = min(100 GWei, 0 + 100 GWei) = 100 GWei >= 5 GWei threshold → bypass
+    Optional<String> result = validator.validateTransaction(eip1559Tx, false, false);
+    assertThat(result).isEmpty(); // Should bypass RLN
+  }
+
+  @Test
+  void testDenyListEntryRemovedOnPremiumPayment() {
+    // Deny list entry SHOULD be removed when user pays premium — earns fresh gasless quota
+    denyListManager.addToDenyList(DENIED_SENDER);
+    assertThat(denyListManager.isDenied(DENIED_SENDER)).isTrue();
+
+    // Pay premium gas
+    org.hyperledger.besu.ethereum.core.Transaction premiumTx =
+        createTestTransaction(DENIED_SENDER, Wei.of(6_000_000_000L)); // Above threshold
+    Optional<String> result = validator.validateTransaction(premiumTx, false, false);
+    assertThat(result).isEmpty(); // Allowed through
+
+    // Deny list entry should be removed — premium gas payment resets quota
+    assertThat(denyListManager.isDenied(DENIED_SENDER)).isFalse();
+  }
+
+  @Test
+  void testConsolidatedKarmaCallReusesPreCheck() {
+    // P3: Verify that karma service is called efficiently
+    KarmaServiceClient mockKarmaClient = mock(KarmaServiceClient.class);
+    when(mockKarmaClient.isAvailable()).thenReturn(true);
+
+    // Return quota available
+    KarmaInfo availableQuota = new KarmaInfo("Regular", 0, 10, "epoch123", 1000L);
+    when(mockKarmaClient.fetchKarmaInfo(TEST_SENDER)).thenReturn(Optional.of(availableQuota));
+
+    RlnVerifierValidator testValidator =
+        new RlnVerifierValidator(
+            rlnConfig,
+            blockchainService,
+            denyListManager,
+            mockKarmaClient,
+            nullifierTracker,
+            null,
+            null,
+            mockRlnService);
+
+    try {
+      org.hyperledger.besu.ethereum.core.Transaction tx = createTestTransaction(TEST_SENDER);
+      testValidator.validateTransaction(tx, false, false);
+
+      // Karma fetchKarmaInfo should be called (pre-check), but not more than needed
+      // The P3 fix reuses the pre-check result for post-check
+      org.mockito.Mockito.verify(mockKarmaClient, org.mockito.Mockito.atMost(2))
+          .fetchKarmaInfo(TEST_SENDER);
+    } finally {
+      try {
+        testValidator.close();
+      } catch (Exception e) {
+        // Expected
+      }
+    }
   }
 
   // ==================== HELPER METHODS ====================

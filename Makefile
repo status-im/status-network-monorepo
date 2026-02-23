@@ -121,12 +121,12 @@ start-env-with-rln-production:
 	echo "Step 3: Initializing karma tiers..." && \
 	(cd e2e && KARMA_TIERS_ADDRESS=$$TIERS_ADDR npx ts-node ../scripts/initialize-karma-tiers.ts || true) && \
 	echo "Step 4: Setting up prover account permissions..." && \
-	(cd e2e && KARMA_CONTRACT_ADDRESS=$$KARMA_ADDR RLN_CONTRACT_ADDRESS=$$RLN_ADDR node ../scripts/setup-prover-account.js || true) && \
-	(cd e2e && KARMA_CONTRACT_ADDRESS=$$KARMA_ADDR node ../scripts/grant-operator-role.js || true) && \
+	(cd e2e && NODE_PATH=node_modules KARMA_CONTRACT_ADDRESS=$$KARMA_ADDR RLN_CONTRACT_ADDRESS=$$RLN_ADDR node ../scripts/setup-prover-account.js || true) && \
+	(cd e2e && NODE_PATH=node_modules KARMA_CONTRACT_ADDRESS=$$KARMA_ADDR node ../scripts/grant-operator-role.js || true) && \
 	echo "Step 5: Restarting RLN prover in production mode..." && \
 	docker stop rln-prover karma-service 2>/dev/null || true && \
 	docker rm rln-prover karma-service 2>/dev/null || true && \
-	RLN_PROVER_IMAGE=$$(docker images --format '{{.Repository}}:{{.Tag}}' | grep status-rln-prover | head -1) && \
+	RLN_PROVER_IMAGE=$$(docker images --format '{{.Repository}}:{{.Tag}}' | grep status-network-rln-prover | grep -v ecr | grep -v 0xnadeem | head -1) && \
 	echo "  Using prover image: $$RLN_PROVER_IMAGE" && \
 	docker run -d --name rln-prover --hostname rln-prover \
 		--network docker_linea --ip 11.11.11.120 \

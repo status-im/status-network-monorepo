@@ -25,6 +25,15 @@ spec:
             - -c
             - |
               set -e
+              echo "L1 Genesis generation"
+
+              # Only generate genesis if it doesn't already exist (idempotent)
+              if [ -f /data/l1-node-config/genesis.json ] && [ -f /data/l1-node-config/genesis.ssz ]; then
+                echo "Genesis files already exist, skipping regeneration"
+                ls -la /data/l1-node-config/
+                exit 0
+              fi
+
               echo "Step 1: Running generate-genesis.sh to update timestamps"
               bash /config/generate-genesis.sh
 

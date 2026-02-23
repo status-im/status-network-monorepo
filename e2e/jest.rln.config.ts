@@ -13,6 +13,9 @@ const config: Config = {
   // globalSetup: "<rootDir>/src/config/jest/global-setup.ts",
   // globalTeardown: "<rootDir>/src/config/jest/global-teardown.ts",
   reporters: ["default"],
+  // Run test suites sequentially — all suites share the same admin wallet
+  // for funding/registration, so parallel execution causes nonce race conditions.
+  maxWorkers: 1,
 };
 
 export default config;

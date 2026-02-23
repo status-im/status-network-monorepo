@@ -1,7 +1,6 @@
 import { ethers } from "ethers";
 import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
 import { RlnTestClient, createFastProvider } from "./utils/rln-test-client";
-import { DenyListTestManager } from "./utils/deny-list-manager";
 import { KarmaTestManager, resetAdminNonceManager } from "./utils/karma-manager";
 import { createFundedWallet, uniqueTxData, TEST_RECIPIENT, PREMIUM_GAS_PRICE } from "./utils/test-helpers";
 import { RLN_CONFIG } from "./config/rln-config";
@@ -45,7 +44,6 @@ describe("RLN Integration and Error Handling", () => {
   let rpcProvider: ethers.Provider;
   let sequencerProvider: ethers.Provider;
   let rlnClient: RlnTestClient;
-  let denyListManager: DenyListTestManager;
   let karmaManager: KarmaTestManager;
   let contracts: RlnContracts;
   let admin: ethers.Wallet;
@@ -107,7 +105,6 @@ describe("RLN Integration and Error Handling", () => {
       RLN_CONFIG.services.karmaServiceUrl,
     );
 
-    denyListManager = new DenyListTestManager();
     karmaManager = new KarmaTestManager(contracts.karma, contracts.rln, admin, rlnClient);
 
     // PRE-REGISTER ALL USERS NEEDED FOR THIS TEST SUITE
@@ -174,8 +171,7 @@ describe("RLN Integration and Error Handling", () => {
   it(
     formatScenario(INT_001),
     async () => {
-      const epochDuration = RLN_CONFIG.test.epochDurationSeconds;
-      logger.info(`${INT_001.id}: Starting complete lifecycle test`, { epochDurationSeconds: epochDuration });
+      logger.info(`${INT_001.id}: Starting complete lifecycle test`);
 
       // Step 1: Create new user
       const user = getFundedUser();
@@ -187,6 +183,8 @@ describe("RLN Integration and Error Handling", () => {
       logger.info("Step 2: User registered with Entry tier");
 
       // Step 3: Send gasless transactions (exhaust quota)
+      // Ensure enough epoch time for quota TXs + expected failure (prevents epoch boundary resets)
+      await rlnClient.ensureEpochWindow(20000);
       const quota = RLN_CONFIG.tiers.entry.quota;
       for (let i = 0; i < quota; i++) {
         const receipt = await rlnClient.sendGaslessTransaction(user, {
@@ -198,27 +196,16 @@ describe("RLN Integration and Error Handling", () => {
       }
       logger.info(`Step 3: Sent ${quota} gasless transactions`);
 
-      // Step 4: Exhaust quota and get denied
-      await rlnClient.sendGaslessTransactionExpectFailure(user, {
+      // Step 4: Verify quota is exhausted (prover rejects proof request)
+      const errorMessage = await rlnClient.sendGaslessTransactionExpectFailure(user, {
         to: TEST_RECIPIENT,
         value: 0n,
         data: uniqueTxData("int001-exceed"),
       });
-      await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
-      expect(await denyListManager.isDenied(user.address)).toBe(true);
-      logger.info("Step 4: User denied after quota exhaustion");
-
-      // Step 5: Verify gasless is blocked
-      // Denial manifests as timeout (no proof generated) or explicit rejection
-      const errorMessage = await rlnClient.sendGaslessTransactionExpectFailure(user, {
-        to: TEST_RECIPIENT,
-        value: 0n,
-        data: uniqueTxData("int001-blocked"),
-      });
       expect(errorMessage).toMatch(/deny|denied|reject|quota|timeout|resource.*exhausted/i);
-      logger.info("Step 5: Gasless blocked while denied");
+      logger.info("Step 4: Gasless blocked after quota exhaustion");
 
-      // Step 6: Pay premium gas (removes from deny list)
+      // Step 5: Pay premium gas (removes from deny list AND resets quota)
       const premiumReceipt = await rlnClient.sendPremiumGasTransaction(user, {
         to: TEST_RECIPIENT,
         value: 0n,
@@ -226,28 +213,20 @@ describe("RLN Integration and Error Handling", () => {
         data: uniqueTxData("int001-premium"),
       });
       expect(premiumReceipt.status).toBe(1);
-      await denyListManager.waitForNotDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
-      logger.info("Step 6: Premium gas paid, removed from deny list");
+      logger.info("Step 5: Premium gas paid, quota reset");
 
-      // Step 7: Wait for new epoch (quota resets)
-      logger.info(`Step 7: Waiting for new epoch (max ${epochDuration + 2}s)...`);
-      await rlnClient.waitForNextEpoch((epochDuration + 2) * 1000);
-
-      // Allow prover to sync state after deny list clearance + epoch change
-      await rlnClient.sleep(1000);
-
-      // Step 8: Send gasless again (should work!)
+      // Step 6: Send gasless again (quota was reset by premium payment)
       const finalReceipt = await rlnClient.sendGaslessTransaction(user, {
         to: TEST_RECIPIENT,
         value: 0n,
         data: uniqueTxData("int001-final"),
       });
       expect(finalReceipt.status).toBe(1);
-      logger.info("Step 8: Gasless working again");
+      logger.info("Step 6: Gasless working again after premium gas");
 
       logger.info(`${INT_001.id}: PASSED ✓`);
     },
-    RLN_CONFIG.test.timeouts.epoch, // This test waits for epoch boundary (60s)
+    RLN_CONFIG.test.timeouts.epoch, // Registration + gasless + deny + premium + TTL recovery + gasless
   );
 
   it(
@@ -330,7 +309,7 @@ describe("RLN Integration and Error Handling", () => {
         avgPerTx: `${Math.round(duration / txCount)}ms`,
       });
     },
-    RLN_CONFIG.test.timeouts.multiTx, // 5 TXs = ~20s
+    RLN_CONFIG.test.timeouts.epoch, // ensureEpochWindow may wait up to 30s + 5 TXs
   );
 
   it(

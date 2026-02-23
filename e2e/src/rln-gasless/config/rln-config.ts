@@ -71,7 +71,7 @@ export const RLN_CONFIG = {
   // Service URLs
   // Note: RLN Prover handles both proof generation and karma/deny-list services
   services: {
-    rpcUrl: process.env.RPC_URL || "http://localhost:9045",
+    rpcUrl: process.env.RPC_URL || "http://localhost:8545",
     sequencerUrl: process.env.SEQUENCER_URL || "http://localhost:8545",
     rlnProverUrl: process.env.RLN_PROVER_URL || "http://localhost:50051",
     // karmaServiceUrl points to the same RLN prover (unified service)
@@ -107,21 +107,24 @@ export const RLN_CONFIG = {
     proofTimeoutMs: getEnvNumber("RLN_PROOF_TIMEOUT_MS", 5000),
     // Fixed wait time for prover to register user after karma mint
     registrationTimeoutMs: getEnvNumber("RLN_REGISTRATION_TIMEOUT_MS", 8000), // 8s fixed wait
-    transactionTimeoutMs: getEnvNumber("RLN_TX_TIMEOUT_MS", 15000), // 15s for tx mining (includes proof generation)
+    transactionTimeoutMs: getEnvNumber("RLN_TX_TIMEOUT_MS", 40000), // 40s for tx mining (concurrent proof generation can queue up)
     // Wait times for polling operations
     denyListPollIntervalMs: 1000, // 1s between polls
-    maxWaitForDenyListMs: 15000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1), // 15s local, 45s remote (3x)
+    // Deny list entries expire via TTL (denyListEntryMaxAgeMinutes=1 = 60s).
+    // Premium gas removes from deny list AND resets epoch counter (quota refresh).
+    // 70s allows for 60s TTL + buffer (still needed for natural TTL expiry tests like GAS_006).
+    maxWaitForDenyListMs: 70000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1), // 70s local, 210s remote (3x)
     // Jest test timeouts, scaled by TEST_TIMEOUT_MULTIPLIER for remote testnets
     // Local Docker: TEST_TIMEOUT_MULTIPLIER=1 (default)
     // Remote testnet: TEST_TIMEOUT_MULTIPLIER=3
     timeouts: {
-      singleTx: 20_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
-      multiTx: 60_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      singleTx: 15_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      multiTx: 45_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
       denyList: 90_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
-      highVolume: 120_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
-      epoch: 180_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
-      setup: 180_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
-      setupLarge: 300_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      highVolume: 90_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      epoch: 120_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      setup: 120_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      setupLarge: 180_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
     },
   },
 

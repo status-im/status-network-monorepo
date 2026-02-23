@@ -69,10 +69,10 @@ impl TierLimits {
                     return Err(ValidateTierLimitsError::InvalidMaxKarmaAmount);
                 }
 
-                if let Some(prev) = state.prev_tx_per_epoch {
-                    if tier.tx_per_epoch <= *prev {
-                        return Err(ValidateTierLimitsError::InvalidTierLimit);
-                    }
+                if let Some(prev) = state.prev_tx_per_epoch
+                    && tier.tx_per_epoch <= *prev
+                {
+                    return Err(ValidateTierLimitsError::InvalidTierLimit);
                 }
 
                 if state.tier_names.contains(&tier.name) {

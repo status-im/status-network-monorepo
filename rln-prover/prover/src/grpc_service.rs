@@ -1,10 +1,11 @@
 #![allow(clippy::type_complexity)]
 
 // std
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::num::NonZeroU64;
 use std::sync::Arc;
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 // third-party
 use alloy::{primitives::Address, providers::Provider};
 use async_channel::Sender;
@@ -12,7 +13,7 @@ use bytesize::ByteSize;
 use futures::TryFutureExt;
 use http::Method;
 use metrics::{counter, histogram};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{Mutex, broadcast, mpsc};
 use tonic::{
     Request, Response, Status, codegen::tokio_stream::wrappers::ReceiverStream, transport::Server,
 };
@@ -22,6 +23,7 @@ use tracing::{debug, error, info, warn};
 use url::Url;
 // internal
 use crate::error::{AppError2, ProofGenerationStringError};
+use crate::kill_switch::GasKillSwitch;
 use crate::metrics::{
     GET_PROOFS_LISTENERS, GET_USER_TIER_INFO_REQUESTS, GaugeWrapper,
     PROOF_SERVICES_CHANNEL_QUEUE_LEN, SEND_TRANSACTION_REQUESTS,
@@ -106,9 +108,11 @@ pub struct ProverService<KSC: KarmaAmountExt> {
     ),
     karma_sc: KSC,
     // karma_rln_sc: RLNSC,
+    in_flight_txs: Arc<Mutex<HashMap<Vec<u8>, Instant>>>,
     proof_sender_channel_size: usize,
     tx_gas_quota: NonZeroU64,
     rate_limit: RateLimit,
+    gas_kill_switch: GasKillSwitch,
 }
 
 #[tonic::async_trait]
@@ -123,6 +127,13 @@ where
         request: Request<SendTransactionRequest>,
     ) -> Result<Response<SendTransactionReply>, Status> {
         counter!(SEND_TRANSACTION_REQUESTS.name, "prover" => "grpc").increment(1);
+
+        if self.gas_kill_switch.is_active() {
+            return Err(Status::unavailable(
+                "Gas kill switch is active. Proof generation is temporarily disabled.",
+            ));
+        }
+
         debug!("send_transaction request: {:?}", request);
         let req = request.into_inner();
 
@@ -152,16 +163,31 @@ where
         };
 
         // Update the counter as soon as possible (should help to prevent spamming...)
-        let counter = self
+        let counter = match self
             .user_db
-            .on_new_tx(&sender, tx_counter_incr.map(|v| v as i64)) // FIXME: 'as'
+            .on_new_tx(&sender, tx_counter_incr.map(|v| v as i64))
             .await
-            .unwrap_or_default();
+        {
+            Ok(c) => c,
+            Err(e) => {
+                error!(
+                    "Database error incrementing tx counter for {}: {:?}",
+                    sender, e
+                );
+                return Err(Status::internal("Database error during rate limit check"));
+            }
+        };
 
         // Get user's tier-based quota limit
         let tier_limit = match self.user_db.user_tier_info(&sender, &self.karma_sc).await {
             Ok(tier_info) => tier_info.tier_limit,
-            Err(_) => None, // Fall back to global limit on error
+            Err(e) => {
+                warn!(
+                    "Failed to fetch tier info for {}: {:?}. Using global rate limit.",
+                    sender, e
+                );
+                None
+            }
         };
 
         // Check against tier limit if available, otherwise use global spam limit
@@ -199,6 +225,17 @@ where
             return Err(Status::invalid_argument(
                 "Invalid transaction hash (should be 32 bytes)",
             ));
+        }
+
+        // Deduplication check: reject if tx is already in-flight
+        {
+            let mut in_flight = self.in_flight_txs.lock().await;
+            if in_flight.contains_key(&req.transaction_hash) {
+                return Err(Status::already_exists(
+                    "Transaction already being processed",
+                ));
+            }
+            in_flight.insert(req.transaction_hash.clone(), Instant::now());
         }
 
         // Inexpensive clone (behind Arc ptr)
@@ -292,6 +329,10 @@ where
                             }
                             Ok(Err(e)) => {
                                 warn!("[gRPC] Proof generation error: {:?}", e);
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                warn!("[gRPC] Broadcast receiver lagged by {} messages, continuing", n);
+                                continue;
                             }
                             Err(e) => {
                                 error!("[gRPC] Broadcast channel error: {:?}", e);
@@ -436,6 +477,18 @@ where
                 } else {
                     debug!("Address {} was not on deny list", address);
                 }
+
+                // After removing from deny list, reset epoch counter if requested
+                if req.reset_epoch_counter.unwrap_or(false) {
+                    if let Err(e) = self.user_db.reset_tx_counter(&address).await {
+                        error!("Failed to reset epoch counter for {}: {:?}", address, e);
+                        return Err(Status::internal(format!(
+                            "Failed to reset epoch counter: {e}"
+                        )));
+                    }
+                    info!("Epoch counter reset for {} (premium gas payment)", address);
+                }
+
                 Ok(Response::new(RemoveFromDenyListReply {
                     success: true,
                     was_present,
@@ -578,6 +631,7 @@ pub(crate) struct GrpcProverService<P: Provider> {
     pub grpc_reflection: bool,
     pub tx_gas_quota: NonZeroU64,
     pub rate_limit: RateLimit,
+    pub gas_kill_switch: GasKillSwitch,
 }
 
 impl<P: Provider + Clone + Send + Sync + 'static> GrpcProverService<P> {
@@ -590,6 +644,55 @@ impl<P: Provider + Clone + Send + Sync + 'static> GrpcProverService<P> {
             panic!("Please provide karma_sc_info or use serve_with_mock");
         };
 
+        let in_flight_txs: Arc<Mutex<HashMap<Vec<u8>, Instant>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+
+        // Spawn background task to clean up in_flight_txs when proofs are generated
+        // This prevents unbounded memory growth (RP-C2 fix)
+        {
+            let in_flight_cleanup = in_flight_txs.clone();
+            let mut cleanup_rx = self.broadcast_channel.0.subscribe();
+            tokio::spawn(async move {
+                let mut cleanup_interval = tokio::time::interval(Duration::from_secs(60));
+                loop {
+                    tokio::select! {
+                        result = cleanup_rx.recv() => {
+                            match result {
+                                Ok(Ok(data)) => {
+                                    let mut in_flight = in_flight_cleanup.lock().await;
+                                    if in_flight.remove(&data.tx_hash).is_some() {
+                                        debug!("[cleanup] Removed completed tx from in_flight_txs, remaining: {}", in_flight.len());
+                                    }
+                                }
+                                Ok(Err(_)) => {
+                                    // Proof generation error — tx_hash not available in error type.
+                                    // Stale entries will be cleaned up by the periodic sweep below.
+                                }
+                                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                    warn!("[cleanup] Broadcast receiver lagged by {} messages", n);
+                                    continue;
+                                }
+                                Err(_) => {
+                                    info!("[cleanup] Broadcast channel closed, stopping in_flight_txs cleanup");
+                                    break;
+                                }
+                            }
+                        }
+                        _ = cleanup_interval.tick() => {
+                            // Periodic sweep: remove entries older than 5 minutes (stuck/failed proofs)
+                            let mut in_flight = in_flight_cleanup.lock().await;
+                            let before = in_flight.len();
+                            in_flight.retain(|_, inserted_at| inserted_at.elapsed() < Duration::from_secs(300));
+                            let removed = before - in_flight.len();
+                            if removed > 0 {
+                                info!("[cleanup] Removed {} stale in-flight txs (>5min old)", removed);
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
         let prover_service = ProverService {
             proof_sender: self.proof_sender.clone(),
             user_db: self.user_db.clone(),
@@ -599,9 +702,11 @@ impl<P: Provider + Clone + Send + Sync + 'static> GrpcProverService<P> {
                 self.broadcast_channel.0.subscribe(),
             ),
             karma_sc,
+            in_flight_txs,
             proof_sender_channel_size: self.proof_sender_channel_size,
             tx_gas_quota: self.tx_gas_quota,
             rate_limit: self.rate_limit,
+            gas_kill_switch: self.gas_kill_switch.clone(),
         };
 
         let reflection_service = if self.grpc_reflection {
@@ -636,6 +741,14 @@ impl<P: Provider + Clone + Send + Sync + 'static> GrpcProverService<P> {
             .allow_origin(Any)
             .allow_headers(Any);
 
+        // TODO: Add authentication (mTLS or API key) for admin endpoints
+        // (add_to_deny_list, remove_from_deny_list, record_nullifier).
+        // Currently these endpoints are unauthenticated and should only be
+        // exposed within a trusted network boundary.
+        warn!(
+            "Admin gRPC endpoints (deny list, nullifier management) are NOT authenticated. Ensure network-level access control is in place."
+        );
+
         Server::builder()
             // service protection && limits
             // limits: connection
@@ -659,6 +772,37 @@ impl<P: Provider + Clone + Send + Sync + 'static> GrpcProverService<P> {
     }
 
     pub(crate) async fn serve_with_mock(&self) -> Result<(), AppError2> {
+        let in_flight_txs: Arc<Mutex<HashMap<Vec<u8>, Instant>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+
+        // Spawn background task to clean up in_flight_txs (same as serve())
+        {
+            let in_flight_cleanup = in_flight_txs.clone();
+            let mut cleanup_rx = self.broadcast_channel.0.subscribe();
+            tokio::spawn(async move {
+                let mut cleanup_interval = tokio::time::interval(Duration::from_secs(60));
+                loop {
+                    tokio::select! {
+                        result = cleanup_rx.recv() => {
+                            match result {
+                                Ok(Ok(data)) => {
+                                    let mut in_flight = in_flight_cleanup.lock().await;
+                                    in_flight.remove(&data.tx_hash);
+                                }
+                                Ok(Err(_)) => {}
+                                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                                Err(_) => break,
+                            }
+                        }
+                        _ = cleanup_interval.tick() => {
+                            let mut in_flight = in_flight_cleanup.lock().await;
+                            in_flight.retain(|_, inserted_at| inserted_at.elapsed() < Duration::from_secs(300));
+                        }
+                    }
+                }
+            });
+        }
+
         let prover_service = ProverService {
             proof_sender: self.proof_sender.clone(),
             user_db: self.user_db.clone(),
@@ -669,9 +813,11 @@ impl<P: Provider + Clone + Send + Sync + 'static> GrpcProverService<P> {
             ),
             karma_sc: MockKarmaSc {},
             // karma_rln_sc: MockKarmaRLNSc {},
+            in_flight_txs,
             proof_sender_channel_size: self.proof_sender_channel_size,
             tx_gas_quota: self.tx_gas_quota,
             rate_limit: self.rate_limit,
+            gas_kill_switch: self.gas_kill_switch.clone(),
         };
 
         let reflection_service = if self.grpc_reflection {

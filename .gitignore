@@ -165,3 +165,9 @@ k8s/terraform/terraform.tfstate*
 k8s/terraform/tfplan
 k8s/helm/status-network/values-secrets.yaml
 k8s/helm/status-network/values-secrets-*.yaml
+
+# Besu source checkout (for local development only)
+.linea-besu-source/
+
+# Backup files
+*.backup.*

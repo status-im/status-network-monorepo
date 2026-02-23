@@ -321,7 +321,7 @@ describe("RLN Karma and Tier System", () => {
         },
         10000, // 10s timeout
       );
-      expect(entryError).toMatch(/quota|exceeded|deny|denied|timeout/i);
+      expect(entryError).toMatch(/quota|exceeded|exhausted|deny|denied|timeout|resource/i);
 
       logger.info(`${KARMA_006.id}: PASSED ✓`);
     },

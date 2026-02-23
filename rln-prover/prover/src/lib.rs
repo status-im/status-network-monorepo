@@ -3,6 +3,7 @@ mod epoch_service;
 mod error;
 mod grpc_service;
 mod karma_sc_listener;
+mod kill_switch;
 pub mod metrics;
 mod mock;
 mod proof_generation;
@@ -45,7 +46,7 @@ use sqlx::{
     postgres::{PgArgumentBuffer, PgHasArrayType, PgTypeInfo, PgValueRef, Postgres, types::Oid},
 };
 use tokio::task::JoinSet;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use zeroize::Zeroizing;
 // internal
 pub use crate::args::{ARGS_DEFAULT_GENESIS, AppArgs, AppArgsConfig};
@@ -53,6 +54,7 @@ use crate::epoch_service::EpochService;
 use crate::error::AppError2;
 use crate::grpc_service::GrpcProverService;
 use crate::karma_sc_listener::KarmaScEventListener;
+use crate::kill_switch::GasKillSwitch;
 pub use crate::mock::MockUser;
 use crate::mock::read_mock_user;
 use crate::proof_service::ProofService;
@@ -233,6 +235,15 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
         ))
     };
 
+    // Gas kill switch
+    let gas_kill_switch = GasKillSwitch::new();
+    if !app_args.kill_switch_file.is_empty() {
+        gas_kill_switch.start_watcher(
+            std::path::PathBuf::from(&app_args.kill_switch_file),
+            Duration::from_secs(app_args.kill_switch_poll_secs),
+        );
+    }
+
     // proof service
     let (tx, rx) = tokio::sync::broadcast::channel(app_args.broadcast_channel_size);
     let (proof_sender, proof_receiver) = async_channel::bounded(app_args.transaction_channel_size);
@@ -255,6 +266,7 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
             grpc_reflection: !app_args.no_grpc_reflection,
             tx_gas_quota: app_args.tx_gas_quota,
             rate_limit: RateLimit::from(app_args.spam_limit),
+            gas_kill_switch: gas_kill_switch.clone(),
         };
 
         if app_args.ws_rpc_url.is_some() {
@@ -318,6 +330,10 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
         info!("Grpc service started with mocked smart contracts");
         set.spawn(async move { prover_grpc_service.serve_with_mock().await });
     }
+
+    // TODO: Add periodic cleanup task for nullifiers and deny list entries.
+    // Methods cleanup_old_nullifiers() and cleanup_expired_deny_list_entries()
+    // need to be implemented on UserDb2 first.
 
     let res = set.join_all().await;
     // Print all errors from services (if any)

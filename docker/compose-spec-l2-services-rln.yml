@@ -35,7 +35,7 @@ services:
   rln-prover:
     hostname: rln-prover
     container_name: rln-prover
-    image: 0xnadeem/status-network-rln-prover:v1.0.1
+    image: status-network-rln-prover:v1.0.2
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo", "rln" ]
     ports:
       - "50051:50051"
@@ -51,6 +51,7 @@ services:
     volumes:
       - local-dev:/app/data
       - ./config/rln-prover/mock_users.json:/app/mock_users.json:ro
+      - gas-kill-switch:/var/lib/besu/kill-switch
     healthcheck:
       test: [ "CMD-SHELL", "ps aux | grep -w prover_cli | grep -v grep" ]
       interval: 5s
@@ -60,12 +61,12 @@ services:
     networks:
       linea:
         ipv4_address: 11.11.11.120
-    platform: linux/amd64
+    platform: linux/arm64
 
   sequencer:
     hostname: sequencer
     container_name: sequencer
-    image: 0xnadeem/status-network-besu:v1.0.1
+    image: status-network-besu:20260223024755-v1.0.3
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     ports:
       - "8545:8545"
@@ -107,8 +108,9 @@ services:
           --plugin-linea-rln-timeouts-ms=10000 \
           --plugin-linea-rln-proof-wait-timeout-ms=10000 \
           --plugin-linea-rln-epoch-mode=TEST \
+          --plugin-linea-rln-premium-gas-threshold-gwei=12 \
           --plugin-linea-rpc-gasless-enabled=true \
-          --plugin-linea-rpc-rln-prover-forwarder-enabled=false \
+          --plugin-linea-rpc-rln-prover-forwarder-enabled=true \
           --plugin-linea-rpc-allow-zero-gas-estimation-gasless=true \
           --plugin-linea-rpc-premium-gas-multiplier=1.5 \
           --plugin-linea-min-margin=0 \
@@ -119,7 +121,8 @@ services:
           --plugin-linea-variable-gas-cost-wei=0 \
           --plugin-linea-fixed-gas-cost-wei=0 \
           --plugin-linea-estimate-gas-compatibility-mode-enabled=true \
-          --plugin-linea-estimate-gas-compatibility-mode-multiplier=1.2
+          --plugin-linea-estimate-gas-compatibility-mode-multiplier=1.2 \
+          --plugin-linea-gas-kill-switch-file=/var/lib/besu/kill-switch/gas-kill-switch
     volumes:
       - ./config/linea-besu-sequencer/sequencer.config.toml:/var/lib/besu/sequencer.config.toml:ro
       - ./config/linea-besu-sequencer/deny-list.txt:/var/lib/besu/deny-list.txt:ro
@@ -130,7 +133,7 @@ services:
       - ../tmp/local/sequencer-data/:/data/:rw
       - ./config/linea-besu-sequencer/rln/:/var/lib/besu/rln/:ro
       - ./config/l2-genesis-initialization:/initialization/:ro
-      - ../tmp/libs_fix/librln_bridge.so:/opt/besu/lib/native/librln_bridge.so
+      - gas-kill-switch:/var/lib/besu/kill-switch
     networks:
       l1network:
       linea:
@@ -173,7 +176,7 @@ services:
   l2-node-besu:
     hostname: l2-node-besu
     container_name: l2-node-besu
-    image: 0xnadeem/status-network-besu:v1.0.1
+    image: status-network-besu:20260223024755-v1.0.3
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     depends_on:
       sequencer:
@@ -220,7 +223,8 @@ services:
           --plugin-linea-rpc-allow-zero-gas-estimation-gasless=true \
           --plugin-linea-rpc-premium-gas-multiplier=1.5 \
           --plugin-linea-estimate-gas-compatibility-mode-enabled=true \
-          --plugin-linea-estimate-gas-compatibility-mode-multiplier=1.2
+          --plugin-linea-estimate-gas-compatibility-mode-multiplier=1.2 \
+          --plugin-linea-gas-kill-switch-file=/var/lib/besu/kill-switch/gas-kill-switch
     volumes:
       - ./config/l2-node-besu/l2-node-besu-config.toml:/var/lib/besu/l2-node-besu.config.toml:ro
       - ./config/linea-besu-sequencer/deny-list.txt:/var/lib/besu/deny-list.txt:rw
@@ -228,7 +232,7 @@ services:
       - ./config/l2-genesis-initialization:/initialization/:ro
       - ../config/common/traces-limits-v4.4.toml:/var/lib/besu/traces-limits.toml:ro
       - ../tmp/local/:/data/:rw
-      - ../tmp/libs_fix/librln_bridge.so:/opt/besu/lib/native/librln_bridge.so
+      - gas-kill-switch:/var/lib/besu/kill-switch:ro
     networks:
       l1network:
       linea:
@@ -238,7 +242,7 @@ services:
   l2-node-besu-follower:
     hostname: l2-node-besu-follower
     container_name: l2-node-besu-follower
-    image: 0xnadeem/status-network-besu:v1.0.1
+    image: status-network-besu:20260222235101-gasless-fix
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     depends_on:
       sequencer:
@@ -285,7 +289,8 @@ services:
           --plugin-linea-rpc-allow-zero-gas-estimation-gasless=true \
           --plugin-linea-rpc-premium-gas-multiplier=1.5 \
           --plugin-linea-estimate-gas-compatibility-mode-enabled=true \
-          --plugin-linea-estimate-gas-compatibility-mode-multiplier=1.2
+          --plugin-linea-estimate-gas-compatibility-mode-multiplier=1.2 \
+          --plugin-linea-gas-kill-switch-file=/var/lib/besu/kill-switch/gas-kill-switch
     volumes:
       - ./config/l2-node-besu/l2-node-besu-config.toml:/var/lib/besu/l2-node-besu.config.toml:ro
       - ./config/linea-besu-sequencer/deny-list.txt:/var/lib/besu/deny-list.txt:ro
@@ -293,7 +298,7 @@ services:
       - ../config/common/traces-limits-v4.4.toml:/var/lib/besu/traces-limits.toml:ro
       - ./config/l2-genesis-initialization:/initialization/:ro
       - ../tmp/local/:/data/:rw
-      - ../tmp/libs_fix/librln_bridge.so:/opt/besu/lib/native/librln_bridge.so
+      - gas-kill-switch:/var/lib/besu/kill-switch:ro
     networks:
       l1network:
       linea:
@@ -802,6 +807,7 @@ volumes:
   local-dev:
   rln-data:
   logs:
+  gas-kill-switch:
 
 networks:
   l1network:

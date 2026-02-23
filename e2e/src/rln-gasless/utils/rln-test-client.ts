@@ -623,6 +623,28 @@ export class RlnTestClient {
   }
 
   /**
+   * Wait until there's enough time remaining in the current epoch.
+   * This ensures that operations complete before an epoch boundary resets quotas.
+   * @param requiredMs Minimum milliseconds needed within the current epoch
+   */
+  async ensureEpochWindow(requiredMs: number): Promise<void> {
+    const epochDurationMs = RLN_CONFIG.test.epochDurationSeconds * 1000;
+    const nowMs = Date.now();
+    const epochStartMs = Math.floor(nowMs / epochDurationMs) * epochDurationMs;
+    const remainingMs = epochStartMs + epochDurationMs - nowMs;
+
+    if (remainingMs >= requiredMs) {
+      this.logger.debug("Epoch window sufficient", { remainingMs, requiredMs });
+      return;
+    }
+
+    // Wait for the next epoch to start, then we have a full epoch
+    const waitMs = remainingMs + 1000; // +1s buffer after epoch start
+    this.logger.info(`Waiting ${waitMs}ms for fresh epoch (need ${requiredMs}ms window)`);
+    await this.sleep(waitMs);
+  }
+
+  /**
    * Get transaction pool status
    */
   async getTxPoolStatus(): Promise<{ pending: number; queued: number }> {

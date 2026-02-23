@@ -107,15 +107,15 @@ export const DENY_001 = scenario("DENY_001", "User exceeding quota is added to d
 
 export const DENY_002 = scenario("DENY_002", "Denied user cannot send gasless transactions", "DENY_LIST");
 
-export const DENY_003 = scenario("DENY_003", "Premium gas clears deny status (recovery path)", "DENY_LIST");
+export const DENY_003 = scenario("DENY_003", "Premium gas instantly clears deny status and resets quota", "DENY_LIST");
 
 export const DENY_004 = scenario("DENY_004", "Denied user can send premium gas transaction", "DENY_LIST");
 
-export const DENY_005 = scenario("DENY_005", "Premium gas payment removes user from deny list", "DENY_LIST");
+export const DENY_005 = scenario("DENY_005", "Premium gas payment instantly removes user from deny list", "DENY_LIST");
 
 export const DENY_006 = scenario(
   "DENY_006",
-  "After premium recovery and new epoch, user can send gasless again",
+  "After premium gas payment, user can immediately send gasless again (quota reset)",
   "DENY_LIST",
 );
 

@@ -18,28 +18,26 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.protobuf.ByteString;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
 import java.io.Closeable;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import net.consensys.linea.config.GasKillSwitchMonitor;
 import net.consensys.linea.config.LineaRlnValidatorConfiguration;
 import net.consensys.linea.config.LineaTracerConfiguration;
 import net.consensys.linea.plugins.config.LineaL1L2BridgeSharedConfiguration;
-import net.consensys.linea.sequencer.txpoolvalidation.shared.KarmaServiceClient;
-import net.consensys.linea.sequencer.txpoolvalidation.shared.KarmaServiceClient.KarmaInfo;
-import net.consensys.linea.zktracer.LineCountingTracer;
-import net.consensys.linea.zktracer.ZkCounter;
-import net.consensys.linea.zktracer.ZkTracer;
 import net.vac.prover.Address;
+import net.vac.prover.RemoveFromDenyListRequest;
 import net.vac.prover.RlnProverGrpc;
 import net.vac.prover.SendTransactionReply;
 import net.vac.prover.SendTransactionRequest;
 import net.vac.prover.U256;
 import net.vac.prover.Wei;
 import org.hyperledger.besu.datatypes.Transaction;
-import org.hyperledger.besu.plugin.data.ProcessableBlockHeader;
 import org.hyperledger.besu.plugin.services.BlockchainService;
 import org.hyperledger.besu.plugin.services.TransactionSimulationService;
 import org.hyperledger.besu.plugin.services.txvalidator.PluginTransactionPoolValidator;
@@ -85,20 +83,23 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
   private final LineaRlnValidatorConfiguration rlnConfig;
   private final boolean enabled;
 
+  // Circuit breaker threshold: reject after this many consecutive gRPC failures
+  private static final int CIRCUIT_BREAKER_THRESHOLD = 5;
+
   // Statistics tracking
   private final AtomicInteger validationCallCount = new AtomicInteger(0);
   private final AtomicInteger localTransactionCount = new AtomicInteger(0);
   private final AtomicInteger peerTransactionCount = new AtomicInteger(0);
   private final AtomicInteger grpcSuccessCount = new AtomicInteger(0);
   private final AtomicInteger grpcFailureCount = new AtomicInteger(0);
-  private final AtomicInteger karmaBypassCount = new AtomicInteger(0);
+  private final AtomicInteger consecutiveGrpcFailures = new AtomicInteger(0);
 
   // gRPC client components
   private final ManagedChannel channel;
   private final RlnProverGrpc.RlnProverBlockingStub blockingStub;
 
-  // Karma service for gasless validation
-  private final KarmaServiceClient karmaServiceClient;
+  // Gas kill switch monitor
+  private final GasKillSwitchMonitor gasKillSwitchMonitor;
 
   // Simulation dependencies for estimating gas used
   private final TransactionSimulationService transactionSimulationService;
@@ -112,35 +113,26 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
    *
    * @param rlnConfig Configuration for RLN validation including prover service endpoint
    * @param enabled Whether the validator is enabled (should be false in sequencer mode)
-   * @param karmaServiceClient Service for checking karma eligibility for gasless transactions
    */
   public RlnProverForwarderValidator(
       LineaRlnValidatorConfiguration rlnConfig,
       boolean enabled,
-      KarmaServiceClient karmaServiceClient,
       TransactionSimulationService transactionSimulationService,
       BlockchainService blockchainService,
       org.hyperledger.besu.plugin.services.WorldStateService worldStateService,
       LineaTracerConfiguration tracerConfiguration,
-      LineaL1L2BridgeSharedConfiguration l1L2BridgeSharedConfiguration) {
+      LineaL1L2BridgeSharedConfiguration l1L2BridgeSharedConfiguration,
+      GasKillSwitchMonitor gasKillSwitchMonitor) {
     this(
         rlnConfig,
         enabled,
-        karmaServiceClient,
         transactionSimulationService,
         blockchainService,
         worldStateService,
         tracerConfiguration,
         l1L2BridgeSharedConfiguration,
+        gasKillSwitchMonitor,
         null);
-  }
-
-  /** Backward-compatible constructor used by existing tests. New dependencies default to null. */
-  public RlnProverForwarderValidator(
-      LineaRlnValidatorConfiguration rlnConfig,
-      boolean enabled,
-      KarmaServiceClient karmaServiceClient) {
-    this(rlnConfig, enabled, karmaServiceClient, null, null, null, null, null, null);
   }
 
   /**
@@ -162,23 +154,22 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
    *
    * @param rlnConfig Configuration for RLN validation
    * @param enabled Whether the validator is enabled
-   * @param karmaServiceClient Service for checking karma eligibility for gasless transactions
    * @param providedChannel Optional pre-configured gRPC channel for testing
    */
   @VisibleForTesting
   RlnProverForwarderValidator(
       LineaRlnValidatorConfiguration rlnConfig,
       boolean enabled,
-      KarmaServiceClient karmaServiceClient,
       TransactionSimulationService transactionSimulationService,
       BlockchainService blockchainService,
       org.hyperledger.besu.plugin.services.WorldStateService worldStateService,
       LineaTracerConfiguration tracerConfiguration,
       LineaL1L2BridgeSharedConfiguration l1L2BridgeSharedConfiguration,
+      GasKillSwitchMonitor gasKillSwitchMonitor,
       ManagedChannel providedChannel) {
     this.rlnConfig = rlnConfig;
     this.enabled = enabled;
-    this.karmaServiceClient = karmaServiceClient;
+    this.gasKillSwitchMonitor = gasKillSwitchMonitor;
     this.transactionSimulationService = transactionSimulationService;
     this.blockchainService = blockchainService;
     this.worldStateService = worldStateService;
@@ -264,6 +255,26 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
       return Optional.empty();
     }
 
+    // When gas kill switch is active, allow premium transactions but reject gasless
+    if (gasKillSwitchMonitor != null && gasKillSwitchMonitor.isActive()) {
+      BigInteger killSwitchGasPrice = computeEffectiveGasPrice(transaction);
+      long premiumThreshold = rlnConfig != null ? rlnConfig.premiumGasPriceThresholdWei() : 0L;
+      if (killSwitchGasPrice.compareTo(BigInteger.valueOf(premiumThreshold)) >= 0) {
+        LOG.info(
+            "Gas kill switch ACTIVE but tx {} pays premium gas. Allowing.",
+            transaction.getHash().toHexString());
+        return Optional.empty();
+      }
+      LOG.warn(
+          "Gas kill switch ACTIVE - rejecting gasless tx {} from {} (gas price {} Wei < premium threshold {} Wei)",
+          transaction.getHash().toHexString(),
+          transaction.getSender().toHexString(),
+          killSwitchGasPrice,
+          premiumThreshold);
+      return Optional.of(
+          "Gas kill switch is active. Gasless transactions are temporarily disabled.");
+    }
+
     // Only validate local transactions via gRPC
     if (!isLocal) {
       peerTransactionCount.incrementAndGet();
@@ -275,16 +286,10 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
     // Premium transactions bypass RLN entirely - they pay high gas fees
     // Transactions with 0 < gas < premium still need RLN proof
     if (rlnConfig != null) {
-      BigInteger effectiveGasPrice =
-          transaction
-              .getGasPrice()
-              .map(q -> q.getAsBigInteger())
-              .orElseGet(
-                  () ->
-                      transaction
-                          .getMaxFeePerGas()
-                          .map(q -> q.getAsBigInteger())
-                          .orElse(BigInteger.ZERO));
+      // Compute effective gas price correctly for both legacy and EIP-1559 transactions
+      // Legacy: use gasPrice directly
+      // EIP-1559: min(maxFeePerGas, baseFee + maxPriorityFeePerGas)
+      BigInteger effectiveGasPrice = computeEffectiveGasPrice(transaction);
       long premiumThresholdWei = rlnConfig.premiumGasPriceThresholdWei();
       if (effectiveGasPrice.compareTo(BigInteger.valueOf(premiumThresholdWei)) >= 0) {
         LOG.debug(
@@ -292,6 +297,32 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
             transaction.getHash().toHexString(),
             effectiveGasPrice,
             premiumThresholdWei);
+
+        // Premium gas payment: remove from deny list and reset epoch counter on the prover.
+        // This ensures users who pay premium gas get their gasless quota restored.
+        try {
+          RemoveFromDenyListRequest removeRequest =
+              RemoveFromDenyListRequest.newBuilder()
+                  .setAddress(
+                      Address.newBuilder()
+                          .setValue(ByteString.copyFrom(transaction.getSender().toArrayUnsafe()))
+                          .build())
+                  .setResetEpochCounter(true)
+                  .build();
+          blockingStub
+              .withDeadlineAfter(5000, TimeUnit.MILLISECONDS)
+              .removeFromDenyList(removeRequest);
+          LOG.info(
+              "Premium gas TX {}: removed sender {} from deny list and reset epoch counter",
+              transaction.getHash().toHexString(),
+              transaction.getSender().toHexString());
+        } catch (Exception e) {
+          LOG.debug(
+              "Failed to remove sender {} from deny list (may not be denied): {}",
+              transaction.getSender().toHexString(),
+              e.getMessage());
+        }
+
         return Optional.empty(); // Accept premium transactions without RLN forwarding
       }
     }
@@ -306,58 +337,17 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
         transaction.getMaxPriorityFeePerGas().map(Object::toString).orElse("-"),
         transaction.getChainId().map(Object::toString).orElse("-"));
 
-    // GASLESS KARMA CHECK: Check if user is eligible for gasless transactions
-    if (karmaServiceClient != null && karmaServiceClient.isAvailable()) {
-      try {
-        Optional<KarmaInfo> karmaInfoOpt =
-            karmaServiceClient.fetchKarmaInfo(transaction.getSender());
-
-        if (karmaInfoOpt.isPresent()) {
-          KarmaInfo karmaInfo = karmaInfoOpt.get();
-          boolean hasQuotaAvailable = karmaInfo.epochTxCount() < karmaInfo.dailyQuota();
-          boolean isEligibleTier =
-              !"Unknown".equals(karmaInfo.tier()) && karmaInfo.dailyQuota() > 0;
-
-          LOG.debug(
-              "Karma check for sender {}: Tier={}, TxCount={}, Quota={}, HasQuota={}, IsEligibleTier={}",
-              transaction.getSender().toHexString(),
-              karmaInfo.tier(),
-              karmaInfo.epochTxCount(),
-              karmaInfo.dailyQuota(),
-              hasQuotaAvailable,
-              isEligibleTier);
-
-          if (hasQuotaAvailable && isEligibleTier) {
-            // User has available karma quota - prioritize for gasless but still validate through
-            // prover
-            karmaBypassCount.incrementAndGet();
-            LOG.info(
-                "⚡ GASLESS PRIORITY: Sender {} has tier '{}' with available quota ({}/{}). Prioritizing gasless transaction {} for prover validation",
-                transaction.getSender().toHexString(),
-                karmaInfo.tier(),
-                karmaInfo.epochTxCount(),
-                karmaInfo.dailyQuota(),
-                transaction.getHash().toHexString());
-            // Continue with prover validation but with priority handling
-          } else {
-            LOG.debug(
-                "Sender {} does not qualify for gasless bypass. HasQuota={}, IsEligibleTier={}",
-                transaction.getSender().toHexString(),
-                hasQuotaAvailable,
-                isEligibleTier);
-          }
-        } else {
-          LOG.debug("No karma info found for sender {}", transaction.getSender().toHexString());
-        }
-      } catch (Exception e) {
-        LOG.warn(
-            "Failed to check karma for sender {}: {}",
-            transaction.getSender().toHexString(),
-            e.getMessage());
-      }
+    // Circuit breaker: if too many consecutive gRPC failures, reject instead of fail-open
+    if (consecutiveGrpcFailures.get() >= CIRCUIT_BREAKER_THRESHOLD) {
+      LOG.error(
+          "Circuit breaker OPEN: {} consecutive gRPC failures. Rejecting tx {} to prevent fail-open.",
+          consecutiveGrpcFailures.get(),
+          transaction.getHash().toHexString());
+      return Optional.of(
+          "RLN prover service unavailable (circuit breaker open). Please try again later.");
     }
 
-    // Continue with normal RLN prover forwarding if not eligible for gasless bypass
+    // Forward to RLN prover
     try {
       SendTransactionRequest.Builder requestBuilder = SendTransactionRequest.newBuilder();
 
@@ -406,82 +396,162 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
           transaction.getHash().toHexString(),
           transaction.getSender().toHexString(),
           transaction.getChainId().map(Object::toString).orElse("-"));
-      SendTransactionReply reply = blockingStub.sendTransaction(request);
+      long grpcTimeoutMs = rlnConfig != null ? rlnConfig.karmaServiceTimeoutMs() : 5000L;
+      SendTransactionReply reply =
+          blockingStub
+              .withDeadlineAfter(grpcTimeoutMs, TimeUnit.MILLISECONDS)
+              .sendTransaction(request);
 
       if (reply.getResult()) {
         grpcSuccessCount.incrementAndGet();
+        consecutiveGrpcFailures.set(0); // Reset circuit breaker on success
         LOG.debug("RLN prover accepted transaction {}", transaction.getHash());
         return Optional.empty(); // Transaction is valid
       } else {
         grpcFailureCount.incrementAndGet();
+        consecutiveGrpcFailures.set(0); // Rejection is a successful response, reset breaker
         LOG.warn("RLN prover rejected transaction {}", transaction.getHash());
         return Optional.of("RLN prover rejected transaction");
       }
 
-    } catch (final Exception e) {
+    } catch (final StatusRuntimeException sre) {
+      // gRPC status-based responses: distinguish intentional rejections from transient errors
+      Status.Code code = sre.getStatus().getCode();
+      if (code == Status.Code.RESOURCE_EXHAUSTED
+          || code == Status.Code.NOT_FOUND
+          || code == Status.Code.INVALID_ARGUMENT
+          || code == Status.Code.PERMISSION_DENIED) {
+        // Intentional rejection by the prover (quota exceeded, unregistered user, bad input)
+        consecutiveGrpcFailures.set(0); // Not a failure, reset circuit breaker
+        LOG.warn(
+            "RLN prover rejected transaction {} ({}): {}",
+            transaction.getHash(),
+            code,
+            sre.getStatus().getDescription());
+        return Optional.of(
+            "RLN prover rejected transaction (" + code + "): " + sre.getStatus().getDescription());
+      }
+      // Transient gRPC error (UNAVAILABLE, DEADLINE_EXCEEDED, etc.)
       grpcFailureCount.incrementAndGet();
+      int failures = consecutiveGrpcFailures.incrementAndGet();
       LOG.warn(
-          "gRPC forwarding failed for transaction {}, falling back to default validation: {}",
+          "gRPC forwarding failed for transaction {} (consecutive failures: {}, status: {}): {}",
           transaction.getHash(),
+          failures,
+          code,
+          sre.getMessage());
+      if (failures >= CIRCUIT_BREAKER_THRESHOLD) {
+        LOG.error(
+            "Circuit breaker OPENING after {} consecutive gRPC failures. Subsequent transactions will be rejected.",
+            failures);
+        return Optional.of("RLN prover service unavailable. Please try again later.");
+      }
+      // Below threshold: graceful fallback - accept the transaction
+      return Optional.empty();
+    } catch (final Exception e) {
+      // Non-gRPC exceptions (unexpected errors)
+      grpcFailureCount.incrementAndGet();
+      int failures = consecutiveGrpcFailures.incrementAndGet();
+      LOG.warn(
+          "gRPC forwarding failed for transaction {} (consecutive failures: {}): {}",
+          transaction.getHash(),
+          failures,
           e.getMessage());
-      // Graceful fallback: accept the transaction if gRPC fails
+      if (failures >= CIRCUIT_BREAKER_THRESHOLD) {
+        LOG.error(
+            "Circuit breaker OPENING after {} consecutive gRPC failures. Subsequent transactions will be rejected.",
+            failures);
+        return Optional.of("RLN prover service unavailable. Please try again later.");
+      }
+      // Below threshold: graceful fallback - accept the transaction
       return Optional.empty();
     }
   }
 
-  private LineCountingTracer createLineCountingTracer(
-      final ProcessableBlockHeader pendingBlockHeader, final BigInteger chainId) {
-    var lineCountingTracer =
-        tracerConfiguration != null && tracerConfiguration.isLimitless()
-            ? new ZkCounter(l1L2BridgeConfiguration, net.consensys.linea.zktracer.Fork.LONDON)
-            : new ZkTracer(
-                net.consensys.linea.zktracer.Fork.LONDON, l1L2BridgeConfiguration, chainId);
-    lineCountingTracer.traceStartConflation(1L);
-    lineCountingTracer.traceStartBlock(
-        worldStateService.getWorldView(), pendingBlockHeader, pendingBlockHeader.getCoinbase());
-    return lineCountingTracer;
+  /**
+   * Estimates gas used for a transaction. Simple ETH transfers get 21k. For contract interactions,
+   * uses TransactionSimulationService to get actual gas usage (needed for accurate rate limiting by
+   * the prover). Falls back to gas limit if simulation is unavailable.
+   */
+  private long estimateGasUsed(final Transaction transaction) {
+    // Fast-path: simple ETH transfer with empty calldata
+    if (transaction.getTo().isPresent()
+        && transaction.getPayload().isEmpty()
+        && transaction.getValue().getAsBigInteger().signum() > 0) {
+      return 21_000L;
+    }
+
+    // Use simulation to get actual gas usage — the prover uses this value to compute
+    // how many "standard transactions" this tx costs for rate limiting (tx_gas_quota).
+    // Using gasLimit would over-count since users often set generous limits.
+    if (transactionSimulationService != null) {
+      try {
+        var callParam =
+            org.hyperledger.besu.ethereum.transaction.CallParameter.fromTransaction(transaction);
+        var resp =
+            transactionSimulationService.simulate(
+                callParam,
+                Optional.empty(),
+                transactionSimulationService.simulatePendingBlockHeader(),
+                org.hyperledger.besu.evm.tracing.OperationTracer.NO_TRACING,
+                java.util.EnumSet.of(
+                    TransactionSimulationService.SimulationParameters.ALLOW_FUTURE_NONCE));
+
+        if (resp.isPresent() && resp.get().isSuccessful()) {
+          long gasUsed = resp.get().result().getEstimateGasUsedByTransaction();
+          LOG.debug(
+              "Simulated gas estimate for tx {}: {} (vs gasLimit {})",
+              transaction.getHash().toHexString(),
+              gasUsed,
+              transaction.getGasLimit());
+          return gasUsed;
+        }
+      } catch (Exception e) {
+        LOG.debug(
+            "Gas simulation failed for tx {}, falling back to gasLimit: {}",
+            transaction.getHash().toHexString(),
+            e.getMessage());
+      }
+    }
+
+    // Fallback: use gas limit when simulation is unavailable
+    return transaction.getGasLimit();
   }
 
-  private long estimateGasUsed(final Transaction transaction) {
-    try {
-      // Fast-path: simple ETH transfer with empty calldata
-      if (transaction.getTo().isPresent()
-          && transaction.getPayload().isEmpty()
-          && transaction.getValue().getAsBigInteger().signum() > 0) {
-        return 21_000L;
-      }
-
-      if (transactionSimulationService == null || blockchainService == null) {
-        return transaction.getGasLimit();
-      }
-
-      final var pendingBlockHeader = transactionSimulationService.simulatePendingBlockHeader();
-      final var chainId = blockchainService.getChainId().orElse(BigInteger.ZERO);
-      final var tracer = createLineCountingTracer(pendingBlockHeader, chainId);
-      LOG.debug(
-          "Starting gas estimation simulation for tx {}", transaction.getHash().toHexString());
-      final var maybeSimulationResults =
-          transactionSimulationService.simulate(
-              transaction,
-              java.util.Optional.empty(),
-              pendingBlockHeader,
-              tracer,
-              java.util.EnumSet.of(
-                  org.hyperledger.besu.plugin.services.TransactionSimulationService
-                      .SimulationParameters.ALLOW_FUTURE_NONCE));
-      LOG.debug(
-          "Gas estimation simulation completed for tx {}", transaction.getHash().toHexString());
-
-      if (maybeSimulationResults.isPresent()) {
-        final var sim = maybeSimulationResults.get();
-        if (sim.isSuccessful()) {
-          return sim.result().getEstimateGasUsedByTransaction();
+  /**
+   * Computes the effective gas price correctly for both legacy and EIP-1559 transactions. For
+   * legacy: gasPrice. For EIP-1559: min(maxFeePerGas, baseFee + maxPriorityFeePerGas).
+   */
+  private BigInteger computeEffectiveGasPrice(final Transaction transaction) {
+    // Legacy transaction
+    if (transaction.getGasPrice().isPresent()) {
+      return transaction.getGasPrice().get().getAsBigInteger();
+    }
+    // EIP-1559 transaction
+    if (transaction.getMaxFeePerGas().isPresent()) {
+      BigInteger maxFeePerGas = transaction.getMaxFeePerGas().get().getAsBigInteger();
+      BigInteger maxPriorityFeePerGas =
+          transaction
+              .getMaxPriorityFeePerGas()
+              .map(q -> q.getAsBigInteger())
+              .orElse(BigInteger.ZERO);
+      BigInteger baseFee = BigInteger.ZERO;
+      if (blockchainService != null) {
+        try {
+          baseFee =
+              blockchainService
+                  .getChainHeadHeader()
+                  .getBaseFee()
+                  .map(bf -> bf.getAsBigInteger())
+                  .orElse(BigInteger.ZERO);
+        } catch (Exception e) {
+          LOG.debug("Failed to get baseFee for effective gas price: {}", e.getMessage());
         }
       }
-    } catch (final Exception ignored) {
-      // fall through to fallback below
+      BigInteger basePlusPriority = baseFee.add(maxPriorityFeePerGas);
+      return maxFeePerGas.min(basePlusPriority);
     }
-    return transaction.getGasLimit();
+    return BigInteger.ZERO;
   }
 
   /**
@@ -555,12 +625,12 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
   }
 
   /**
-   * Get the number of transactions that bypassed validation due to karma eligibility.
+   * Get the number of consecutive gRPC failures (circuit breaker state).
    *
-   * @return Karma bypass count
+   * @return Consecutive failure count
    */
-  public int getKarmaBypassCount() {
-    return karmaBypassCount.get();
+  public int getConsecutiveGrpcFailures() {
+    return consecutiveGrpcFailures.get();
   }
 
   /**

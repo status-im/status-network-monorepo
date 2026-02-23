@@ -13,7 +13,7 @@ global:
 images:
   besu: hyperledger/besu:25.2.1
   besuPackage: consensys/linea-besu-package:beta-v4.4-rc7-20251202165721-14b8f4c
-  statusBesu: 0xnadeem/status-network-besu:v1.0.1
+  statusBesu: 0xnadeem/status-network-besu:v1.0.4
   teku: consensys/teku:25.11.0-jdk24
   genesisGenerator: ethpandaops/ethereum-genesis-generator:5.1.0
   maru: consensys/maru:v1.0.0-20260108114606-36f5e2f
@@ -22,7 +22,7 @@ images:
   postman: consensys/linea-postman:19735ce
   web3signer: consensys/web3signer:develop
   txExclusionApi: consensys/linea-transaction-exclusion-api:8a0bcc8
-  rlnProver: 720430261111.dkr.ecr.us-east-1.amazonaws.com/status-network-rln-prover:v1.0.3
+  rlnProver: 0xnadeem/status-network-rln-prover:v1.0.3
   postgres: 0xnadeem/status-network-postgres:v1.0.2
   busybox: busybox:latest
 
@@ -41,7 +41,10 @@ network:
   contracts:
     l1Rollup: "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
     l2MessageService: "0xe537D669CA013d86EBeF1D64e40fC74CADC91987"
-  # L1 signer keys for coordinator and postman (default: Hardhat test accounts for local dev)
+  # L1 signer keys for coordinator and postman
+  # WARNING: These are Hardhat default test account keys for LOCAL DEV ONLY.
+  # For production or public-facing deployments, NEVER use these defaults.
+  # Override via values-secrets.yaml or sealed secrets.
   signers:
     blobSubmission: "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
     aggregation: "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
@@ -51,27 +54,32 @@ network:
 
 # RLN (Rate Limiting Nullifier) Configuration
 rln:
-  enabled: false
+  enabled: true
   # Contract address for RLN membership
-  contractAddress: "0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE"
+  contractAddress: "0x5C95Bcd50E6D1B4E3CDC478484C9030Ff0a7D493"
   # Minimum balance required to be a member and send gasless transactions
   # Set to 1 karma (1e18 wei = 1 token). Users need at least 1 karma.
   minMembershipBalance: "1000000000000000000"
   # Epoch mode: TEST (30s), TIMESTAMP_1H (1 hour)
   # For production with 24-hour epochs, use TIMESTAMP_1H and configure prover accordingly
-  epochMode: "TIMESTAMP_1H"
+  epochMode: "TEST"
   # RLN prover timeout in milliseconds
   timeoutMs: 10000
   # Proof wait timeout in milliseconds
   proofWaitTimeoutMs: 10000
   # Premium gas threshold in Gwei (transactions above this bypass RLN checks)
-  premiumGasThresholdGwei: 0
+  premiumGasThresholdGwei: 12
   # Premium gas multiplier for users on deny list
   premiumGasMultiplier: "1.5"
   # Gasless transaction settings
   gasless:
     enabled: true
     allowZeroGasEstimation: true
+  # Gas kill switch - emergency toggle to disable all gasless transactions
+  killSwitch:
+    enabled: false
+    filePath: "/var/lib/besu/kill-switch/gas-kill-switch"
+    pollSeconds: 5
 
 # L1 Configuration
 l1:
@@ -177,14 +185,18 @@ l2:
       grpc: 50051
       grpcAlt: 50052
     logLevel: info
+    # Production mode: connect to real smart contracts (vs mock mode)
+    productionMode: true
+    karmaContract: "0xe537D669CA013d86EBeF1D64e40fC74CADC91987"
+    rlnContract: "0x5C95Bcd50E6D1B4E3CDC478484C9030Ff0a7D493"
+    tiersContract: "0x729409FAD88CafdA895E41f9ED00Ef4094F8d130"
+    registrationMin: 1
     # Private key for RLN prover (has REGISTER_ROLE on RLN contract)
     # Only needed in production mode. Provide via values-secrets.yaml.
     privateKey: ""
-    # Epoch configuration for production
-    # 86400 seconds = 24 hours per epoch
-    epochDurationSecs: 86400
-    # Epoch slice for internal calculations (1 hour = 3600 seconds)
-    epochSliceSecs: 3600
+    # Epoch configuration for testing
+    epochDurationSecs: 30
+    epochSliceSecs: 10
     # Maximum burst size (transactions per epoch)
     maxBurstSize: 100
 
@@ -415,7 +427,9 @@ services:
       service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
       service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
 
-# Network policies (optional for testnet)
+# Network policies — DISABLED for local dev/testnet.
+# WARNING: Enable for any shared or public-facing deployment to restrict
+# inter-pod traffic and protect admin endpoints (gRPC, engine API, etc.).
 networkPolicies:
   enabled: false
 

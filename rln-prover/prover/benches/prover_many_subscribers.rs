@@ -163,6 +163,8 @@ fn proof_generation_bench(c: &mut Criterion) {
         tx_gas_quota: AppArgs::default_tx_gas_quota(),
         epoch_duration_secs: AppArgs::default_epoch_duration_secs(),
         epoch_slice_secs: AppArgs::default_epoch_slice_secs(),
+        kill_switch_file: String::new(),
+        kill_switch_poll_secs: 5,
     };
 
     // Tokio notify - wait for some time after spawning run_prover then notify it's ready to accept

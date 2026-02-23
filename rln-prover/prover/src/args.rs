@@ -253,6 +253,22 @@ pub struct AppArgs {
         hide = true,
     )] // see const doc for more info
     pub no_grpc_reflection: bool,
+
+    #[arg(
+        help_heading = "kill switch",
+        long = "kill-switch-file",
+        help = "Path to the gas kill switch file. When file contains 'true' or 'enabled', proof generation is disabled. Empty string disables the feature.",
+        default_value = ""
+    )]
+    pub kill_switch_file: String,
+
+    #[arg(
+        help_heading = "kill switch",
+        long = "kill-switch-poll-secs",
+        help = "Poll interval in seconds for the gas kill switch file",
+        default_value_t = 5
+    )]
+    pub kill_switch_poll_secs: u64,
 }
 
 impl AppArgs {

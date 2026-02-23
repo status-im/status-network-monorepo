@@ -291,7 +291,7 @@ describe("RLN Nullifier Tracking", () => {
 
       logger.info(`${NULL_003.id}: PASSED ✓`);
     },
-    RLN_CONFIG.test.timeouts.multiTx, // Increased timeout for 2 TXs + failure wait + log check
+    RLN_CONFIG.test.timeouts.epoch, // 2 TXs + 10s failure wait + slow docker log check (~30s)
   );
 
   it(

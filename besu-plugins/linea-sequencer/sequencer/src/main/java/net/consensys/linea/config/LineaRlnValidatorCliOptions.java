@@ -63,7 +63,8 @@ public class LineaRlnValidatorCliOptions implements LineaCliOptions {
       names = "--plugin-linea-rln-premium-gas-threshold-gwei",
       description = "Premium gas threshold in GWei to bypass deny list (default: ${DEFAULT-VALUE})",
       arity = "1")
-  private long premiumGasThresholdGWei = 10L; // 10 GWei
+  private long premiumGasThresholdGWei =
+      LineaSharedGaslessConfiguration.DEFAULT_PREMIUM_GAS_PRICE_THRESHOLD_GWEI;
 
   @CommandLine.Option(
       names = "--plugin-linea-rln-timeouts-ms",
@@ -84,6 +85,22 @@ public class LineaRlnValidatorCliOptions implements LineaCliOptions {
           "Epoch mode used to compute the RLN external nullifier (options: BLOCK, TIMESTAMP_1H, TEST, FIXED_FIELD_ELEMENT; default: ${DEFAULT-VALUE})",
       arity = "1")
   private String epochMode = LineaRlnValidatorConfiguration.V1_DEFAULT.defaultEpochForQuota();
+
+  @CommandLine.Option(
+      names = "--plugin-linea-gas-kill-switch-file",
+      description =
+          "Path to gas kill switch file. When file contains 'true' or 'enabled', all gasless transactions are disabled. Empty string disables the feature. (default: ${DEFAULT-VALUE})",
+      arity = "1")
+  private String gasKillSwitchFilePath =
+      LineaRlnValidatorConfiguration.V1_DEFAULT.gasKillSwitchFilePath();
+
+  @CommandLine.Option(
+      names = "--plugin-linea-gas-kill-switch-poll-seconds",
+      description =
+          "Poll interval in seconds for the gas kill switch file (default: ${DEFAULT-VALUE})",
+      arity = "1")
+  private long gasKillSwitchPollSeconds =
+      LineaRlnValidatorConfiguration.V1_DEFAULT.gasKillSwitchPollSeconds();
 
   private LineaRlnValidatorCliOptions() {}
 
@@ -139,7 +156,9 @@ public class LineaRlnValidatorCliOptions implements LineaCliOptions {
         true, // exponentialBackoffEnabled (good default)
         60000L, // maxBackoffDelayMs (1 min, good default)
         epochMode, // defaultEpochForQuota (configurable via CLI)
-        Optional.empty() // rlnJniLibPath (use system path)
+        Optional.empty(), // rlnJniLibPath (use system path)
+        gasKillSwitchFilePath, // gasKillSwitchFilePath
+        gasKillSwitchPollSeconds // gasKillSwitchPollSeconds
         );
   }
 }

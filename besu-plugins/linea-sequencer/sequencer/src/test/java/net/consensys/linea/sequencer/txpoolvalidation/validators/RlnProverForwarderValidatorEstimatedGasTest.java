@@ -72,12 +72,12 @@ class RlnProverForwarderValidatorEstimatedGasTest {
         new RlnProverForwarderValidator(
             /* rlnConfig */ null,
             /* enabled */ true,
-            /* karmaServiceClient */ null,
             /* txSim */ null,
             /* blockchain */ null,
             /* worldStateService */ null,
             /* tracerConfig */ null,
             /* l1l2 */ null,
+            /* gasKillSwitchMonitor */ null,
             /* providedChannel */ channel);
 
     // Create a simple ETH transfer: to set, empty data, value > 0

@@ -232,6 +232,18 @@ impl UserDb2 {
         Ok((new_tx_counter.epoch_counter as u64).into())
     }
 
+    /// Reset the epoch transaction counter to 0 for the current epoch.
+    /// Used when a premium gas payment should restore a user's gasless quota.
+    pub(crate) async fn reset_tx_counter(&self, address: &Address) -> Result<(), SqlxError> {
+        let (epoch, _) = *self.epoch_store.read();
+        sqlx::query("UPDATE tx_counter SET epoch = $1, epoch_counter = 0 WHERE address = $2")
+            .bind(i64::from(epoch))
+            .bind(address.0.0)
+            .execute(&self.db)
+            .await?;
+        Ok(())
+    }
+
     pub(crate) async fn get_tx_counter(
         &self,
         address: &Address,

@@ -203,7 +203,7 @@ impl Migrator {
 
         sqlx::query(
             r#"
-            CREATE EXTENSION pg_merkle_tree
+            CREATE EXTENSION IF NOT EXISTS pg_merkle_tree
         "#,
         )
         .execute(&mut *db)

@@ -175,6 +175,7 @@ data:
     # Local mode - custom network config
     log-destination: "DEFAULT_BOTH"
     network: "/data/l1-node-config/network-config.yml"
+    initial-state: "/data/l1-node-config/genesis.ssz"
     data-storage-mode: "PRUNE"
 
     p2p-enabled: true

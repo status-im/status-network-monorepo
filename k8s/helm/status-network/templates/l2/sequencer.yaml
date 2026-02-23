@@ -100,6 +100,10 @@ spec:
                 --plugin-linea-rpc-rln-prover-forwarder-enabled=true \
                 --plugin-linea-rpc-allow-zero-gas-estimation-gasless={{ .Values.rln.gasless.allowZeroGasEstimation }} \
                 --plugin-linea-rpc-premium-gas-multiplier={{ .Values.rln.premiumGasMultiplier }} \
+                {{- if .Values.rln.killSwitch.enabled }}
+                --plugin-linea-gas-kill-switch-file={{ .Values.rln.killSwitch.filePath }} \
+                --plugin-linea-gas-kill-switch-poll-seconds={{ .Values.rln.killSwitch.pollSeconds }} \
+                {{- end }}
                 {{- end }}
                 --plugin-linea-min-margin=0 \
                 --plugin-linea-tx-pool-min-margin=0 \
@@ -165,6 +169,11 @@ spec:
               mountPath: /initialization
             - name: sequencer-data
               mountPath: /opt/besu/data
+            {{- if and .Values.rln.enabled .Values.rln.killSwitch.enabled }}
+            - name: gas-kill-switch
+              mountPath: /var/lib/besu/kill-switch
+              readOnly: true
+            {{- end }}
           livenessProbe:
             tcpSocket:
               port: http
@@ -195,6 +204,11 @@ spec:
         - name: sequencer-data
           persistentVolumeClaim:
             claimName: sequencer-data
+        {{- if and .Values.rln.enabled .Values.rln.killSwitch.enabled }}
+        - name: gas-kill-switch
+          configMap:
+            name: gas-kill-switch
+        {{- end }}
       {{- include "status-network.nodeSelector" . | nindent 6 }}
       {{- include "status-network.tolerations" . | nindent 6 }}
       {{- include "status-network.affinity" . | nindent 6 }}
