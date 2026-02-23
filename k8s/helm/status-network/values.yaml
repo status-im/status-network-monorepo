@@ -197,8 +197,6 @@ l2:
     # Epoch configuration for testing
     epochDurationSecs: 30
     epochSliceSecs: 10
-    # Maximum burst size (transactions per epoch)
-    maxBurstSize: 100
 
   sequencer:
     enabled: true

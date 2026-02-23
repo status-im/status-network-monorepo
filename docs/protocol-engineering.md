@@ -27,7 +27,7 @@ The answer combines three technologies:
 2. **Karma** — A non-transferable ERC-20 reputation token that determines each user's tier and daily gasless transaction quota
 3. **Besu Plugin Extensions** — Custom transaction pool validators and RPC modifications to the Linea Besu client that orchestrate proof generation, verification, and quota enforcement
 
-This document details the protocol engineering work that went into making these components work together as a production system. It covers every layer — from the modified `linea_estimateGas` RPC that returns zero gas for eligible users, to the RLN proof generation pipeline, to the sequencer-side cryptographic verification and quota enforcement.
+This document details the protocol engineering work that went into making these components work together as a production system.
 
 ### What This Document Covers
 
@@ -92,16 +92,6 @@ graph TB
 | **RPC Node** | Accepts user transactions, forwards to prover | `RlnProverForwarderValidator`, `LineaEstimateGas` | User-facing |
 | **RLN Prover** | Generates ZK proofs, manages quotas | gRPC service, Proof workers, Karma listener | Internal |
 | **Sequencer** | Verifies proofs, enforces quotas, builds blocks | `RlnVerifierValidator`, `DenyListManager`, `NullifierTracker` | Internal |
-
-### Key Design Decisions
-
-1. **Proof generation is asynchronous and decoupled from transaction submission** — The RPC node forwards transaction data to the prover service and immediately allows the transaction into the mempool. The proof arrives at the sequencer via a separate gRPC stream. This prevents proof generation latency from blocking the user.
-
-2. **The RPC node is fail-open; the sequencer is fail-secure** — If the prover service is unreachable, the RPC node still accepts the transaction (graceful degradation). The sequencer rejects any transaction without a valid proof (security enforcement). This ensures the user experience degrades gracefully while the sequencer maintains integrity.
-
-3. **Quota enforcement happens at the sequencer, not the RPC node** — The RPC node performs an informational karma check for logging/prioritization, but the authoritative quota enforcement is done by the sequencer after verifying the RLN proof. This prevents quota bypass through RPC node manipulation.
-
-4. **Premium gas bypass is always available** — Users who exceed their gasless quota can always fall back to paying gas at a premium rate (configurable, default 10 GWei). This ensures the network never becomes unusable, and the gasless system is strictly opt-in.
 
 ---
 
@@ -223,7 +213,7 @@ Meanwhile, one of 8 `ProofService` worker threads picks up the queued proof requ
          ├─ epoch: Epoch field element
          ├─ root: Merkle tree root
          └─ nullifier: Unique nullifier for this tx in this epoch
-   d. Serialize proof (~512 bytes)
+   d. Serialize proof (288 bytes)
 3. Broadcast ProofSendingData {tx_hash, tx_sender, proof} to all subscribers
 ```
 
@@ -447,7 +437,7 @@ The proof generation pipeline is the most performance-critical component. It use
 - Enqueues a `ProofGenerationData` struct to a bounded async channel (capacity 256)
 
 **Stage 2: Proof Computation** (`proof_service.rs`)
-- 8 worker instances (configurable via `--proof-service`) consume from the async channel
+- Worker instances (configurable via `--proof-service`, default 8) consume from the async channel
 - Each worker fetches the user's Merkle proof from PostgreSQL
 - Spawns a CPU-bound Rayon task to perform the actual Groth16 proof computation:
   ```
@@ -469,7 +459,7 @@ The proof generation pipeline is the most performance-critical component. It use
   ```
 
 **Stage 3: Broadcast** (`proof_service.rs`)
-- The serialized proof (~512 bytes) is broadcast via a Tokio broadcast channel
+- The serialized proof (288 bytes) is broadcast via a Tokio broadcast channel
 - All `GetProofs` stream subscribers receive the proof in real-time
 - Metrics are recorded: `PROOF_SERVICE_GEN_PROOF_TIME`, `PROOF_SERVICE_PROOF_COMPUTED`
 
@@ -530,7 +520,8 @@ The epoch slice subdivision provides finer-grained time windows for proof genera
 PostgreSQL stores:
 - **`users`**: Address → RLN identity commitment mapping
 - **`tx_counter`**: Address → (epoch, epoch_counter) for quota tracking
-- **`m_tree_config`**: Merkle tree configurations and node data
+- **`m_tree_config`**: Merkle tree configurations (depth, next_index per tree)
+- **`pgfr_mtree_N`**: Per-tree node storage for RLN membership Merkle trees (via `pg_merkle_tree` extension)
 - **`tier_limits`**: Tier name → quota limit (synced from KarmaTiers contract)
 - **`deny_list`**: Address → (denied_at, expires_at, reason) with TTL
 - **`nullifiers`**: Per-epoch nullifier storage for replay prevention

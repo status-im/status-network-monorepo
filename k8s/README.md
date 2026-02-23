@@ -602,7 +602,6 @@ The RLN (Rate Limiting Nullifier) system enables gasless transactions on the L2.
 | `rln.premiumGasThresholdGwei` | Gas price threshold for premium TX | 12 |
 | `l2.rlnProver.epochDurationSecs` | Epoch length for prover | 300 (5 min) |
 | `l2.rlnProver.epochSliceSecs` | Internal calculation slice | 60 (1 min) |
-| `l2.rlnProver.maxBurstSize` | Max TX per epoch | 100 |
 
 ## Contract Addresses
 

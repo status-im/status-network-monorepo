@@ -78,7 +78,6 @@ l2:
     # Epoch configuration - shorter epochs for testing
     epochDurationSecs: 300
     epochSliceSecs: 60
-    maxBurstSize: 100
 
   sequencer:
     resources:
