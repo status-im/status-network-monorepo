@@ -710,8 +710,92 @@ contract VotingCapabilityTest is KarmaTest {
         address other1 = makeAddr("other1");
 
         // Attempt to get past votes for a block number far in the future
-        vm.expectRevert("ERC20Votes: block not yet mined");
+        vm.expectRevert("ERC20Votes: future lookup");
         karma.getPastVotes(other1, 5e10);
+    }
+
+    function test_RevertWhen_GetPastTotalSupplyForFutureBlock() public {
+        vm.expectRevert("ERC20Votes: future lookup");
+        karma.getPastTotalSupply(5e10);
+    }
+
+    function test_GetPastTotalSupplyReturnsZeroWhenNoCheckpoints() public {
+        assertEq(karma.getPastTotalSupply(0), 0);
+    }
+
+    function test_GetPastTotalSupplyReturnsLatestIfAfterLastCheckpoint() public {
+        uint256 supply = 1000 ether;
+
+        vm.prank(owner);
+        karma.mint(alice, supply);
+
+        vm.roll(block.number + 1);
+        vm.roll(block.number + 1);
+
+        uint256 mintBlock = block.number - 2;
+
+        assertEq(karma.getPastTotalSupply(mintBlock), supply);
+        assertEq(karma.getPastTotalSupply(mintBlock + 1), supply);
+    }
+
+    function test_GetPastTotalSupplyReturnsZeroBeforeFirstCheckpoint() public {
+        uint256 supply = 1000 ether;
+
+        vm.roll(block.number + 1);
+
+        vm.prank(owner);
+        karma.mint(alice, supply);
+
+        vm.roll(block.number + 1);
+        vm.roll(block.number + 1);
+
+        uint256 mintBlock = block.number - 2;
+
+        assertEq(karma.getPastTotalSupply(mintBlock - 1), 0);
+        assertEq(karma.getPastTotalSupply(mintBlock + 1), supply);
+    }
+
+    function test_GetPastTotalSupplyReturnsCorrectSupplyAtCheckpoints() public {
+        uint256 supply = 1000 ether;
+
+        // t1: mint supply to alice
+        vm.prank(owner);
+        karma.mint(alice, supply);
+        vm.roll(block.number + 1);
+        vm.roll(block.number + 1);
+
+        // t2: mint 10 more to bob
+        vm.prank(owner);
+        karma.mint(bob, 10);
+        vm.roll(block.number + 1);
+        vm.roll(block.number + 1);
+
+        // t3: mint 10 more to bob
+        vm.prank(owner);
+        karma.mint(bob, 10);
+        vm.roll(block.number + 1);
+        vm.roll(block.number + 1);
+
+        // t4: mint 20 more to alice
+        vm.prank(owner);
+        karma.mint(alice, 20);
+        vm.roll(block.number + 1);
+        vm.roll(block.number + 1);
+
+        uint256 t4Block = block.number - 2;
+        uint256 t3Block = t4Block - 2;
+        uint256 t2Block = t3Block - 2;
+        uint256 t1Block = t2Block - 2;
+
+        assertEq(karma.getPastTotalSupply(t1Block - 1), 0);
+        assertEq(karma.getPastTotalSupply(t1Block), supply);
+        assertEq(karma.getPastTotalSupply(t1Block + 1), supply);
+        assertEq(karma.getPastTotalSupply(t2Block), supply + 10);
+        assertEq(karma.getPastTotalSupply(t2Block + 1), supply + 10);
+        assertEq(karma.getPastTotalSupply(t3Block), supply + 20);
+        assertEq(karma.getPastTotalSupply(t3Block + 1), supply + 20);
+        assertEq(karma.getPastTotalSupply(t4Block), supply + 40);
+        assertEq(karma.getPastTotalSupply(t4Block + 1), supply + 40);
     }
 
     function test_GetPastVotesReturnsZeroWhenNoCheckpoints() public {
