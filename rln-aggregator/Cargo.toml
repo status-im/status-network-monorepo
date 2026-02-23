@@ -1,0 +1,28 @@
+[workspace]
+members = [
+    "aggregator",
+    "slasher",
+]
+resolver = "3"
+
+[workspace.dependencies]
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread", "io-std"] }
+clap = { version = "4.5.58", features = ["derive", "wrap_help"] }
+anyhow = "1.0.101"
+thiserror = "2.0.18"
+tonic = "0.14.3"
+# tonic-web = "0.14.3"
+tonic-reflection = "0.14.3"
+prost = "0.14.3"
+tonic-prost = "0.14.3"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+tracing = "0.1.44"
+# build dependencies
+tonic-prost-build = "0.14.3"
+alloy = { version = "1.6.3", features = [
+    "getrandom",
+    "sol-types",
+    "contract",
+    "provider-ws",
+    "provider-anvil-node",
+] }

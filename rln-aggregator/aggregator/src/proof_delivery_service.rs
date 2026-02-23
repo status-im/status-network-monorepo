@@ -1,0 +1,258 @@
+use std::sync::Arc;
+use std::time::Duration;
+// third-party
+use crate::prover_proto;
+use anyhow::anyhow;
+use bytesize::ByteSize;
+use futures::TryFutureExt;
+use tokio::net::TcpListener;
+use tokio::sync::broadcast::error::RecvError;
+use tokio::{
+    sync::broadcast::{Receiver, Sender},
+    sync::{Semaphore, TryAcquireError},
+};
+use tonic::codegen::tokio_stream::wrappers::TcpListenerStream;
+use tonic::{
+    Request, Response, Status, codegen::http::Method,
+    codegen::tokio_stream::wrappers::ReceiverStream, transport::Server,
+};
+use tower_http::cors::{Any, CorsLayer};
+use tracing::{debug, error, info, warn};
+// grpc proto
+use crate::prover_proto::rln_aggregator_server::{RlnAggregator, RlnAggregatorServer};
+use crate::prover_proto::rln_proof_reply::Resp;
+use crate::prover_proto::{
+    RlnAggFilter, RlnAggProof, RlnAggProofError, RlnAggProofReply, RlnProof, RlnProofError,
+    RlnProofReply, rln_agg_proof_reply,
+};
+
+const DELIVERY_SERVICE_LIMIT_PER_CONNECTION: usize = 16;
+// Timeout for all handlers of a request (increased to 5 minutes for streaming support)
+const DELIVERY_SERVICE_GRPC_TIMEOUT: Duration = Duration::from_secs(300);
+const DELIVERY_SERVICE_HTTP2_MAX_CONCURRENT_STREAM: u32 = 32;
+// Http2 max frame size (e.g. 16 Kb)
+const DELIVERY_SERVICE_HTTP2_MAX_FRAME_SIZE: ByteSize = ByteSize::kib(16);
+
+pub struct ProofDeliveryServer {
+    config: ProofDeliveryServerConfig,
+    broadcast_channel: (Sender<RlnProofReply>, Receiver<RlnProofReply>),
+}
+
+pub struct ProofDeliveryServerConfig {
+    grpc_max_decoding_message_size: u64,
+    grpc_max_encoding_message_size: u64,
+    pub(crate) client_connected_limit: u32,
+    grpc_reflection: bool,
+}
+
+impl Default for ProofDeliveryServerConfig {
+    fn default() -> Self {
+        Self {
+            grpc_max_decoding_message_size: ByteSize::mib(5).as_u64(),
+            grpc_max_encoding_message_size: ByteSize::mib(5).as_u64(),
+            client_connected_limit: 2000,
+            grpc_reflection: false,
+        }
+    }
+}
+
+impl ProofDeliveryServer {
+    pub(crate) fn new(
+        config: ProofDeliveryServerConfig,
+        (tx, rx): (Sender<RlnProofReply>, Receiver<RlnProofReply>),
+    ) -> Self {
+        Self {
+            config,
+            broadcast_channel: (tx, rx),
+        }
+    }
+
+    pub(crate) async fn serve_with(&self, listener: TcpListener) -> anyhow::Result<()> {
+        let service = ProofDeliveryService {
+            broadcast_channel: (
+                self.broadcast_channel.0.clone(),
+                self.broadcast_channel.0.subscribe(),
+            ),
+
+            client_connected_limit: Arc::new(Semaphore::new(
+                self.config.client_connected_limit as usize,
+            )),
+        };
+
+        let agg_server = RlnAggregatorServer::new(service)
+            .max_decoding_message_size(self.config.grpc_max_decoding_message_size as usize)
+            .max_encoding_message_size(self.config.grpc_max_encoding_message_size as usize);
+
+        let cors = CorsLayer::new()
+            .allow_methods([Method::GET])
+            .allow_origin(Any)
+            .allow_headers(Any);
+
+        let reflection_service = if self.config.grpc_reflection {
+            Some(
+                tonic_reflection::server::Builder::configure()
+                    .register_encoded_file_descriptor_set(prover_proto::FILE_DESCRIPTOR_SET)
+                    .build_v1()?,
+            )
+        } else {
+            None
+        };
+
+        let incoming = TcpListenerStream::new(listener);
+
+        Server::builder()
+            // service protection && limits
+            // limits: connection
+            .concurrency_limit_per_connection(DELIVERY_SERVICE_LIMIT_PER_CONNECTION)
+            .timeout(DELIVERY_SERVICE_GRPC_TIMEOUT)
+            // limits : http2
+            .max_concurrent_streams(DELIVERY_SERVICE_HTTP2_MAX_CONCURRENT_STREAM)
+            .max_frame_size(DELIVERY_SERVICE_HTTP2_MAX_FRAME_SIZE.as_u64() as u32)
+            // perf: tcp
+            .tcp_nodelay(true)
+            // http 1 layer required for GrpcWebLayer
+            // .accept_http1(true)
+            // services
+            .layer(cors)
+            // .layer(GrpcWebLayer::new())
+            .add_optional_service(reflection_service)
+            .add_service(agg_server)
+            .serve_with_incoming(incoming)
+            .map_err(|e| anyhow!(e))
+            .await
+    }
+}
+
+struct ProofDeliveryService {
+    broadcast_channel: (Sender<RlnProofReply>, Receiver<RlnProofReply>),
+    client_connected_limit: Arc<tokio::sync::Semaphore>,
+}
+
+#[tonic::async_trait]
+impl RlnAggregator for ProofDeliveryService {
+    type GetProofsStream = ReceiverStream<Result<RlnAggProofReply, Status>>;
+
+    // #[tracing::instrument(skip(self), err, ret)]
+    #[tracing::instrument(skip(self), err)]
+    async fn get_proofs(
+        &self,
+        _request: Request<RlnAggFilter>,
+    ) -> Result<Response<Self::GetProofsStream>, Status> {
+        let sem_permit = self.client_connected_limit.clone().try_acquire_owned();
+
+        let sem_permit = match sem_permit {
+            Ok(sem_permit) => sem_permit,
+            Err(TryAcquireError::Closed) => {
+                // Semaphore is closed - rln-aggregator is likely closing
+                debug!("Semaphore closed");
+                return Err(Status::internal("Semaphore closed"));
+            }
+            Err(TryAcquireError::NoPermits) => {
+                // Semaphore is full - let the client knows about it
+                debug!("Semaphore full");
+                return Err(Status::resource_exhausted("Semaphore full"));
+            }
+        };
+
+        // Channel to send stuff to the connected grpc client
+        let (client_tx, client_rx) = tokio::sync::mpsc::channel(1);
+        // Channel to receive a RLN proof (from one proof service)
+        let mut bcast_rx = self.broadcast_channel.0.subscribe();
+
+        info!(
+            "Spawning task with bcast_tx len: {} - bcast_rx2 len: {}",
+            self.broadcast_channel.0.len(),
+            bcast_rx.len()
+        );
+
+        tokio::spawn(async move {
+            // Move semaphore permit in async closure so it will only be dropped once client
+            // disconnect
+            let _sem_permit = sem_permit;
+
+            // Stream proofs to client, with proper disconnect detection
+            loop {
+                tokio::select! {
+                    // Check if client disconnected (receiver dropped)
+                    _ = client_tx.closed() => {
+                        error!("[Proof delivery service] client disconnected");
+                        println!("[Proof delivery service] client disconnected");
+                        break;
+                    }
+                    // Receive proofs from broadcast channel
+                    result = bcast_rx.recv() => {
+
+                        match result {
+                            Ok(rln_proof_reply) => {
+
+                                let resp = rln_proof_reply.into();
+
+                                // println!("resp: {:?} - bcast rx2 len: {}", resp, bcast_rx.len());
+
+                                // Send to the client
+                                // println!("[Proof delivery service] Sending message...");
+                                let start = std::time::Instant::now();
+                                if let Err(e) = client_tx.send(Ok(resp)).await {
+                                    warn!("[Proof delivery service] Client disconnected during send: {}", e);
+                                    break;
+                                };
+                                let _elapsed = start.elapsed();
+
+                                // println!("send in {} nanos", elapsed.as_nanos());
+
+                            },
+                            Err(RecvError::Lagged(skipped_msg_count)) => {
+                                // TODO: handle the slow receiver here
+                                error!("[Proof delivery service] client is too slow (already {} skipped message), disconnecting him...", skipped_msg_count);
+                                error!("[Proof delivery service] {}", bcast_rx.len());
+                                // println!("[Proof delivery service] client is too slow (already {} skipped message), disconnecting him...", skipped_msg_count);
+                                drop(client_tx);
+                                break;
+                            }
+                            Err(RecvError::Closed) => {
+                                debug!("[Proof delivery service] channel receive closed, exiting now...");
+                                println!("[Proof delivery service] channel receive closed, exiting now...");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(Response::new(ReceiverStream::new(client_rx)))
+    }
+}
+
+impl From<RlnProofReply> for RlnAggProofReply {
+    fn from(p: RlnProofReply) -> Self {
+        match p.resp {
+            Some(r) => match r {
+                Resp::Proof(p) => Self {
+                    resp: Some(rln_agg_proof_reply::Resp::Proof(p.into())),
+                },
+                Resp::Error(e) => Self {
+                    resp: Some(rln_agg_proof_reply::Resp::Error(e.into())),
+                },
+            },
+            None => Self { resp: None },
+        }
+    }
+}
+
+impl From<RlnProof> for RlnAggProof {
+    fn from(value: RlnProof) -> Self {
+        Self {
+            sender: value.sender,
+            tx_hash: value.tx_hash,
+            proof: value.proof,
+            epoch: value.epoch,
+        }
+    }
+}
+
+impl From<RlnProofError> for RlnAggProofError {
+    fn from(value: RlnProofError) -> Self {
+        Self { error: value.error }
+    }
+}

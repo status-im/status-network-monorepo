@@ -2,11 +2,6 @@
 
 Rln prover for Status Layer 2
 
-## Docker
-
-* `docker build --progress=plain --build-arg RUST_LOG_LEVEL=info --no-cache -t rln-prover-image .`
-* `docker run -p 50051:50051 prover --mock-sc true --mock-user mock/mock_user_1.json --no-config`
-
 ## Rln prover development
 
 ### Run prover
@@ -15,7 +10,12 @@ PRIVATE_KEY=__MY_PRIVATE_KEY__ RUST_LOG=debug cargo run -p prover_cli -- --no-co
 
 ### Run prover + Mock
 
-RUST_LOG=debug cargo run -p prover_cli -- --ip 127.0.0.1 --metrics-ip 127.0.0.1 --mock-sc true --mock-user mock/mock_user_1.json --no-config
+* Start Postgresql server
+  * `cd ..` 
+  * `docker compose -f docker/compose-spec-l2-services-rln.yml up -d postgres --build` 
+* Start prover:
+  * `cd rln-prover` 
+  * `RUST_LOG=debug cargo run -p prover_cli -- --ip 127.0.0.1 --metrics-ip 127.0.0.1 --mock-sc true --mock-user mock/mock_user_1.json --db postgres://postgres:postgres@localhost:5432/prover_db --no-config`
 
 ### Run prover + opentelemetry
 
@@ -45,4 +45,6 @@ RUST_LOG=debug cargo run -p prover_cli -- --ip 127.0.0.1 --metrics-ip 127.0.0.1 
 
 * cargo test 
 * cargo test --features anvil 
+* Unit tests requiring a Postgres db
+  * cargo test --features postgres 
 

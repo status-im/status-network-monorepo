@@ -314,6 +314,7 @@ where
                                     sender: data.tx_sender.to_vec(),
                                     tx_hash: data.tx_hash.clone(),
                                     proof: data.proof,
+                                    epoch: data.epoch,
                                 };
 
                                 info!("[gRPC] Streaming proof for tx_hash: {:?}", &data.tx_hash[..4]);

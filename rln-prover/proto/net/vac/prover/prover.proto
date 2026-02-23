@@ -173,12 +173,7 @@ message RlnProof {
   bytes sender = 1;
   bytes tx_hash = 2;              // Transaction hash for the proof (non hash signal)
   bytes proof = 3;                // The RLN proof itself, hex encoded
-  // bytes internal_nullifier = 4;
-  // bytes x = 5;                    // signal hash
-  // bytes y = 6;
-  // bytes rln_identifier = 7;
-  // bytes merkle_proof_root = 8;
-  // bytes epoch = 9;
+  uint64 epoch = 4;
 }
 
 message RlnProofError {

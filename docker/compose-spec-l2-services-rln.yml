@@ -63,6 +63,31 @@ services:
         ipv4_address: 11.11.11.120
     platform: linux/arm64
 
+  rln-aggregator:
+    hostname: rln-aggregator
+    container_name: rln-aggregator
+    image: 0xnadeem/status-network-rln-aggregator:v1.0.0
+    profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo", "rln" ]
+    ports:
+      - "50061:50061"
+    restart: unless-stopped
+    depends_on:
+      rln-prover:
+        condition: service_healthy
+    command: ["-u", "http://rln-prover:50051"]
+    environment:
+      RUST_LOG: "${RUST_LOG:-debug}"
+    healthcheck:
+      test: [ "CMD-SHELL", "ps aux | grep -w aggregator | grep -v grep" ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      linea:
+        ipv4_address: 11.11.11.121
+    platform: linux/amd64
+
   sequencer:
     hostname: sequencer
     container_name: sequencer

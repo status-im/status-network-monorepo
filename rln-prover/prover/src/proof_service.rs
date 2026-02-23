@@ -92,7 +92,7 @@ impl ProofService {
                 self.id, proof_generation_data.tx_sender
             );
 
-            let (current_epoch, current_epoch_slice) = *self.current_epoch.read();
+            let (current_epoch, _current_epoch_slice) = *self.current_epoch.read();
             let user_db = self.user_db.clone();
             let proof_generation_data_ = proof_generation_data.clone();
             let rate_limit = self.rate_limit;
@@ -156,7 +156,8 @@ impl ProofService {
 
                 let epoch_bytes = {
                     let mut v = current_epoch.to_le_bytes().to_vec();
-                    v.extend(current_epoch_slice.to_le_bytes());
+                    // v.extend(current_epoch_slice.to_le_bytes());
+                    #[allow(clippy::let_and_return)]
                     v
                 };
                 let epoch = hash_to_field_le(epoch_bytes.as_slice());
@@ -235,6 +236,7 @@ impl ProofService {
                     tx_hash: proof_generation_data_.tx_hash,
                     tx_sender: proof_generation_data_.tx_sender,
                     proof: r,
+                    epoch: i64::from(current_epoch) as u64,
                 })
                 .map_err(ProofGenerationStringError::from);
 

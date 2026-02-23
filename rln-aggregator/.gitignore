@@ -1,0 +1,8 @@
+/target
+
+# heaptrack
+# *.zst
+# perf.data
+
+# IDE
+.idea

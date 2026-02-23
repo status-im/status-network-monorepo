@@ -40,4 +40,5 @@ pub(crate) struct ProofSendingData {
     pub(crate) tx_hash: Vec<u8>,
     pub(crate) tx_sender: Address,
     pub(crate) proof: Vec<u8>,
+    pub(crate) epoch: u64,
 }
