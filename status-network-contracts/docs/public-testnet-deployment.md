@@ -4,12 +4,14 @@ Deployment instructions for Status Network contracts on the public testnet (L2 c
 
 - **Deploy on L1 or L2?** All Status Network contracts deploy on **L2** (chain ID 374).
 - **Deploy before or after RLN prover?** Deploy contracts **before** starting the RLN prover.
-- **Do I need ETH on the deployer?** Yes. Contract deployment needs gas even though the network is gasless for end users since RLN prover isn't online yet. Budget ~0.5 ETH.
+- **Do I need ETH on the deployer?** Yes. Contract deployment needs gas even though the network is gasless for end users
+  since RLN prover isn't online yet. Budget ~0.5 ETH.
 - **Will the addresses match local dev?** No. Addresses depend on the deployer address and nonce.
 
 ## Prerequisites
 
 1. **Foundry** installed (`forge`, `cast`):
+
    ```sh
    curl -L https://foundry.paradigm.xyz | bash
    foundryup
@@ -43,7 +45,8 @@ export ETH_FROM="<your deployer address>"
 
 ### 2a. Deploy Protocol Contracts
 
-This deploys Karma, MetadataGenerator, KarmaNFT, StakeManager, VaultFactory, SimpleKarmaDistributor, and KarmaTiers in one batch. It does **not** deploy RLN (that's next).
+This deploys Karma, MetadataGenerator, KarmaNFT, StakeManager, VaultFactory, SimpleKarmaDistributor, and KarmaTiers in
+one batch. It does **not** deploy RLN (that's next).
 
 ```sh
 MNEMONIC="<your mnemonic>" \
@@ -76,7 +79,8 @@ echo "RLN:          $(./scripts/get-deployed-address.sh RLN.s.sol RLN)"
 echo "KarmaNFT:     $(./scripts/get-deployed-address.sh DeployKarmaNFT.s.sol KarmaNFT)"
 ```
 
-If a step fails and you need to deploy individual contracts, see the individual scripts in `script/` — deploy order is: KarmaTiers, Karma, StakeManager, RLN, KarmaNFT.
+If a step fails and you need to deploy individual contracts, see the individual scripts in `script/` — deploy order is:
+KarmaTiers, Karma, StakeManager, RLN, KarmaNFT.
 
 ## Step 3: Initialize Karma Tiers
 
@@ -90,19 +94,19 @@ MNEMONIC="<your mnemonic>" \
 
 This writes the following tier configuration on-chain (defined in `script/InitializeKarmaTiers.s.sol`):
 
-| Tier | Min Karma | Gasless TX / Epoch |
-|------|-----------|-------------------|
-| none | 0 | 0 |
-| entry | 1 | 2 |
-| newbie | >1 | 6 |
-| basic | 50 | 16 |
-| active | 500 | 96 |
-| regular | 5,000 | 480 |
-| power | 20,000 | 960 |
-| pro | 100,000 | 10,080 |
-| high-throughput | 500,000 | 108,000 |
-| s-tier | 5,000,000 | 240,000 |
-| legendary | 10,000,000 | 480,000 |
+| Tier            | Min Karma  | Gasless TX / Epoch |
+| --------------- | ---------- | ------------------ |
+| none            | 0          | 0                  |
+| entry           | 1          | 2                  |
+| newbie          | >1         | 6                  |
+| basic           | 50         | 16                 |
+| active          | 500        | 96                 |
+| regular         | 5,000      | 480                |
+| power           | 20,000     | 960                |
+| pro             | 100,000    | 10,080             |
+| high-throughput | 500,000    | 108,000            |
+| s-tier          | 5,000,000  | 240,000            |
+| legendary       | 10,000,000 | 480,000            |
 
 All karma values are in whole tokens (18 decimals, 1 Karma = 1e18 wei).
 
@@ -141,6 +145,7 @@ cast send $PROVER_ADDRESS --value 1ether \
 ## Step 6: Configure Services with New Addresses
 
 ### RLN Prover
+
 - `--ksc` = Karma proxy address (Helm: `l2.rlnProver.karmaContract`)
 - `--rlnsc` = RLN proxy address (Helm: `l2.rlnProver.rlnContract`)
 - `--tsc` = KarmaTiers address (Helm: `l2.rlnProver.tiersContract`)
