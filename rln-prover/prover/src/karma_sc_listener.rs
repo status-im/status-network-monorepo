@@ -14,7 +14,7 @@ use crate::error::{AppError2, HandleTransferError2, RegisterSCError};
 // use crate::user_db::UserDb;
 use crate::user_db_2::UserDb2;
 use crate::user_db_error::RegisterError2;
-use smart_contract::{KarmaAmountExt, KarmaRLNSC, KarmaSC, RLNRegister};
+use smart_contract::{KarmaAmountExt, RLN, KarmaSC, RLNRegister};
 
 pub(crate) struct KarmaScEventListener {
     karma_sc_address: Address,
@@ -45,7 +45,7 @@ impl KarmaScEventListener {
         provider_with_signer: PS,
     ) -> Result<(), AppError2> {
         let karma_sc = KarmaSC::new(self.karma_sc_address, provider.clone());
-        let rln_sc = KarmaRLNSC::new(self.rln_sc_address, provider_with_signer);
+        let rln_sc = RLN::new(self.rln_sc_address, provider_with_signer);
 
         // Subscribe to both Transfer and AccountSlashed events
         // Using event_signature() with OR for multiple events
