@@ -36,8 +36,8 @@ contract DeploymentConfig is Script {
             activeNetworkConfig = getSepoliaConfig();
         } else if (block.chainid == 1_660_990_954) {
             activeNetworkConfig = getStatusNetworkSepoliaConfig();
-        } else if (block.chainid == 59_141) {
-            activeNetworkConfig = getInternalTestnetConfig();
+        } else if (block.chainid == 59_141 || block.chainid == 374) {
+            activeNetworkConfig = getKarmaStakingConfig();
         } else {
             revert DeploymentConfig_NoConfigForChain(block.chainid);
         }
@@ -56,8 +56,8 @@ contract DeploymentConfig is Script {
         return NetworkConfig({ deployer: deployer, stakingToken: SNT_ADDRESS_STATUS_NETWORK_SEPOLIA });
     }
 
-    function getInternalTestnetConfig() public returns (NetworkConfig memory) {
-        // Internal testnet uses Karma as the staking token
+    function getKarmaStakingConfig() public returns (NetworkConfig memory) {
+        // Networks that use Karma as the staking token (internal testnet, public testnet)
         // KARMA_ADDRESS env var must be set when deploying contracts that need it
         address karmaAddress = vm.envOr("KARMA_ADDRESS", address(0));
         if (karmaAddress == address(0)) {
