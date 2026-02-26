@@ -28,17 +28,17 @@ contract VotingCapabilityTest is KarmaTest {
         karma.delegate(alice);
 
         for (uint256 i = 0; i < 6; i++) {
-            vm.roll(block.number + 1);
+            vm.warp(block.timestamp + 1);
             vm.prank(owner);
             karma.mint(alice, 1);
         }
 
-        uint256 currentBlock = block.number;
+        uint256 currentTimestamp = block.timestamp;
         assertEq(karma.numCheckpoints(alice), 6);
         // recent
-        assertEq(karma.getPastVotes(alice, currentBlock - 1), 5);
+        assertEq(karma.getPastVotes(alice, currentTimestamp - 1), 5);
         // non-recent
-        assertEq(karma.getPastVotes(alice, currentBlock - 6), 0);
+        assertEq(karma.getPastVotes(alice, currentTimestamp - 6), 0);
     }
 
     function test_DelegationWithBalance() public {
@@ -66,15 +66,15 @@ contract VotingCapabilityTest is KarmaTest {
         assertEq(karma.getVotes(alice), supply);
 
         // Advance block
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
 
-        uint256 delegationBlock = block.number - 1;
+        uint256 delegationTimestamp = block.timestamp - 1;
 
         // Past votes before delegation should be 0
-        assertEq(karma.getPastVotes(alice, delegationBlock - 1), 0);
+        assertEq(karma.getPastVotes(alice, delegationTimestamp - 1), 0);
 
         // Past votes at delegation block should equal supply
-        assertEq(karma.getPastVotes(alice, delegationBlock), supply);
+        assertEq(karma.getPastVotes(alice, delegationTimestamp), supply);
     }
 
     function test_DelegationWithoutBalance() public {
@@ -113,7 +113,7 @@ contract VotingCapabilityTest is KarmaTest {
         karma.mint(delegatorAddress, supply);
 
         // Advance block to separate mint from delegation
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
 
         // Initially, delegates should be zero address
         assertEq(karma.delegates(delegatorAddress), address(0));
@@ -147,15 +147,15 @@ contract VotingCapabilityTest is KarmaTest {
         assertEq(karma.getVotes(delegatorAddress), supply);
 
         // Advance block to be able to query past votes
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
 
-        uint256 delegationBlock = block.number - 1;
+        uint256 delegationTimestamp = block.timestamp - 1;
 
         // Past votes before delegation should be 0
-        assertEq(karma.getPastVotes(delegatorAddress, delegationBlock - 1), 0);
+        assertEq(karma.getPastVotes(delegatorAddress, delegationTimestamp - 1), 0);
 
         // Past votes at delegation block should equal supply
-        assertEq(karma.getPastVotes(delegatorAddress, delegationBlock), supply);
+        assertEq(karma.getPastVotes(delegatorAddress, delegationTimestamp), supply);
     }
 
     function test_RevertWhen_ReusingSignature() public {
@@ -313,9 +313,9 @@ contract VotingCapabilityTest is KarmaTest {
         assertEq(karma.delegates(alice), alice);
 
         // Move to next block to be able to check past votes
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
 
-        uint256 initialDelegationBlock = block.number - 1;
+        uint256 initialDelegationTimestamp = block.timestamp - 1;
 
         // Change delegation to holderDelegatee
         vm.prank(alice);
@@ -335,17 +335,17 @@ contract VotingCapabilityTest is KarmaTest {
         assertEq(karma.getVotes(holderDelegatee), supply);
 
         // Advance block
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
 
-        uint256 delegationChangeBlock = block.number - 1;
+        uint256 delegationChangeTimestamp = block.timestamp - 1;
 
         // Past votes before delegation change (at the initial delegation block)
-        assertEq(karma.getPastVotes(alice, initialDelegationBlock), supply);
-        assertEq(karma.getPastVotes(holderDelegatee, initialDelegationBlock), 0);
+        assertEq(karma.getPastVotes(alice, initialDelegationTimestamp), supply);
+        assertEq(karma.getPastVotes(holderDelegatee, initialDelegationTimestamp), 0);
 
         // Past votes at delegation change block
-        assertEq(karma.getPastVotes(alice, delegationChangeBlock), 0);
-        assertEq(karma.getPastVotes(holderDelegatee, delegationChangeBlock), supply);
+        assertEq(karma.getPastVotes(alice, delegationChangeTimestamp), 0);
+        assertEq(karma.getPastVotes(holderDelegatee, delegationChangeTimestamp), supply);
     }
 
     function test_TransferWithoutDelegation() public {
@@ -587,7 +587,7 @@ contract VotingCapabilityTest is KarmaTest {
         assertEq(karma.numCheckpoints(other1), 1);
 
         // t2: Bob transfers 10 tokens to other2
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
         vm.prank(bob);
         /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(other2, 10);
@@ -595,7 +595,7 @@ contract VotingCapabilityTest is KarmaTest {
         assertEq(karma.numCheckpoints(other1), 2);
 
         // t3: Bob transfers another 10 tokens to other2
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
         vm.prank(bob);
         /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(other2, 10);
@@ -603,7 +603,7 @@ contract VotingCapabilityTest is KarmaTest {
         assertEq(karma.numCheckpoints(other1), 3);
 
         // t4: Alice transfers 20 tokens back to bob
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
         vm.prank(alice);
         /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(bob, 20);
@@ -611,35 +611,35 @@ contract VotingCapabilityTest is KarmaTest {
         assertEq(karma.numCheckpoints(other1), 4);
 
         // Advance block to query past votes
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
 
-        uint256 t4Block = block.number - 1;
-        uint256 t3Block = t4Block - 1;
-        uint256 t2Block = t3Block - 1;
-        uint256 t1Block = t2Block - 1;
+        uint256 t4Timestamp = block.timestamp - 1;
+        uint256 t3Timestamp = t4Timestamp - 1;
+        uint256 t2Timestamp = t3Timestamp - 1;
+        uint256 t1Timestamp = t2Timestamp - 1;
 
         // Verify checkpoint data
         Karma.Checkpoint memory checkpoint0 = karma.checkpoints(other1, 0);
-        assertEq(checkpoint0.fromBlock, t1Block);
+        assertEq(checkpoint0.fromBlock, t1Timestamp);
         assertEq(checkpoint0.votes, 100);
 
         Karma.Checkpoint memory checkpoint1 = karma.checkpoints(other1, 1);
-        assertEq(checkpoint1.fromBlock, t2Block);
+        assertEq(checkpoint1.fromBlock, t2Timestamp);
         assertEq(checkpoint1.votes, 90);
 
         Karma.Checkpoint memory checkpoint2 = karma.checkpoints(other1, 2);
-        assertEq(checkpoint2.fromBlock, t3Block);
+        assertEq(checkpoint2.fromBlock, t3Timestamp);
         assertEq(checkpoint2.votes, 80);
 
         Karma.Checkpoint memory checkpoint3 = karma.checkpoints(other1, 3);
-        assertEq(checkpoint3.fromBlock, t4Block);
+        assertEq(checkpoint3.fromBlock, t4Timestamp);
         assertEq(checkpoint3.votes, 100);
 
-        // Verify past votes at each checkpoint block
-        assertEq(karma.getPastVotes(other1, t1Block), 100);
-        assertEq(karma.getPastVotes(other1, t2Block), 90);
-        assertEq(karma.getPastVotes(other1, t3Block), 80);
-        assertEq(karma.getPastVotes(other1, t4Block), 100);
+        // Verify past votes at each checkpoint timestamp
+        assertEq(karma.getPastVotes(other1, t1Timestamp), 100);
+        assertEq(karma.getPastVotes(other1, t2Timestamp), 90);
+        assertEq(karma.getPastVotes(other1, t3Timestamp), 80);
+        assertEq(karma.getPastVotes(other1, t4Timestamp), 100);
     }
 
     function test_DoesNotAddMoreThanOneCheckpointInBlock() public {
@@ -669,7 +669,7 @@ contract VotingCapabilityTest is KarmaTest {
         // 2. Bob transfers 10 tokens to other2
         // 3. Bob transfers another 10 tokens to other2
         // All in the same block should result in only ONE checkpoint
-        uint256 blockNumber = block.number;
+        uint256 timestamp = block.timestamp;
 
         vm.prank(bob);
         karma.delegate(other1);
@@ -687,22 +687,22 @@ contract VotingCapabilityTest is KarmaTest {
 
         // The checkpoint should reflect the final state (80 tokens)
         Karma.Checkpoint memory checkpoint0 = karma.checkpoints(other1, 0);
-        assertEq(checkpoint0.fromBlock, blockNumber);
+        assertEq(checkpoint0.fromBlock, timestamp);
         assertEq(checkpoint0.votes, 80);
 
         // Move to next block and perform another operation
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
         vm.prank(alice);
         /// forge-lint: disable-next-line(erc20-unchecked-transfer)
         karma.transfer(bob, 20);
-        uint256 t4Block = block.number;
+        uint256 t4Timestamp = block.timestamp;
 
         // Now should have 2 checkpoints
         assertEq(karma.numCheckpoints(other1), 2);
 
         // Verify the second checkpoint
         Karma.Checkpoint memory checkpoint1 = karma.checkpoints(other1, 1);
-        assertEq(checkpoint1.fromBlock, t4Block);
+        assertEq(checkpoint1.fromBlock, t4Timestamp);
         assertEq(checkpoint1.votes, 100);
     }
 
@@ -729,30 +729,30 @@ contract VotingCapabilityTest is KarmaTest {
         vm.prank(owner);
         karma.mint(alice, supply);
 
-        vm.roll(block.number + 1);
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+        vm.warp(block.timestamp + 1);
 
-        uint256 mintBlock = block.number - 2;
+        uint256 mintTimestamp = block.timestamp - 2;
 
-        assertEq(karma.getPastTotalSupply(mintBlock), supply);
-        assertEq(karma.getPastTotalSupply(mintBlock + 1), supply);
+        assertEq(karma.getPastTotalSupply(mintTimestamp), supply);
+        assertEq(karma.getPastTotalSupply(mintTimestamp + 1), supply);
     }
 
     function test_GetPastTotalSupplyReturnsZeroBeforeFirstCheckpoint() public {
         uint256 supply = 1000 ether;
 
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
 
         vm.prank(owner);
         karma.mint(alice, supply);
 
-        vm.roll(block.number + 1);
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+        vm.warp(block.timestamp + 1);
 
-        uint256 mintBlock = block.number - 2;
+        uint256 mintTimestamp = block.timestamp - 2;
 
-        assertEq(karma.getPastTotalSupply(mintBlock - 1), 0);
-        assertEq(karma.getPastTotalSupply(mintBlock + 1), supply);
+        assertEq(karma.getPastTotalSupply(mintTimestamp - 1), 0);
+        assertEq(karma.getPastTotalSupply(mintTimestamp + 1), supply);
     }
 
     function test_GetPastTotalSupplyReturnsCorrectSupplyAtCheckpoints() public {
@@ -761,41 +761,41 @@ contract VotingCapabilityTest is KarmaTest {
         // t1: mint supply to alice
         vm.prank(owner);
         karma.mint(alice, supply);
-        vm.roll(block.number + 1);
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+        vm.warp(block.timestamp + 1);
 
         // t2: mint 10 more to bob
         vm.prank(owner);
         karma.mint(bob, 10);
-        vm.roll(block.number + 1);
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+        vm.warp(block.timestamp + 1);
 
         // t3: mint 10 more to bob
         vm.prank(owner);
         karma.mint(bob, 10);
-        vm.roll(block.number + 1);
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+        vm.warp(block.timestamp + 1);
 
         // t4: mint 20 more to alice
         vm.prank(owner);
         karma.mint(alice, 20);
-        vm.roll(block.number + 1);
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+        vm.warp(block.timestamp + 1);
 
-        uint256 t4Block = block.number - 2;
-        uint256 t3Block = t4Block - 2;
-        uint256 t2Block = t3Block - 2;
-        uint256 t1Block = t2Block - 2;
+        uint256 t4Timestamp = block.timestamp - 2;
+        uint256 t3Timestamp = t4Timestamp - 2;
+        uint256 t2Timestamp = t3Timestamp - 2;
+        uint256 t1Timestamp = t2Timestamp - 2;
 
-        assertEq(karma.getPastTotalSupply(t1Block - 1), 0);
-        assertEq(karma.getPastTotalSupply(t1Block), supply);
-        assertEq(karma.getPastTotalSupply(t1Block + 1), supply);
-        assertEq(karma.getPastTotalSupply(t2Block), supply + 10);
-        assertEq(karma.getPastTotalSupply(t2Block + 1), supply + 10);
-        assertEq(karma.getPastTotalSupply(t3Block), supply + 20);
-        assertEq(karma.getPastTotalSupply(t3Block + 1), supply + 20);
-        assertEq(karma.getPastTotalSupply(t4Block), supply + 40);
-        assertEq(karma.getPastTotalSupply(t4Block + 1), supply + 40);
+        assertEq(karma.getPastTotalSupply(t1Timestamp - 1), 0);
+        assertEq(karma.getPastTotalSupply(t1Timestamp), supply);
+        assertEq(karma.getPastTotalSupply(t1Timestamp + 1), supply);
+        assertEq(karma.getPastTotalSupply(t2Timestamp), supply + 10);
+        assertEq(karma.getPastTotalSupply(t2Timestamp + 1), supply + 10);
+        assertEq(karma.getPastTotalSupply(t3Timestamp), supply + 20);
+        assertEq(karma.getPastTotalSupply(t3Timestamp + 1), supply + 20);
+        assertEq(karma.getPastTotalSupply(t4Timestamp), supply + 40);
+        assertEq(karma.getPastTotalSupply(t4Timestamp + 1), supply + 40);
     }
 
     function test_GetPastVotesReturnsZeroWhenNoCheckpoints() public {
@@ -818,14 +818,14 @@ contract VotingCapabilityTest is KarmaTest {
         karma.delegate(other1);
 
         // Advance 2 blocks
-        vm.roll(block.number + 1);
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+        vm.warp(block.timestamp + 1);
 
-        uint256 t1Block = block.number - 2;
+        uint256 t1Timestamp = block.timestamp - 2;
 
-        // Queries at or after the checkpoint block should return the same value
-        assertEq(karma.getPastVotes(other1, t1Block), supply);
-        assertEq(karma.getPastVotes(other1, t1Block + 1), supply);
+        // Queries at or after the checkpoint timestamp should return the same value
+        assertEq(karma.getPastVotes(other1, t1Timestamp), supply);
+        assertEq(karma.getPastVotes(other1, t1Timestamp + 1), supply);
     }
 
     function test_GetPastVotesReturnsZeroBeforeFirstCheckpoint() public {
@@ -837,23 +837,23 @@ contract VotingCapabilityTest is KarmaTest {
         karma.mint(alice, supply);
 
         // Advance a block before delegating
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
 
         // Alice delegates to other1
         vm.prank(alice);
         karma.delegate(other1);
 
         // Advance 2 more blocks
-        vm.roll(block.number + 1);
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+        vm.warp(block.timestamp + 1);
 
-        uint256 t1Block = block.number - 2;
+        uint256 t1Timestamp = block.timestamp - 2;
 
         // Query before the first checkpoint should return 0
-        assertEq(karma.getPastVotes(other1, t1Block - 1), 0);
+        assertEq(karma.getPastVotes(other1, t1Timestamp - 1), 0);
 
         // Query after the first checkpoint should return supply
-        assertEq(karma.getPastVotes(other1, t1Block + 1), supply);
+        assertEq(karma.getPastVotes(other1, t1Timestamp + 1), supply);
     }
 
     function test_GetPastVotesReturnsCorrectBalanceAtCheckpoints() public {
@@ -876,8 +876,8 @@ contract VotingCapabilityTest is KarmaTest {
         karma.delegate(other1);
 
         // Advance 2 blocks
-        vm.roll(block.number + 1);
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+        vm.warp(block.timestamp + 1);
 
         // t2: Alice transfers 10 tokens to other2
         vm.prank(alice);
@@ -885,8 +885,8 @@ contract VotingCapabilityTest is KarmaTest {
         karma.transfer(other2, 10);
 
         // Advance 2 blocks
-        vm.roll(block.number + 1);
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+        vm.warp(block.timestamp + 1);
 
         // t3: Alice transfers another 10 tokens to other2
         vm.prank(alice);
@@ -894,8 +894,8 @@ contract VotingCapabilityTest is KarmaTest {
         karma.transfer(other2, 10);
 
         // Advance 2 blocks
-        vm.roll(block.number + 1);
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+        vm.warp(block.timestamp + 1);
 
         // t4: other2 transfers 20 tokens back to alice
         vm.prank(other2);
@@ -903,23 +903,23 @@ contract VotingCapabilityTest is KarmaTest {
         karma.transfer(alice, 20);
 
         // Advance 2 blocks
-        vm.roll(block.number + 1);
-        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+        vm.warp(block.timestamp + 1);
 
-        uint256 t4Block = block.number - 2;
-        uint256 t3Block = t4Block - 2;
-        uint256 t2Block = t3Block - 2;
-        uint256 t1Block = t2Block - 2;
+        uint256 t4Timestamp = block.timestamp - 2;
+        uint256 t3Timestamp = t4Timestamp - 2;
+        uint256 t2Timestamp = t3Timestamp - 2;
+        uint256 t1Timestamp = t2Timestamp - 2;
 
         // Verify past votes at various checkpoints
-        assertEq(karma.getPastVotes(other1, t1Block - 1), 0);
-        assertEq(karma.getPastVotes(other1, t1Block), supply);
-        assertEq(karma.getPastVotes(other1, t1Block + 1), supply);
-        assertEq(karma.getPastVotes(other1, t2Block), supply - 10);
-        assertEq(karma.getPastVotes(other1, t2Block + 1), supply - 10);
-        assertEq(karma.getPastVotes(other1, t3Block), supply - 20);
-        assertEq(karma.getPastVotes(other1, t3Block + 1), supply - 20);
-        assertEq(karma.getPastVotes(other1, t4Block), supply);
-        assertEq(karma.getPastVotes(other1, t4Block + 1), supply);
+        assertEq(karma.getPastVotes(other1, t1Timestamp - 1), 0);
+        assertEq(karma.getPastVotes(other1, t1Timestamp), supply);
+        assertEq(karma.getPastVotes(other1, t1Timestamp + 1), supply);
+        assertEq(karma.getPastVotes(other1, t2Timestamp), supply - 10);
+        assertEq(karma.getPastVotes(other1, t2Timestamp + 1), supply - 10);
+        assertEq(karma.getPastVotes(other1, t3Timestamp), supply - 20);
+        assertEq(karma.getPastVotes(other1, t3Timestamp + 1), supply - 20);
+        assertEq(karma.getPastVotes(other1, t4Timestamp), supply);
+        assertEq(karma.getPastVotes(other1, t4Timestamp + 1), supply);
     }
 }
