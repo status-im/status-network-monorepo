@@ -40,7 +40,6 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
         uint256 index;
     }
 
-    bytes32 public constant SLASHER_ROLE = keccak256("SLASHER_ROLE");
     bytes32 public constant REGISTER_ROLE = keccak256("REGISTER_ROLE");
 
     /// @dev Current index where identityCommitment will be stored.
@@ -72,13 +71,11 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
 
     /// @dev Constructor.
     /// @param _owner: address of the owner of the contract;
-    /// @param _slasher: address of the slasher;
     /// @param _register: address of the register;
     /// @param _token: address of the ERC20 contract;
     /// @param _poseidonHasher: address of the PoseidonHasher contract;
     function initialize(
         address _owner,
-        address _slasher,
         address _register,
         address _token,
         address _poseidonHasher
@@ -89,7 +86,6 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
         __UUPSUpgradeable_init();
         __AccessControl_init();
         _setupRole(DEFAULT_ADMIN_ROLE, _owner);
-        _setupRole(SLASHER_ROLE, _slasher);
         _setupRole(REGISTER_ROLE, _register);
         /// forge-lint: disable-next-line(incorrect-shift)
 
@@ -110,10 +106,10 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
         }
     }
 
-    /// @dev Computes the slash commitment key with the slasher address and hash.
-    /// The slasher address is included to ensure uniqueness per slasher, not allowing anyone else to override the same
+    /// @dev Computes the slash commitment key with the caller's address and hash.
+    /// The caller's address is included to ensure uniqueness per caller, not allowing anyone else to override the same
     /// hash without even knowing the private key.
-    /// @param sender: address of the slasher;
+    /// @param sender: address of the caller;
     /// @param hash: keccak256 hash of abi.encodePacked(privateKey, rewardRecipient);
     /// @return bytes32: the computed commitment key.
     function _slashCommitmentKey(address sender, bytes32 hash) internal pure returns (bytes32) {
@@ -157,14 +153,14 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
 
     /// @dev Commits to a future slash operation using a hash.
     /// @notice This is the first step of the commit-reveal scheme for slashing.
-    /// The slasher must first commit to a hash of (privateKey, rewardRecipient) before revealing
+    /// The caller must first commit to a hash of (privateKey, rewardRecipient) before revealing
     /// the actual values. This prevents front-running attacks where others could observe the
     /// privateKey in the mempool and slash the member themselves with a different reward recipient.
     /// The commit is queued by account, with each new commit having a reveal window after the previous one.
     ///
     /// @param account: the account to be slashed (address associated with the identity commitment).
     /// @param hash: keccak256 hash of abi.encodePacked(privateKey, rewardRecipient).
-    function slashCommit(address account, bytes32 hash) external onlyRole(SLASHER_ROLE) {
+    function slashCommit(address account, bytes32 hash) external {
         uint256 lastReveal = lastRevealStartTime[account];
         uint256 revealStartTime;
 
@@ -181,22 +177,15 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
 
     /// @dev Reveals and executes a previously committed slash operation.
     /// @notice This is the second step of the commit-reveal scheme for slashing.
-    /// After committing the hash, the slasher reveals the actual privateKey and rewardRecipient.
+    /// After committing the hash, the caller reveals the actual privateKey and rewardRecipient.
     /// The function verifies that these values match a previously committed hash and that the
     /// reveal window has started. This two-step process with queuing prevents front-running
-    /// while ensuring the slasher cannot change the parameters after commitment.
+    /// while ensuring the caller cannot change the parameters after commitment.
     ///
     /// @param account: the account to be slashed (address associated with the identity commitment).
     /// @param privateKey: RLN private key as bytes32.
     /// @param rewardRecipient: Address that will receive the slash reward from the Karma contract.
-    function slashReveal(
-        address account,
-        bytes32 privateKey,
-        address rewardRecipient
-    )
-        external
-        onlyRole(SLASHER_ROLE)
-    {
+    function slashReveal(address account, bytes32 privateKey, address rewardRecipient) external {
         /// forge-lint: disable-next-line(asm-keccak256)
         bytes32 hash = keccak256(abi.encodePacked(privateKey, rewardRecipient));
         bytes32 key = _slashCommitmentKey(msg.sender, hash);
