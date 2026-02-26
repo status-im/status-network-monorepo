@@ -69,8 +69,6 @@ spec:
             - "$(DATABASE_URL)"
             - "--epoch-duration-secs"
             - "{{ .Values.l2.rlnProver.epochDurationSecs }}"
-            - "--epoch-slice-secs"
-            - "{{ .Values.l2.rlnProver.epochSliceSecs }}"
             {{- if .Values.rln.killSwitch.enabled }}
             - "--kill-switch-file"
             - "{{ .Values.rln.killSwitch.filePath }}"

@@ -151,7 +151,7 @@ start-env-with-rln-production:
 		--registration-min 1 \
 		--db postgres://postgres:postgres@postgres:5432/prover_db \
 		--registration-gas-price-gwei 12 \
-		--epoch-duration-secs 30 --epoch-slice-secs 10 && \
+		--epoch-duration-secs 30 && \
 	echo "✅ RLN environment running in PRODUCTION mode!" && \
 	echo "   - RLN Prover connected to real smart contracts" && \
 	echo "   - Karma tiers initialized" && \

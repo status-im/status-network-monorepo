@@ -197,7 +197,6 @@ l2:
     privateKey: ""
     # Epoch configuration for testing
     epochDurationSecs: 30
-    epochSliceSecs: 10
 
   sequencer:
     enabled: true
