@@ -27,7 +27,7 @@ contract DeployRLNScript is BaseScript {
 
         // Deploy RLN logic contract
         bytes memory initializeData =
-            abi.encodeCall(RLN.initialize, (deployer, deployer, deployer, karmaAddress, poseidonHasher));
+            abi.encodeCall(RLN.initialize, (deployer, deployer, karmaAddress, poseidonHasher));
         address impl = address(new RLN());
         // Create upgradeable proxy
         address proxy = address(new ERC1967Proxy(impl, initializeData));
