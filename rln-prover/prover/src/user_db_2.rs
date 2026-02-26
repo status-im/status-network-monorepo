@@ -27,7 +27,7 @@ use crate::user_db_error::{
     UserTierInfoError2,
 };
 use crate::user_db_types::{EpochCounter, EpochSliceCounter, RateLimit};
-use rln_proof::{ProverPoseidonHash, RlnUserIdentity};
+use rln_proof::RlnUserIdentity;
 use smart_contract::KarmaAmountExt;
 
 pub const MERKLE_TREE_HEIGHT: u8 = 20;

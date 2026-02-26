@@ -67,7 +67,6 @@ sol!(
 );
 
 impl<P: Provider> KarmaTiers::KarmaTiersInstance<P> {
-
     pub async fn get_tiers_from_provider(
         provider: &P,
         sc_address: &Address,

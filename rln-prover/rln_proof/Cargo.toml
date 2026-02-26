@@ -11,7 +11,6 @@ ark-relations.workspace = true
 ark-groth16.workspace = true
 ark-serialize.workspace = true
 serde.workspace = true
-prover_pmtree = { path = "../prover_pmtree" }
 
 # [dev-dependencies]
 # criterion.workspace = true

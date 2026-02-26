@@ -165,9 +165,14 @@ pub(crate) mod tests {
         let contract_karma_sc = KarmaSC::new(*contract_proxy.address(), &provider);
         println!("contract KarmaSC: {:?}", contract_proxy.address());
 
-        let contract_distributor_1 = KarmaDistributorMock::deploy(&provider, *contract_karma_sc.address()).await.unwrap();
-        let contract_distributor_2 = KarmaDistributorMock::deploy(&provider, *contract_karma_sc.address()).await.unwrap();
-
+        let contract_distributor_1 =
+            KarmaDistributorMock::deploy(&provider, *contract_karma_sc.address())
+                .await
+                .unwrap();
+        let contract_distributor_2 =
+            KarmaDistributorMock::deploy(&provider, *contract_karma_sc.address())
+                .await
+                .unwrap();
 
         //
         let call_0_1 = contract_karma_sc.addRewardDistributor(*contract_distributor_1.address());
