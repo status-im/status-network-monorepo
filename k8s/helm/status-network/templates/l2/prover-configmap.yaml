@@ -1,0 +1,42 @@
+{{- if .Values.prover.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prover-config
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "prover") | nindent 4 }}
+data:
+  prover-config.toml: |
+    environment = "integration-development"
+    version = "3.0.0"
+    assets_dir = "/opt/linea/prover/prover-assets"
+    log_level = 4
+
+    [controller]
+    retry_delays = [0, 1]
+
+    [execution]
+    prover_mode = "dev"
+    requests_root_dir = "/data/prover/v3/execution"
+
+    [blob_decompression]
+    prover_mode = "dev"
+    requests_root_dir = "/data/prover/v3/compression"
+    dict_paths = ["/opt/linea/prover/lib/compressor/compressor_dict.bin", "/opt/linea/prover/lib/compressor/dict/25-04-21.bin"]
+
+    [aggregation]
+    prover_mode = "dev"
+    num_proofs = [10]
+    allowed_inputs = [
+        "execution-dummy",
+        "blob-decompression-dummy",
+        "blob-decompression-v0",
+    ]
+    verifier_id = 0
+    requests_root_dir = "/data/prover/v3/aggregation"
+
+    [layer2]
+    message_service_contract = "{{ .Values.network.contracts.l2MessageService }}"
+    chain_id = {{ .Values.network.l2ChainId }}
+{{- end }}
