@@ -443,6 +443,21 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
       //////////////////////////////////////////////////////////////////////////*/
 
     /**
+     * @dev Clock used for flagging checkpoints. Uses block timestamp instead of block number.
+     */
+    function clock() public view virtual override returns (uint48) {
+        return uint48(block.timestamp);
+    }
+
+    /**
+     * @dev Description of the clock
+     */
+    // solhint-disable-next-line func-name-mixedcase
+    function CLOCK_MODE() public view virtual override returns (string memory) {
+        return "mode=timestamp";
+    }
+
+    /**
      * @notice Returns the total supply of the token.
      * @dev The total supply is the sum of the token supply and the external supply.
      * @return The total supply of the token.
