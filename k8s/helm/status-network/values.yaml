@@ -13,7 +13,7 @@ global:
 images:
   besu: hyperledger/besu:25.2.1
   besuPackage: consensys/linea-besu-package:beta-v4.4-rc7-20251202165721-14b8f4c
-  statusBesu: 0xnadeem/status-network-besu:v1.0.4
+  statusBesu: 0xnadeem/status-network-besu:v1.1.0
   teku: consensys/teku:25.11.0-jdk24
   genesisGenerator: ethpandaops/ethereum-genesis-generator:5.1.0
   maru: consensys/maru:v1.0.0-20260108114606-36f5e2f
@@ -22,8 +22,9 @@ images:
   postman: consensys/linea-postman:19735ce
   web3signer: consensys/web3signer:develop
   txExclusionApi: consensys/linea-transaction-exclusion-api:8a0bcc8
-  rlnProver: 0xnadeem/status-network-rln-prover:v1.0.3
+  rlnProver: 0xnadeem/status-network-rln-prover:v1.1.0
   postgres: 0xnadeem/status-network-postgres:v1.0.2
+  prover: consensys/linea-prover:56c4809
   busybox: busybox:latest
 
 # Network configuration
@@ -389,9 +390,16 @@ l2:
         memory: 512Mi
     port: 8082
 
-# Prover configuration (disabled for testnet with dummy proofs)
+# Prover configuration (dummy dev-mode prover as coordinator sidecar)
 prover:
   enabled: false
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
 
 # Observability (optional)
 observability:

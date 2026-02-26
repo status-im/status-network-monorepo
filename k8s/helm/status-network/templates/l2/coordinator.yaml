@@ -170,6 +170,26 @@ spec:
             timeoutSeconds: 5
           resources:
             {{- toYaml .Values.l2.coordinator.resources | nindent 12 }}
+        {{- if .Values.prover.enabled }}
+        - name: dummy-prover
+          image: {{ .Values.images.prover }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command:
+            - /opt/linea/prover/controller
+            - --config
+            - /config/prover-config.toml
+            - --local-id
+            - "0"
+          volumeMounts:
+            - name: coordinator-data
+              mountPath: /data
+            - name: prover-config
+              mountPath: /config
+            - name: prover-srs
+              mountPath: /opt/linea/prover/prover-assets/kzgsrs
+          resources:
+            {{- toYaml .Values.prover.resources | nindent 12 }}
+        {{- end }}
       volumes:
         - name: l2-genesis-data
           persistentVolumeClaim:
@@ -187,6 +207,14 @@ spec:
             secretName: coordinator-config-secret
         - name: coordinator-data
           emptyDir: {}
+        {{- if .Values.prover.enabled }}
+        - name: prover-config
+          configMap:
+            name: prover-config
+        - name: prover-srs
+          configMap:
+            name: prover-srs
+        {{- end }}
       {{- include "status-network.nodeSelector" . | nindent 6 }}
       {{- include "status-network.tolerations" . | nindent 6 }}
       {{- include "status-network.affinity" . | nindent 6 }}

@@ -8,7 +8,7 @@ global:
 
 # Image overrides for internal testnet
 images:
-  rlnProver: 720430261111.dkr.ecr.us-east-1.amazonaws.com/status-network-rln-prover:v1.0.3
+  rlnProver: 720430261111.dkr.ecr.us-east-1.amazonaws.com/status-network-rln-prover:v1.1.0
   postgres: 720430261111.dkr.ecr.us-east-1.amazonaws.com/status-network-postgres:v1.0.1
 
 # Network configuration for internal testnet
@@ -21,15 +21,15 @@ network:
   # L1 RPC endpoint, signer keys, and other secrets are provided via
   # a separate values-secrets.yaml file (not committed to git).
   # See values-secrets.yaml.example for the template.
-  # Contract addresses (deployed 2026-02-21)
+  # Contract addresses (L1 rollup redeployed 2026-02-26 with correct genesis timestamp)
   contracts:
-    l1Rollup: "0x64269d08c795d66A542903AA35B6e775B031872A"
-    l2MessageService: "0x2f6dAaF8A81AB675fbD37Ca6Ed5b72cf86237453"
+    l1Rollup: "0x2f4EF244C53E249bcF3A7188557cB9F94e1E5340"
+    l2MessageService: "0x37329AFc217D487d1db339F8EfEE8C4eEA8C1648"
 
 # RLN Configuration - Enabled for gasless transactions
 rln:
   enabled: true
-  contractAddress: "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853"
+  contractAddress: "0x5C95Bcd50E6D1B4E3CDC478484C9030Ff0a7D493"
   minMembershipBalance: "1000000000000000000"
   epochMode: "TEST"
   timeoutMs: 10000
@@ -63,9 +63,9 @@ l2:
     productionMode: true
     logLevel: debug
     # Contract addresses (deployed on fresh L2 chain 2026-02-21)
-    karmaContract: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
-    rlnContract: "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853"
-    tiersContract: "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+    karmaContract: "0xe537D669CA013d86EBeF1D64e40fC74CADC91987"
+    rlnContract: "0x5C95Bcd50E6D1B4E3CDC478484C9030Ff0a7D493"
+    tiersContract: "0x729409FAD88CafdA895E41f9ED00Ef4094F8d130"
     # Prover private key provided via values-secrets.yaml
     registrationMin: 1
     resources:
@@ -133,7 +133,7 @@ l2:
         cpu: "2"
         memory: 4Gi
     storage:
-      size: 20Gi
+      size: 50Gi
 
   zkbesuShomei:
     resources:
@@ -206,9 +206,9 @@ l2:
         cpu: 500m
         memory: 1Gi
 
-# Prover disabled (uses dummy proofs)
+# Dummy prover sidecar - generates fake proofs for dev/test
 prover:
-  enabled: false
+  enabled: true
 
 # Observability disabled for testnet
 observability:
