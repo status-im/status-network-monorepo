@@ -114,7 +114,7 @@ A user must meet these conditions to use gasless transactions:
 The user's wallet calls `linea_estimateGas` on the RPC node. The modified implementation (`LineaEstimateGas.java`) performs:
 
 ```
-1. Check gas kill switch → if active, skip gasless logic entirely
+1. Check gas kill switch → if active, return premium gas estimate
 2. Check if gasless features are enabled → if not, standard estimation
 3. Resolve sender address from call parameters
 4. Check deny list (DenyListManager):
@@ -687,7 +687,7 @@ The gas kill switch is a file-based emergency mechanism shared across all compon
 - **Activation**: Write `"true"` or `"enabled"` to the configured file path
 - **Deactivation**: Write any other value, or delete the file
 - **Poll interval**: Configurable (default: 5 seconds)
-- **Effect on RPC node**: Skips gasless estimation and prover forwarding
+- **Effect on RPC node**: Returns premium gas estimate (skips gasless/zero-gas path) and skips prover forwarding
 - **Effect on sequencer**: Rejects all gasless transactions (premium gas still allowed)
 - **Effect on prover**: Returns `Status::unavailable()` for new proof requests
 
