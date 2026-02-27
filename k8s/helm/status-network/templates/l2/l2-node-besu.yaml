@@ -110,7 +110,6 @@ spec:
                 --plugin-linea-rpc-gasless-enabled={{ .Values.rln.gasless.enabled }} \
                 --plugin-linea-rpc-rln-prover-forwarder-enabled=true \
                 --plugin-linea-rpc-allow-zero-gas-estimation-gasless={{ .Values.rln.gasless.allowZeroGasEstimation }} \
-                --plugin-linea-rpc-premium-gas-multiplier={{ .Values.rln.premiumGasMultiplier }} \
                 {{- if .Values.rln.killSwitch.enabled }}
                 --plugin-linea-gas-kill-switch-file={{ .Values.rln.killSwitch.filePath }} \
                 --plugin-linea-gas-kill-switch-poll-seconds={{ .Values.rln.killSwitch.pollSeconds }} \

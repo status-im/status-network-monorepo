@@ -22,6 +22,9 @@ spec:
         - name: postgres
           image: {{ .Values.images.postgres }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          {{- if .Values.l2.postgresReplica.enabled }}
+          args: ["-c", "config_file=/etc/postgresql/postgresql.conf"]
+          {{- end }}
           ports:
             - name: postgres
               containerPort: {{ .Values.l2.postgres.port }}
@@ -44,6 +47,10 @@ spec:
               mountPath: /data
             - name: init-scripts
               mountPath: /docker-entrypoint-initdb.d
+            {{- if .Values.l2.postgresReplica.enabled }}
+            - name: postgres-config
+              mountPath: /etc/postgresql
+            {{- end }}
           livenessProbe:
             exec:
               command:
@@ -71,6 +78,11 @@ spec:
         - name: init-scripts
           configMap:
             name: postgres-init-scripts
+        {{- if .Values.l2.postgresReplica.enabled }}
+        - name: postgres-config
+          configMap:
+            name: postgres-config
+        {{- end }}
       {{- include "status-network.nodeSelector" . | nindent 6 }}
       {{- include "status-network.tolerations" . | nindent 6 }}
       {{- include "status-network.affinity" . | nindent 6 }}
@@ -102,4 +114,35 @@ data:
         CREATE EXTENSION IF NOT EXISTS pg_merkle_tree;
     EOSQL
     echo "pg_merkle_tree extension created successfully"
+
+    echo "Creating empty rln_publication in prover_db..."
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "prover_db" <<-EOSQL
+        CREATE PUBLICATION rln_publication;
+    EOSQL
+    echo "rln_publication created successfully"
+
+{{- if .Values.l2.postgresReplica.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "postgres") | nindent 4 }}
+data:
+  postgresql.conf: |
+    # Connection settings
+    listen_addresses = '*'
+    max_connections = 500
+
+    # WAL / Replication settings for logical replication
+    wal_level = logical
+    max_wal_senders = 10
+    max_replication_slots = 10
+
+    # Memory
+    shared_buffers = 128MB
+    dynamic_shared_memory_type = posix
+{{- end }}
 {{- end }}

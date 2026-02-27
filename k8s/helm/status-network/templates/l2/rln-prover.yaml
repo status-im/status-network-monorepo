@@ -54,6 +54,10 @@ spec:
             - "{{ .Values.l2.rlnProver.tiersContract }}"
             - "--registration-min"
             - "{{ .Values.l2.rlnProver.registrationMin | default 1 }}"
+            {{- if .Values.l2.rlnProver.registrationGasPriceGwei }}
+            - "--registration-gas-price-gwei"
+            - "{{ .Values.l2.rlnProver.registrationGasPriceGwei }}"
+            {{- end }}
             {{- else }}
             # Mock mode - use mock smart contract and users
             - "--mock-sc"
