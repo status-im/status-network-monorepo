@@ -133,14 +133,20 @@ async fn run_aggregator(app_args: AppArgs) -> anyhow::Result<()> {
         }
     }
 
-    let res = set.join_all().await;
-    // Print all errors from services (if any)
-    // We expect that the Aggregator should never stop unexpectedly, but printing error can help to debug
-    res.iter().for_each(|r| {
-        if r.is_err() {
-            error!("Error: {:?}", r);
+    while let Some(res) = set.join_next().await {
+        match res {
+            Ok(Ok(_)) => {},
+            Ok(Err(e)) => {
+                error!("Task error: {:#}", e);
+                break;
+            }
+            Err(e) => {
+                error!("Join error: {}", e);
+                break;
+            }
         }
-    });
+    }
+
     Ok(())
 }
 
@@ -160,7 +166,8 @@ impl ProverClient {
         Ok(Self {
             id,
             url: url.clone(),
-            client: RlnProverClient::connect(url).await?,
+            client: RlnProverClient::connect(url.clone()).await
+                .context(format!("Cannot connect to {}", url))?,
             sender,
         })
     }

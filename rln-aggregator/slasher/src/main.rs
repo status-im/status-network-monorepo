@@ -49,13 +49,13 @@ use crate::prover_proto::{
 #[derive(Debug, Clone, Parser)]
 #[command(about = "RLN slasher node", long_about = None)]
 pub struct AppArgs {
-    #[arg(short = 'i', long = "ip", default_value = "::1", help = "Service ip")]
+    #[arg(short = 'i', long = "ip", default_value = "::1", help = "RLN aggregator ip address")]
     pub ip: IpAddr,
     #[arg(
         short = 'p',
         long = "port",
-        default_value = "50067",
-        help = "Service port"
+        default_value = "50061",
+        help = "RLN aggregator port"
     )]
     pub port: u16,
     #[arg(
