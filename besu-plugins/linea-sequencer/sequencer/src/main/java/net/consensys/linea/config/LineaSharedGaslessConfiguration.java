@@ -38,7 +38,7 @@ public record LineaSharedGaslessConfiguration(
     implements LineaOptionsConfiguration {
 
   public static final long DEFAULT_DENY_LIST_CACHE_REFRESH_SECONDS = 60L; // 1 minute
-  public static final long DEFAULT_PREMIUM_GAS_PRICE_THRESHOLD_GWEI = 100L; // 100 Gwei
+  public static final long DEFAULT_PREMIUM_GAS_PRICE_THRESHOLD_GWEI = 12L; // 12 Gwei
   public static final long DEFAULT_DENY_LIST_ENTRY_MAX_AGE_MINUTES = 10L; // 10 minutes
   public static final String DEFAULT_NULLIFIER_STORAGE_PATH = "/var/lib/besu/nullifiers.txt";
 
