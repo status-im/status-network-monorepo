@@ -21,13 +21,13 @@ mod user_db_types;
 // tests
 mod epoch_service_tests;
 mod grpc_e2e;
+mod nonce_manager_tests;
 mod proof_service_tests;
 #[cfg(test)]
 pub mod tests_common;
 mod user_db_2;
 mod user_db_2_entities;
 mod user_db_2_tests;
-mod nonce_manager_tests;
 // mod user_db_tests;
 
 // std
@@ -60,6 +60,10 @@ use crate::karma_sc_listener::KarmaScEventListener;
 use crate::kill_switch::GasKillSwitch;
 pub use crate::mock::MockUser;
 use crate::mock::read_mock_user;
+use crate::nonce_manager::{
+    ManagedRLNRegister, NonceManager, NonceManagerConfig, monitor_stuck_transactions,
+    process_registrations,
+};
 use crate::proof_service::ProofService;
 use crate::tier::TierLimits;
 use crate::tiers_listener::TiersListener;
@@ -69,10 +73,6 @@ use crate::user_db_service::UserDbService;
 use crate::user_db_types::RateLimit;
 use rln_proof::RlnIdentifier;
 use smart_contract::{KarmaRLNSC, KarmaTiers::KarmaTiersInstance, KarmaTiersError, TIER_LIMITS};
-use crate::nonce_manager::{
-    ManagedRLNRegister, NonceManager, NonceManagerConfig,
-    monitor_stuck_transactions, process_registrations,
-};
 
 pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
     // Epoch service with configurable epoch and slice duration
@@ -323,8 +323,7 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
         let pws = provider_with_signer.unwrap();
 
         // Set up nonce manager and managed RLN register
-        let rln_sc_instance =
-            KarmaRLNSC::new(app_args.rlnsc_address.unwrap(), pws.clone());
+        let rln_sc_instance = KarmaRLNSC::new(app_args.rlnsc_address.unwrap(), pws.clone());
 
         let nonce_config = {
             let mut cfg = NonceManagerConfig::default();
@@ -339,14 +338,9 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
         };
 
         let nonce_manager = Arc::new(
-            NonceManager::new(
-                db_conn.clone(),
-                nonce_config,
-                wallet_address.unwrap(),
-                &pws,
-            )
-            .await
-            .map_err(|e| AppError2::MigrationError(format!("Nonce manager init: {}", e)))?,
+            NonceManager::new(db_conn.clone(), nonce_config, wallet_address.unwrap(), &pws)
+                .await
+                .map_err(|e| AppError2::MigrationError(format!("Nonce manager init: {}", e)))?,
         );
 
         // Recover any pending registrations from a previous run

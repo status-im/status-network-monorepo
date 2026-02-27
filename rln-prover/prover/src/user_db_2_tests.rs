@@ -506,9 +506,12 @@ mod tests {
             tree_depth,
         };
 
-        let (_, db_conn) =
-            create_database_connection("user_db_tests_test_deny_list_cleanup", true, config.clone())
-                .await?;
+        let (_, db_conn) = create_database_connection(
+            "user_db_tests_test_deny_list_cleanup",
+            true,
+            config.clone(),
+        )
+        .await?;
 
         let user_db = UserDb2::new(
             db_conn.clone(),
@@ -620,9 +623,12 @@ mod tests {
             tree_depth,
         };
 
-        let (_, db_conn) =
-            create_database_connection("user_db_tests_test_nullifier_cleanup", true, config.clone())
-                .await?;
+        let (_, db_conn) = create_database_connection(
+            "user_db_tests_test_nullifier_cleanup",
+            true,
+            config.clone(),
+        )
+        .await?;
 
         let user_db = UserDb2::new(
             db_conn.clone(),

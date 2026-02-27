@@ -5,7 +5,7 @@ use alloy::providers::Provider;
 use async_trait::async_trait;
 use smart_contract::{KarmaRLNSC, RLNRegister};
 use sqlx::{Pool, Postgres};
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{Mutex, mpsc, oneshot};
 use tracing::{error, info, warn};
 
 // ---------------------------------------------------------------------------
@@ -99,12 +99,11 @@ impl NonceManager {
             .await
             .map_err(|e| NonceManagerError::Provider(e.to_string()))?;
 
-        let db_nonce: Option<i64> = sqlx::query_scalar(
-            "SELECT current_nonce FROM nonce_state WHERE wallet_address = $1",
-        )
-        .bind(wallet_address.as_slice())
-        .fetch_optional(&db)
-        .await?;
+        let db_nonce: Option<i64> =
+            sqlx::query_scalar("SELECT current_nonce FROM nonce_state WHERE wallet_address = $1")
+                .bind(wallet_address.as_slice())
+                .fetch_optional(&db)
+                .await?;
 
         if db_nonce.is_none() {
             sqlx::query(
@@ -296,10 +295,7 @@ impl NonceManager {
                         info!("Recovered nonce {}: still pending on-chain", reg.nonce);
                     }
                     Err(e) => {
-                        warn!(
-                            "Failed to check receipt for nonce {}: {:?}",
-                            reg.nonce, e
-                        );
+                        warn!("Failed to check receipt for nonce {}: {:?}", reg.nonce, e);
                     }
                 }
             } else {
@@ -581,9 +577,7 @@ async fn retry_registration<P: Provider + Clone>(
             info!("Retry submitted nonce {} (tx: {})", nonce, tx_hash);
         }
         Err(e) => {
-            let _ = nm
-                .mark_failed(nonce, &format!("retry failed: {}", e))
-                .await;
+            let _ = nm.mark_failed(nonce, &format!("retry failed: {}", e)).await;
             error!("Failed to retry nonce {}: {}", nonce, e);
         }
     }

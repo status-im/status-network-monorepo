@@ -499,9 +499,7 @@ where
                     };
                     if let Err(e) = self.user_db.add_quota_bonus(&address, bonus).await {
                         error!("Failed to add quota bonus for {}: {:?}", address, e);
-                        return Err(Status::internal(format!(
-                            "Failed to add quota bonus: {e}"
-                        )));
+                        return Err(Status::internal(format!("Failed to add quota bonus: {e}")));
                     }
                     info!(
                         "Quota bonus {} added for {} (premium gas payment)",

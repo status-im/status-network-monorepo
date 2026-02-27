@@ -230,7 +230,10 @@ impl UserDb2 {
 
         txn.commit().await?;
         // FIXME: no 'as'
-        Ok(((new_tx_counter.epoch_counter as u64).into(), new_tx_counter.quota_bonus))
+        Ok((
+            (new_tx_counter.epoch_counter as u64).into(),
+            new_tx_counter.quota_bonus,
+        ))
     }
 
     /// Add quota bonus for the current epoch.
@@ -522,8 +525,7 @@ impl UserDb2 {
             if let TierMatch::Matched(tier) = tier_match {
                 t.tier_name = Some(tier.name.into());
                 // Include quota_bonus in effective limit so sequencer sees the correct quota
-                t.tier_limit =
-                    Some(TierLimit::from(tier.tx_per_epoch + quota_bonus as u32));
+                t.tier_limit = Some(TierLimit::from(tier.tx_per_epoch + quota_bonus as u32));
             }
 
             t

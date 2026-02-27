@@ -183,7 +183,11 @@ mod tests {
             .fetch_one(&db)
             .await
             .unwrap();
-            (row.get("status"), row.get("attempt_count"), row.get("last_error"))
+            (
+                row.get("status"),
+                row.get("attempt_count"),
+                row.get("last_error"),
+            )
         };
         assert_eq!(status, "failed");
         assert_eq!(attempt_count, 1);
@@ -217,13 +221,11 @@ mod tests {
             .await
             .unwrap();
 
-        sqlx::query(
-            "INSERT INTO nonce_state (wallet_address, current_nonce) VALUES ($1, 0)",
-        )
-        .bind(WALLET_ADDR.as_slice())
-        .execute(&db)
-        .await
-        .unwrap();
+        sqlx::query("INSERT INTO nonce_state (wallet_address, current_nonce) VALUES ($1, 0)")
+            .bind(WALLET_ADDR.as_slice())
+            .execute(&db)
+            .await
+            .unwrap();
 
         let nm = NonceManager {
             db: db.clone(),

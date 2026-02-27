@@ -81,8 +81,7 @@ pub async fn create_database_connection(
         sqlx::query(query_drop.as_str()).execute(&db).await?;
 
         // Create from template so all test databases share the same pgfr type OID
-        let query_create =
-            format!("CREATE DATABASE {} TEMPLATE {}", db_name, TEMPLATE_DB_NAME);
+        let query_create = format!("CREATE DATABASE {} TEMPLATE {}", db_name, TEMPLATE_DB_NAME);
         // Retry in case the template still has an active connection from setup
         let mut last_err = None;
         for i in 0..5 {
