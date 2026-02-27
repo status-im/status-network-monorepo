@@ -36,7 +36,6 @@ plugin-linea-tx-pool-min-margin="0"
 plugin-linea-rpc-gasless-enabled=true
 plugin-linea-rpc-rln-prover-forwarder-enabled=false  # Sequencer validates locally
 plugin-linea-rpc-allow-zero-gas-estimation-gasless=true
-plugin-linea-rpc-premium-gas-multiplier=1.5
 plugin-linea-estimate-gas-compatibility-mode-enabled=true
 plugin-linea-estimate-gas-compatibility-mode-multiplier=1.2
 ```
@@ -63,7 +62,6 @@ plugin-linea-rpc-rln-prover-forwarder-enabled=true
 
 # Same gasless and premium gas settings as sequencer
 plugin-linea-rpc-gasless-enabled=true
-plugin-linea-rpc-premium-gas-multiplier=1.5
 ```
 
 **Docker Compose overrides:**
@@ -117,23 +115,7 @@ plugin-linea-rpc-premium-gas-multiplier=1.5
 
 ## Common Configuration Tasks
 
-### 1. Change Premium Gas Multiplier
-
-**What it does:** Users on the deny list pay `premium_multiplier × base_gas_price`
-
-**Where to change:**
-```toml
-# In both sequencer-rln.config.toml and l2-node-besu-rln.config.toml
-plugin-linea-rpc-premium-gas-multiplier=1.5  # Change this value
-```
-
-**Examples:**
-- `1.0` = no premium (same as regular users)
-- `1.5` = 50% premium (default)
-- `2.0` = 100% premium (double the gas price)
-- `10.0` = 900% premium (10x the gas price)
-
-### 2. Change Premium Gas Threshold
+### 1. Change Premium Gas Threshold
 
 **What it does:** Transactions with gas price ≥ threshold bypass deny list checks
 
@@ -145,7 +127,7 @@ plugin-linea-rpc-premium-gas-multiplier=1.5  # Change this value
 
 **Examples:**
 - `0` = always check deny list (current setting)
-- `10` = bypass deny list if gas price ≥ 10 GWei
+- `12` = bypass deny list if gas price ≥ 12 GWei (default)
 - `100` = bypass deny list if gas price ≥ 100 GWei
 
 ### 3. Enable/Disable RLN
@@ -212,7 +194,7 @@ plugin-linea-rpc-allow-zero-gas-estimation-gasless=true  # Allow 0 gas estimates
 | `--plugin-linea-rln-karma-service` | Karma service endpoint | `localhost:50052` | Yes |
 | `--plugin-linea-rln-timeouts-ms` | Service timeout | `5000` | No |
 | `--plugin-linea-rln-epoch-mode` | Epoch calculation mode | `TIMESTAMP_1H` | No |
-| `--plugin-linea-rln-premium-gas-threshold-gwei` | Premium bypass threshold | `10` | No |
+| `--plugin-linea-rln-premium-gas-threshold-gwei` | Premium bypass threshold | `12` | No |
 
 ### RPC/Estimate Gas Options
 
@@ -220,7 +202,6 @@ plugin-linea-rpc-allow-zero-gas-estimation-gasless=true  # Allow 0 gas estimates
 |--------|-------------|---------|
 | `--plugin-linea-rpc-gasless-enabled` | Enable gasless transactions | `false` |
 | `--plugin-linea-rpc-rln-prover-forwarder-enabled` | Forward to prover (RPC mode) | `false` |
-| `--plugin-linea-rpc-premium-gas-multiplier` | Gas multiplier for denied users | `1.5` |
 | `--plugin-linea-rpc-allow-zero-gas-estimation-gasless` | Allow 0 gas estimates | `false` |
 | `--plugin-linea-estimate-gas-compatibility-mode-enabled` | Compatibility mode | `false` |
 | `--plugin-linea-estimate-gas-compatibility-mode-multiplier` | Compatibility multiplier | `1.2` |
@@ -277,9 +258,8 @@ environment:
 ### Premium gas not applied
 
 **Check:**
-1. `plugin-linea-rpc-premium-gas-multiplier` is set correctly
-2. `plugin-linea-rln-premium-gas-threshold-gwei` is set appropriately
-3. User is actually on the deny list
+1. `plugin-linea-rln-premium-gas-threshold-gwei` is set appropriately
+2. User is actually on the deny list
 
 ---
 
@@ -295,7 +275,7 @@ environment:
 ### Production Configuration (Example)
 ```yaml
 --plugin-linea-rln-epoch-mode=TIMESTAMP_1H  # 1 hour epochs
---plugin-linea-rln-premium-gas-threshold-gwei=10  # Bypass at 10 GWei
+--plugin-linea-rln-premium-gas-threshold-gwei=12  # Bypass at 12 GWei
 --plugin-linea-rln-timeouts-ms=10000  # 10 second timeout
 ```
 
