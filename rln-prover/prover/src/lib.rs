@@ -196,13 +196,16 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
             );
 
             let user_db = user_db_service.get_user_db();
-            if let Err(e) = user_db.on_new_user(&mock_user.address).await {
-                match e {
-                    RegisterError2::AlreadyRegistered(_) => {
-                        debug!("User {} already registered", mock_user.address);
-                    }
-                    _ => {
-                        return Err(AppError2::from(e));
+            match user_db.on_new_user(&mock_user.address).await {
+                Ok(id_co) => debug!("id_commitment: {} for address: {}", id_co, mock_user.address),
+                Err(e) => {
+                    match e {
+                        RegisterError2::AlreadyRegistered(_) => {
+                            debug!("User {} already registered", mock_user.address);
+                        }
+                        _ => {
+                            return Err(AppError2::from(e));
+                        }
                     }
                 }
             }

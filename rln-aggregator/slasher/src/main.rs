@@ -12,23 +12,22 @@ use alloy::{
     providers::{ProviderBuilder, WsConnect},
     signers::local::PrivateKeySigner,
 };
+use alloy::primitives::{address, U256};
 use anyhow::{Context, anyhow};
+use ark_bn254::Fr;
 use clap::Parser;
+use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinSet;
 use tonic::{IntoRequest, codegen::tokio_stream::StreamExt};
-use tracing::{
-    debug,
-    error,
-    // info,
-    level_filters::LevelFilter,
-    warn,
-};
+use tracing::{debug, error, info, level_filters::LevelFilter, warn};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use url::Url;
 use zeroize::Zeroizing;
 // internal
 use crate::slashing::{SlashingService, SlashingServiceConfig};
 use proof_process::{ProofProcessConfig, ProofProcessService};
+use smart_contract::deploy_sc_for_slashing;
+use crate::common::SlashingData;
 
 // Internal - proto file
 pub mod prover_proto {
@@ -45,6 +44,7 @@ use crate::prover_proto::{
     // RlnAggProof
     rln_aggregator_client::RlnAggregatorClient,
 };
+use crate::smart_contract::RLN;
 
 #[derive(Debug, Clone, Parser)]
 #[command(about = "RLN slasher node", long_about = None)]
@@ -63,7 +63,7 @@ pub struct AppArgs {
         long = "ws-rpc-url",
         help = "Websocket rpc url (e.g. wss://eth-mainnet.g.alchemy.com/v2/your-api-key)"
     )]
-    pub rpc_url_ws: Url,
+    pub rpc_url_ws: Option<Url>,
     #[arg(
         long = "spam_limit",
         help = "RLN spam limit (or message limit / rate limit in RLN specs)",
@@ -75,7 +75,7 @@ pub struct AppArgs {
         help = "Account that will receive the reward after a successful slashing",
         help_heading = "slash"
     )]
-    pub account_to_reward: Address,
+    pub account_to_reward: Option<Address>,
     #[arg(
         long = "slash_limit",
         default_value = "5",
@@ -89,7 +89,42 @@ pub struct AppArgs {
         help = "RLN smart contract address",
         help_heading = "smart contract"
     )]
-    pub rln_sc_address: Address,
+    pub rln_sc_address: Option<Address>,
+
+    #[arg(
+        help_heading = "mock",
+        long = "mock-sc",
+        help = "Test only - mock rln sc (using Anvil)",
+        action
+    )]
+    pub mock_smart_contract: Option<bool>,
+    #[arg(
+        help_heading = "mock",
+        long = "mock-register",
+        help = "Test only - register user in RLN smart contract (using Anvil)",
+    )]
+    pub mock_register: Option<Vec<MockRegisterArg>>,
+}
+
+#[derive(Debug, Clone)]
+struct MockRegisterArg {
+    pub address: String,
+    pub value: String,
+}
+
+impl FromStr for MockRegisterArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split(',').collect();
+        if parts.len() != 2 {
+            return Err("Must be in format ADDRESS,VALUE".to_string());
+        }
+        Ok(MockRegisterArg {
+            address: parts[0].to_string(),
+            value: parts[1].to_string(),
+        })
+    }
 }
 
 #[tokio::main]
@@ -105,29 +140,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut set = JoinSet::new();
 
-    // Alloy provider (+ signer)
-    let provider_with_signer = {
-        let pk: Zeroizing<String> =
-            Zeroizing::new(std::env::var("PRIVATE_KEY").expect("Please provide a private key"));
-        let pk_signer = PrivateKeySigner::from_str(pk.as_str())?;
-        let wallet = EthereumWallet::from(pk_signer);
-
-        let ws = WsConnect::new(app_args.rpc_url_ws.as_str());
-        ProviderBuilder::new()
-            .wallet(wallet)
-            .connect_ws(ws)
-            .await
-            .map_err(|e| anyhow!(e))?
-    };
-
-    // Slashing service
-    let slashing_service_config = SlashingServiceConfig {
-        rln_sc_address: app_args.rln_sc_address,
-        account_to_reward: app_args.account_to_reward,
-        slashing_limit: app_args.slashing_limit,
-    };
-    let mut slashing_service = SlashingService::new(slashing_rx, slashing_service_config);
-    set.spawn(async move { slashing_service.serve(provider_with_signer).await });
+    start_slashing_service(app_args.clone(), slashing_rx, &mut set).await?;
 
     // Proof process service
     let cfg = ProofProcessConfig {
@@ -154,7 +167,8 @@ async fn main() -> anyhow::Result<()> {
 
             match pr_ {
                 Some(Ok(pr)) => {
-                    // info!("Received proof reply: {:?}", pr)
+
+                    debug!("Received proof reply: {:?}", pr);
 
                     match pr.resp {
                         Some(Resp::Proof(p)) => {
@@ -188,13 +202,81 @@ async fn main() -> anyhow::Result<()> {
         Ok(())
     });
 
-    let res = set.join_all().await;
-    // Print all errors from services (if any)
-    res.iter().for_each(|r| {
-        if r.is_err() {
-            error!("Error: {:?}", r);
+    while let Some(res) = set.join_next().await {
+        match res {
+            Ok(Ok(_)) => {},
+            Ok(Err(e)) => {
+                error!("Task error: {:#}", e);
+                break;
+            }
+            Err(e) => {
+                error!("Join error: {}", e);
+                break;
+            }
         }
-    });
+    }
+
+    Ok(())
+}
+
+async fn start_slashing_service(app_args: AppArgs, slashing_rx: Receiver<SlashingData>, set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+
+    match app_args.mock_smart_contract {
+        Some(true) => {
+
+            let provider = ProviderBuilder::new().connect_anvil_with_wallet();
+            // Need to deploy the SC in Anvil
+            let (_, _, rln_sc) = deploy_sc_for_slashing(provider.clone()).await;
+
+            // FIXME: should be returned by deploy_sc_for_slashing
+            let account_to_reward = address!("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
+
+            if app_args.mock_register.is_some() {
+
+                for mock_register_arg in app_args.mock_register.unwrap().iter() {
+                    let address = Address::from_str(mock_register_arg.address.as_str()).expect("Invalid address");
+                    // let id_commitment = Fr::from_str(mock_register_arg.value.as_str()).expect("Invalid address");
+                    let id_commitment = U256::from_str(mock_register_arg.value.as_str()).expect("Invalid address");
+                    info!("Registering user: {}, with id_commitment: {}", address, id_commitment);
+                    let call_1 = rln_sc.register(id_commitment, address);
+                    let tx_hash_1 = call_1.send().await.unwrap().watch().await.unwrap();
+                }
+            }
+
+            let slashing_service_config = SlashingServiceConfig {
+                account_to_reward,
+                slashing_limit: app_args.slashing_limit,
+            };
+            let mut slashing_service = SlashingService::new(slashing_rx, slashing_service_config);
+            set.spawn(async move { slashing_service.serve(rln_sc).await });
+
+        },
+        _ => {
+            let pk: Zeroizing<String> =
+                Zeroizing::new(std::env::var("PRIVATE_KEY").expect("Please provide a private key"));
+            let pk_signer = PrivateKeySigner::from_str(pk.as_str())?;
+            let wallet = EthereumWallet::from(pk_signer);
+
+            let ws = WsConnect::new(app_args.rpc_url_ws.expect("Please provide a rpc ws endpoint").as_str());
+            let p = ProviderBuilder::new()
+                .wallet(wallet)
+                .connect_ws(ws)
+                .await
+                .map_err(|e| anyhow!(e))?;
+
+            let rln_sc = RLN::new(app_args.rln_sc_address.expect("Please provide RLN smart contract address"), p);
+
+            let account_to_reward = app_args.account_to_reward.expect("Please provide an account to reward");
+
+            let slashing_service_config = SlashingServiceConfig {
+                account_to_reward,
+                slashing_limit: app_args.slashing_limit,
+            };
+            let mut slashing_service = SlashingService::new(slashing_rx, slashing_service_config);
+            set.spawn(async move { slashing_service.serve(rln_sc).await });
+
+        }
+    }
 
     Ok(())
 }
@@ -202,7 +284,9 @@ async fn main() -> anyhow::Result<()> {
 fn setup_tracing() -> anyhow::Result<()> {
     let filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
-        .from_env_lossy();
+        .from_env_lossy()
+        .add_directive("h2=error".parse()?)
+        .add_directive("opentelemetry_sdk=error".parse()?);
 
     let fmt_layer = tracing_subscriber::fmt::layer();
 

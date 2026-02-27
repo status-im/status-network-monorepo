@@ -22,6 +22,7 @@ An aggregator service collection Rln proof and sending them to slasher nodes
 Note:
 * spam_limit must be set to the spam_limit defined in the rln-prover
 * account_to_reward is the account receiving a reward (in Karma token) after a successful slash
+* In production, slasher expect to read in environment: `PRIVATE_KEY`
 
 ## Dev (aggregator)
 

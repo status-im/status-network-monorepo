@@ -62,20 +62,6 @@ async fn main() -> anyhow::Result<()> {
     let app_args = AppArgs::parse();
     debug!("{:#?}", app_args);
 
-    /*
-    let url_0 = app_args.urls[0].clone();
-    println!("Trying to connect to: {}", url_0);
-    let mut client = RlnProverClient::connect(url_0).await.unwrap();
-    println!("client: {:?}", client);
-
-    let proof_filter = RlnProofFilter::default();
-    let req = proof_filter.into_request();
-    let mut s = client.get_proofs(req).await.unwrap().into_inner();
-    while let Some(proof) = s.next().await {
-        println!("proof: {:?}", proof);
-    }
-    */
-
     run_aggregator(app_args).await
 }
 
@@ -106,29 +92,13 @@ async fn run_aggregator(app_args: AppArgs) -> anyhow::Result<()> {
         set.spawn(async move { mock.serve().await });
     } else {
         for (id, url) in app_args.urls.into_iter().enumerate() {
-            // TODO
-            /*
-            let mut client = RlnProverClient::connect(url).await.unwrap();
-            let proof_filter = RlnProofFilter::default();
-            let req = proof_filter.into_request();
-            let mut s = client.get_proofs(req).await.unwrap().into_inner();
-            */
 
             let tx = bcast_tx.clone();
 
             // rln-prover clients
             set.spawn(async move {
-                /*
-                let mut client = RlnProverClient::connect(url).await?;
-                let proof_filter = RlnProofFilter::default();
-                let req = proof_filter.into_request();
-                let mut s = client.get_proofs(req).await?.into_inner();
-                */
-
                 let mut client = ProverClient::new(id as u64, url, tx).await?;
                 client.serve().await
-
-                // Ok::<(), anyhow::Error>(())
             });
         }
     }
@@ -182,6 +152,7 @@ impl ProverClient {
             if let Some(r) = n {
                 match r {
                     Ok(proof_reply) => {
+                        debug!("Received: {:?}", proof_reply);
                         self.sender.send(proof_reply).context(format!(
                             "[client {} {}] failed to send proof to channel",
                             self.id, self.url
