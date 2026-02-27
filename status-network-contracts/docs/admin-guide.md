@@ -62,7 +62,7 @@ cast call <CONTRACT_ADDRESS> \
 | `DEFAULT_ADMIN_ROLE` | `0x0000000000000000000000000000000000000000000000000000000000000000` | StakeManager, Karma, SimpleKarmaDistributor, RLN |
 | `GUARDIAN_ROLE`      | `0x55435dd261a4b9b3364963f7738a7a662ad9c84396d64be3365284bb7f0a5041` | StakeManager                                     |
 | `OPERATOR_ROLE`      | `0x97667070c54ef182b0f5858b034beac1b6f3089aa2d3188bb1e8929f4fa9b929` | Karma, SimpleKarmaDistributor                    |
-| `SLASHER_ROLE`       | `0x12b42e8a160f6064dc959c6f251e3af0750ad213dbecf573b4710d67d6c28e39` | Karma, RLN                                       |
+| `SLASHER_ROLE`       | `0x12b42e8a160f6064dc959c6f251e3af0750ad213dbecf573b4710d67d6c28e39` | Karma                                            |
 | `REGISTER_ROLE`      | `keccak256("REGISTER_ROLE")`                                         | RLN                                              |
 
 ### Transferring ownership
@@ -301,7 +301,7 @@ cast send <KARMA_ADDRESS> \
 
 ### Setting the RLN reveal window
 
-Requires `DEFAULT_ADMIN_ROLE` on RLN. Controls how long a slasher must wait between committing and revealing a slash.
+Requires `DEFAULT_ADMIN_ROLE` on RLN. Controls how long a caller must wait between committing and revealing a slash.
 Default: 1 hour. Must be between 1 second and 86400 seconds (1 day).
 
 ```bash

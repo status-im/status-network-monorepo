@@ -292,7 +292,11 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
 
     function _afterTokenTransfer(address from, address to, uint256 amount) internal virtual override {
         super._afterTokenTransfer(from, to, amount);
-        _notifyGaugeVoter(delegates(from), delegates(to));
+        address fromDelegate = delegates(from);
+        address toDelegate = delegates(to);
+        if (fromDelegate != address(0) || toDelegate != address(0)) {
+            _notifyGaugeVoter(fromDelegate, toDelegate);
+        }
     }
 
     function _beforeTokenTransfer(address from, address to, uint256) internal view override {
@@ -441,6 +445,21 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     /*//////////////////////////////////////////////////////////////////////////
                              VIEW FUNCTIONS
       //////////////////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Clock used for flagging checkpoints. Uses block timestamp instead of block number.
+     */
+    function clock() public view virtual override returns (uint48) {
+        return uint48(block.timestamp);
+    }
+
+    /**
+     * @dev Description of the clock
+     */
+    // solhint-disable-next-line func-name-mixedcase
+    function CLOCK_MODE() public view virtual override returns (string memory) {
+        return "mode=timestamp";
+    }
 
     /**
      * @notice Returns the total supply of the token.

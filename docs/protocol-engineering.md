@@ -19,28 +19,19 @@
 
 ## Introduction
 
-Status Network is the first natively gasless Ethereum L2, built on top of the Linea zkEVM stack. The core protocol engineering challenge was: **how do you allow users to send transactions without paying gas fees, while preventing spam and denial-of-service attacks?**
+Status Network is a gasless Ethereum L2 built on top of the Linea zkEVM stack. The whole point is to let users send transactions without paying gas, while not getting spam-nuked in the process.
 
-The answer combines three technologies:
+We pull this off with three pieces. **RLN (Rate Limiting Nullifier)** is a zero-knowledge proof system from [Vac/Waku](https://github.com/vacp2p/zerokit) that enforces per-user rate limits without revealing who the user is. **Karma** is a non-transferable ERC-20 reputation token that determines how many gasless transactions you get per day. And **Besu Plugin Extensions** are the custom transaction pool validators and RPC modifications to the Linea Besu client that wire it all together.
 
-1. **RLN (Rate Limiting Nullifier)** — A zero-knowledge proof system from [Vac/Waku](https://github.com/vacp2p/zerokit) that cryptographically enforces per-user rate limits without revealing user identity
-2. **Karma** — A non-transferable ERC-20 reputation token that determines each user's tier and daily gasless transaction quota
-3. **Besu Plugin Extensions** — Custom transaction pool validators and RPC modifications to the Linea Besu client that orchestrate proof generation, verification, and quota enforcement
+This doc covers how these components talk to each other and what happens under the hood when a gasless transaction moves through the system.
 
-This document details the protocol engineering work that went into making these components work together as a production system.
+### What's in here
 
-### What This Document Covers
+The Besu RPC node mods (`RlnProverForwarderValidator`, `LineaEstimateGas`), the Rust RLN Prover service (Groth16 proof gen, user management, quota tracking), the sequencer mods (`RlnVerifierValidator`, deny lists, nullifier tracking), and how all of these talk to each other over gRPC.
 
-- **RPC Node Modifications**: How Besu RPC nodes were extended with the `RlnProverForwarderValidator` and modified `LineaEstimateGas` to enable gasless transaction submission
-- **RLN Prover Service**: The Rust gRPC service that generates Groth16 zero-knowledge proofs for rate limiting, manages user registrations, and tracks quotas
-- **Sequencer Modifications**: How the sequencer was extended with the `RlnVerifierValidator` to verify proofs, enforce quotas, and manage deny lists
-- **Integration Architecture**: How all components communicate via gRPC streaming, shared services, and on-chain contract events
+### What's documented elsewhere
 
-### What Is Already Documented Elsewhere
-
-- **Smart Contract Specifications**: See [`status-network-contracts/docs/`](../status-network-contracts/docs/) for Karma, KarmaTiers, RLN Registry, StakeManager, and reward distribution documentation
-- **Linea Base Architecture**: See [`docs/architecture-description.md`](./architecture-description.md) for the underlying Linea zkEVM stack (sequencer, coordinator, provers, L1/L2 messaging)
-- **Contract Deployment**: See [`docs/status-network-deployment.md`](./status-network-deployment.md) for deployment procedures
+Smart contract specs for Karma, KarmaTiers, RLN, and StakeManager live in [`status-network-contracts/docs/`](../status-network-contracts/docs/). The base Linea architecture (sequencer, coordinator, provers, L1/L2 messaging) is covered in [`docs/architecture-description.md`](./architecture-description.md). Contract deployment procedures are in [`docs/status-network-deployment.md`](./status-network-deployment.md).
 
 ---
 
@@ -80,10 +71,7 @@ graph TB
     Prover --- PG
 ```
 
-**Key gRPC flows:**
-- **RPC Node → Prover**: `SendTransaction` — forwards tx data for proof generation
-- **Prover → Sequencer**: `GetProofs` stream — delivers generated proofs
-- **Sequencer → Prover**: `GetUserTierInfo`, deny list ops, nullifier ops — quota enforcement
+**Key gRPC flows.** The RPC node sends `SendTransaction` to the prover to forward tx data for proof generation. The prover streams generated proofs back to the sequencer via `GetProofs`. And the sequencer calls back into the prover for `GetUserTierInfo`, deny list operations, and nullifier checks to enforce quotas.
 
 ### Node Roles
 
@@ -97,80 +85,113 @@ graph TB
 
 ## Gasless Transaction Flow (End-to-End)
 
-This section traces a single gasless transaction from a user's wallet through the entire system.
+Here's what happens when a single gasless transaction moves from the user's wallet through the system.
 
 ### Prerequisites
 
-A user must meet these conditions to use gasless transactions:
-
-1. **RLN Membership**: The user must be registered in the RLN Registry smart contract. Registration happens automatically when the user receives Karma tokens — the `KarmaScEventListener` in the prover service detects the `Transfer` event (minting) and registers the user's identity commitment in the RLN contract.
-
-2. **Karma Balance**: The user must hold enough Karma (non-transferable ERC-20) tokens to qualify for a tier in `KarmaTiers`. Each tier defines a daily gasless transaction quota. Higher Karma balance = higher tier = more free transactions.
-
-3. **Available Quota**: The user's epoch transaction count must be below their tier's quota limit.
+Before any of this works, the user needs to be registered in the RLN Registry contract. This happens automatically when a user first receives Karma tokens. The prover's `KarmaScEventListener` picks up the `Transfer` event (from the zero address, meaning a mint) and registers the user's identity commitment on-chain. They also need enough Karma to qualify for a tier in `KarmaTiers`, since higher balance means a higher tier and more free transactions per epoch. And their epoch transaction count has to be below their tier's limit.
 
 ### Step 1: Gas Estimation (`linea_estimateGas`)
 
-The user's wallet calls `linea_estimateGas` on the RPC node. The modified implementation (`LineaEstimateGas.java`) performs:
+The wallet calls `linea_estimateGas` on the RPC node. Our modified `LineaEstimateGas.java` runs through this:
 
-```
-1. Check gas kill switch → if active, return premium gas estimate
-2. Check if gasless features are enabled → if not, standard estimation
-3. Resolve sender address from call parameters
-4. Check deny list (DenyListManager):
-   ├─ If sender IS denied:
-   │   ├─ Estimate gas normally
-   │   ├─ Multiply gas limit by premium multiplier (default 1.5x)
-   │   ├─ Enforce priorityFee ≥ premiumGasPriceThreshold (converted to Wei)
-   │   └─ Return {gasLimit: premiumEstimate, baseFee: actual, priorityFee: premiumThreshold}
-   │
-   └─ If sender is NOT denied:
-       ├─ Query KarmaServiceClient for user tier info
-       ├─ Check: dailyQuota > 0 AND epochTxCount < dailyQuota
-       │
-       ├─ If eligible for gasless:
-       │   └─ Return {gasLimit: "0x0", baseFee: "0x0", priorityFee: "0x0"}
-       │
-       └─ If NOT eligible (no quota, unknown user, or karma service unavailable):
-           ├─ Estimate gas normally
-           ├─ Multiply gas limit by premium multiplier (default 1.5x)
-           ├─ Enforce priorityFee ≥ premiumGasPriceThreshold (converted to Wei)
-           └─ Return {gasLimit: premiumEstimate, baseFee: actual, priorityFee: premiumThreshold}
+```mermaid
+sequenceDiagram
+    participant W as Wallet
+    participant RPC as RPC Node
+    participant DL as DenyListManager
+    participant KS as KarmaServiceClient
+
+    W->>RPC: linea_estimateGas(callParams)
+
+    RPC->>RPC: Check gas kill switch
+    alt Kill switch active
+        RPC->>RPC: Estimate gas normally
+        RPC->>RPC: enforcePremiumMinPriorityFee()
+        RPC-->>W: {gasLimit: normalEstimate, baseFee: actual, priorityFee: premiumThreshold}
+    end
+
+    RPC->>RPC: Check gasless features enabled
+    alt Gasless disabled
+        RPC-->>W: Standard gas estimation
+    end
+
+    RPC->>RPC: Resolve sender address
+    RPC->>DL: isDenied(sender)?
+
+    alt Sender IS denied
+        RPC->>RPC: Estimate gas normally
+        RPC->>RPC: enforcePremiumMinPriorityFee()
+        RPC-->>W: {gasLimit: normalEstimate, baseFee: actual, priorityFee: premiumThreshold}
+    else Sender is NOT denied
+        RPC->>KS: GetUserTierInfo(sender)
+        KS-->>RPC: {dailyQuota, epochTxCount}
+
+        alt dailyQuota > 0 AND epochTxCount < dailyQuota
+            RPC-->>W: {gasLimit: "0x0", baseFee: "0x0", priorityFee: "0x0"}
+        else No quota / unknown user / karma service unavailable
+            RPC->>RPC: Estimate gas normally
+            RPC->>RPC: enforcePremiumMinPriorityFee()
+            RPC-->>W: {gasLimit: normalEstimate, baseFee: actual, priorityFee: premiumThreshold}
+        end
+    end
 ```
 
 **Source**: [`LineaEstimateGas.java:223-375`](../besu-plugins/linea-sequencer/sequencer/src/main/java/net/consensys/linea/rpc/methods/LineaEstimateGas.java)
 
-The zero-gas response is the signal to the wallet that this transaction can be submitted with `gasPrice = 0`. The wallet constructs and signs a transaction with zero gas price. The premium response ensures the `priorityFee` is at least the premium gas price threshold (default 100 GWei, configurable via `premiumGasPriceThresholdGWei`). This is critical on Status Network where both `baseFee` and `minGasPrice` are zero — without this enforcement, the standard priority fee estimation would return near-zero values, causing wallets to submit transactions with gas prices in the "dead zone" between 0 and the premium threshold that the sequencer rejects.
+When the wallet gets back all zeros, it knows to submit a `gasPrice = 0` transaction. The premium response enforces `priorityFee` to at least the premium threshold (configurable via `premiumGasPriceThresholdGWei`). Premium pricing is purely priority-fee-based — the gas limit is a normal estimate, not inflated. This matters because on Status Network both `baseFee` and `minGasPrice` are zero. Without this floor, the standard priority fee estimation returns near-zero values and wallets end up submitting transactions in a dead zone between 0 and the premium threshold that the sequencer just rejects.
 
 ### Step 2: Transaction Submission (`eth_sendRawTransaction`)
 
-The signed transaction arrives at the RPC node's transaction pool. Besu invokes its chain of transaction pool validators. The `RlnProverForwarderValidator` executes as part of this chain.
+The signed transaction hits the RPC node's transaction pool. Besu runs it through its validator chain, and `RlnProverForwarderValidator` is first in line.
 
-```
-1. Check if validator is enabled (disabled on sequencer nodes)
-2. Check gas kill switch → if active, allow tx without forwarding (passes to standard validation)
-3. Check if transaction is local → peer transactions are accepted without forwarding
-4. Check premium gas bypass:
-   ├─ Compute effective gas price (gasPrice or maxFeePerGas)
-   └─ If effectiveGasPrice >= premiumThreshold → allow without RLN forwarding
-5. Query karma service (informational, not blocking):
-   ├─ Log "GASLESS PRIORITY" if user has available quota
-   └─ Continue regardless of result
-6. Estimate actual gas used:
-   ├─ Simple ETH transfer with no calldata → 21,000
-   ├─ Full simulation available → simulate and get exact gas used
-   └─ Fallback → use transaction gas limit
-7. Build gRPC SendTransactionRequest:
-   ├─ transactionHash (32 bytes)
-   ├─ sender address (20 bytes)
-   ├─ gasPrice (if available)
-   ├─ chainId (if available)
-   └─ estimatedGasUsed (uint64)
-8. Send to RLN Prover Service via blocking gRPC call
-9. Handle response:
-   ├─ Prover accepted → allow transaction
-   ├─ Prover rejected → reject transaction
-   └─ gRPC error → ALLOW transaction (fail-open design)
+```mermaid
+sequenceDiagram
+    participant W as Wallet
+    participant RPC as RPC Node (Forwarder)
+    participant KS as KarmaServiceClient
+    participant SIM as TransactionSimulation
+    participant P as RLN Prover
+    participant SEQ as Sequencer
+
+    W->>RPC: eth_sendRawTransaction(signedTx)
+    RPC->>RPC: Check validator enabled (disabled on sequencer)
+    RPC->>RPC: Check gas kill switch
+
+    alt Kill switch active
+        RPC->>RPC: Allow tx without forwarding
+    end
+
+    RPC->>RPC: Check if peer tx (not local)
+    alt Peer transaction
+        RPC->>RPC: Accept without forwarding
+    end
+
+    RPC->>RPC: Compute effective gas price
+    alt effectiveGasPrice >= premiumThreshold
+        RPC->>RPC: Allow without RLN forwarding
+    end
+
+    RPC->>KS: GetUserTierInfo(sender)
+    Note right of KS: Informational only,<br/>not blocking
+
+    RPC->>SIM: Estimate actual gas used
+    Note right of SIM: ETH transfer → 21,000<br/>Simulation → exact gas<br/>Fallback → tx gas limit
+
+    RPC->>P: gRPC SendTransactionRequest
+    Note right of P: {txHash, sender, gasPrice,<br/>chainId, estimatedGasUsed}
+
+    alt Prover accepted
+        P-->>RPC: SendTransactionReply{result: true}
+        RPC->>RPC: Allow transaction
+    else Prover rejected
+        P-->>RPC: SendTransactionReply{result: false}
+        RPC-->>W: Reject transaction
+    else gRPC error
+        RPC->>RPC: ALLOW transaction (fail-open)
+    end
+
+    RPC->>SEQ: P2P tx propagation
 ```
 
 **Source**: [`RlnProverForwarderValidator.java:256-446`](../besu-plugins/linea-sequencer/sequencer/src/main/java/net/consensys/linea/sequencer/txpoolvalidation/validators/RlnProverForwarderValidator.java)
@@ -179,42 +200,40 @@ After the forwarder validator allows the transaction, Besu's standard transactio
 
 ### Step 3: RLN Proof Generation (Prover Service)
 
-The prover service receives the `SendTransactionRequest` via gRPC and begins proof generation:
+The prover gets the `SendTransactionRequest` via gRPC and kicks off proof generation:
 
-```
-1. Validate sender exists in user database
-2. Check gas kill switch → if active, return Status::unavailable()
-3. Compute quota increment: estimated_gas_used / tx_gas_quota
-4. Increment user's epoch transaction counter in PostgreSQL
-5. Check rate limit:
-   ├─ Look up user's tier from KarmaTiers contract
-   ├─ effective_limit = tier_limit OR global_spam_limit (fallback)
-   └─ If counter > effective_limit → return Status::resource_exhausted()
-6. Queue ProofGenerationData to bounded async channel (capacity: 256)
-7. Return SendTransactionReply { result: true }
-```
+```mermaid
+sequenceDiagram
+    participant RPC as RPC Node
+    participant GS as gRPC Service
+    participant DB as PostgreSQL
+    participant Q as Proof Queue (cap: 256)
+    participant PW as ProofService Worker (×8)
+    participant BC as Broadcast Channel
 
-Meanwhile, one of 8 `ProofService` worker threads picks up the queued proof request:
+    RPC->>GS: SendTransactionRequest
+    GS->>DB: Validate sender exists
+    GS->>GS: Check gas kill switch
+    alt Kill switch active
+        GS-->>RPC: Status::unavailable()
+    end
+    GS->>GS: Compute quota: ceil(estimated_gas / tx_gas_quota)
+    GS->>DB: Increment epoch tx counter (atomic)
+    GS->>DB: Look up user tier from KarmaTiers
+    alt counter > effective_limit
+        GS-->>RPC: Status::resource_exhausted()
+    end
+    GS->>Q: Enqueue ProofGenerationData
+    GS-->>RPC: SendTransactionReply{result: true}
 
-```
-1. Fetch Merkle proof for user from PostgreSQL (path_indexes, path_elements)
-2. Spawn CPU-bound Rayon task:
-   a. Prepare RLN data:
-      ├─ message_id = tx_counter (from epoch counter)
-      ├─ data = hash_to_field_le(tx_hash)  // Transaction hash as field element
-      └─ identity = user's RLN identity secret
-   b. Prepare epoch:
-      ├─ epoch_bytes = current_epoch || current_epoch_slice
-      └─ epoch = hash_to_field_le(epoch_bytes)
-   c. Call compute_rln_proof_and_values() (Groth16 ZK-SNARK)
-      └─ Returns: (proof, proof_values) containing:
-         ├─ share_x: X-coordinate of Shamir secret share
-         ├─ share_y: Y-coordinate of Shamir secret share
-         ├─ epoch: Epoch field element
-         ├─ root: Merkle tree root
-         └─ nullifier: Unique nullifier for this tx in this epoch
-   d. Serialize proof (288 bytes)
-3. Broadcast ProofSendingData {tx_hash, tx_sender, proof} to all subscribers
+    Q->>PW: Dequeue proof request
+    PW->>DB: Fetch Merkle proof (path_indexes, path_elements)
+    PW->>PW: Spawn Rayon task (CPU-bound)
+    Note right of PW: Prepare RLN inputs:<br/>message_id = tx_counter<br/>data = hash_to_field_le(tx_hash)<br/>epoch = hash_to_field_le(current_epoch)<br/>identity = user's RLN secret
+    PW->>PW: compute_rln_proof_and_values() [Groth16]
+    Note right of PW: Output public inputs:<br/>share_x, share_y, epoch,<br/>root, nullifier
+    PW->>PW: Serialize proof (288 bytes)
+    PW->>BC: Broadcast ProofSendingData{tx_hash, sender, proof}
 ```
 
 **Source**: [`grpc_service.rs`](../rln-prover/prover/src/grpc_service.rs), [`proof_service.rs`](../rln-prover/prover/src/proof_service.rs)
@@ -223,79 +242,118 @@ Meanwhile, one of 8 `ProofService` worker threads picks up the queued proof requ
 
 The sequencer maintains a persistent gRPC streaming subscription to the prover service via `GetProofs()`. When a proof is broadcast:
 
-```
-Prover Service                          Sequencer
-     │                                      │
-     │  broadcast::Sender<ProofSendingData> │
-     │ ────────────────────────────────────▶ │
-     │                                      │
-     │  GetProofs() stream (server-side)    │
-     │  ◀────────────────────────────────── │
-     │                                      │
-     │  RlnProofReply { proof: RlnProof }   │
-     │ ────────────────────────────────────▶ │
-     │                                      │
-     │                           StreamObserver.onNext():
-     │                           1. Extract tx_hash from proof
-     │                           2. Parse proof via JNI (parseAndVerifyRlnProof)
-     │                           3. Extract public inputs (share_x, share_y, epoch, root, nullifier)
-     │                           4. If valid: cache in Caffeine LRU cache
-     │                           5. Complete any CompletableFuture waiting for this tx_hash
+```mermaid
+sequenceDiagram
+    participant BC as Broadcast Channel
+    participant PS as Prover Service
+    participant SEQ as Sequencer (StreamObserver)
+    participant JNI as JniRlnVerificationService
+    participant C as Caffeine Cache
+
+    SEQ->>PS: GetProofs() (persistent stream subscription)
+
+    BC->>PS: ProofSendingData{tx_hash, sender, proof}
+    PS->>SEQ: RlnProofReply{proof: RlnProof} (stream)
+
+    SEQ->>SEQ: Extract tx_hash from proof
+    SEQ->>JNI: parseAndVerifyRlnProof(proof)
+    JNI-->>SEQ: public inputs (share_x, share_y, epoch, root, nullifier)
+
+    alt Proof valid
+        SEQ->>C: Cache CachedProof by tx_hash
+        SEQ->>SEQ: Complete any waiting CompletableFuture
+    end
 ```
 
-The streaming approach means proofs arrive asynchronously and are cached before the sequencer's validator needs them. The Caffeine cache is configured with:
-- **TTL**: 300 seconds (5 minutes)
-- **Max size**: 10,000 proofs
-- **Eviction**: LRU with time-based expiry
+Because proofs stream in asynchronously, they're usually cached before the sequencer's validator needs them. The Caffeine cache holds up to 10,000 proofs with a 5-minute TTL and LRU eviction.
 
 ### Step 5: Sequencer Validation (`RlnVerifierValidator`)
 
-When the transaction arrives at the sequencer's transaction pool (via P2P propagation), the `RlnVerifierValidator` runs as part of the validator chain:
+When the transaction lands in the sequencer's pool (via P2P), `RlnVerifierValidator` runs its checks:
 
-```
-1. Check if RLN validation is enabled → if disabled, allow
-2. Check priority status → infrastructure/deployment txs bypass RLN entirely
-3. Compute effective gas price
-4. Gas Kill Switch Check:
-   ├─ If active AND gas >= premium threshold → allow (paid tx)
-   └─ If active AND gas < premium threshold → REJECT ("Gas kill switch active")
-5. Deny List Check:
-   ├─ If denied AND gas >= premium threshold:
-   │   ├─ Remove from deny list (user is paying premium)
-   │   └─ Continue to RLN validation (still verify proof)
-   └─ If denied AND gas < premium threshold → REJECT ("Sender on deny list")
-6. Global Premium Gas Bypass:
-   └─ If gas >= premium threshold → allow without RLN validation
-7. Pre-check Karma Quota (fast rejection):
-   ├─ Query KarmaServiceClient
-   ├─ If epochTxCount > dailyQuota → REJECT immediately ("Quota exceeded")
-   └─ If epochTxCount == dailyQuota → add to deny list, continue (last allowed tx)
-8. Wait for RLN Proof in Cache:
-   ├─ Check Caffeine cache for tx_hash
-   ├─ If not found: create CompletableFuture and wait
-   ├─ Timeout: configurable (default 1000ms)
-   └─ If still not found after timeout → REJECT ("Proof not found after timeout")
-9. Validate Proof Epoch:
-   ├─ Check proof epoch against current epoch
-   ├─ Allow tolerance window (±2 blocks for BLOCK mode, ±1 hour for TIMESTAMP_1H)
-   └─ If outside window → REJECT ("Proof epoch outside acceptable window")
-10. Check Nullifier Uniqueness:
-    ├─ NullifierTracker.checkAndMarkNullifier(nullifier, proofEpoch)
-    ├─ If nullifier already used → REJECT ("Nullifier already used - double-spend")
-    └─ Mark nullifier as used for this epoch
-11. Final Karma Quota Check:
-    ├─ Query KarmaServiceClient again
-    ├─ If epochTxCount > dailyQuota → REJECT ("Quota exceeded")
-    ├─ If epochTxCount == dailyQuota → add to deny list (last tx)
-    └─ If epochTxCount < dailyQuota → ALLOW
-12. Transaction enters mempool → block building proceeds normally
+```mermaid
+sequenceDiagram
+    participant P2P as P2P Network
+    participant V as RlnVerifierValidator
+    participant DL as DenyListManager
+    participant KS as KarmaServiceClient
+    participant C as Proof Cache (Caffeine)
+    participant NT as NullifierTracker
+    participant MP as Mempool
+
+    P2P->>V: Transaction arrives
+
+    V->>V: 1. Check RLN enabled
+    V->>V: 2. Check priority status (infra txs bypass)
+    V->>V: 3. Compute effective gas price
+
+    Note over V: 4. Gas Kill Switch Check
+    alt Kill switch active AND gas >= premium
+        V->>MP: Allow (paid tx)
+    else Kill switch active AND gas < premium
+        V-->>P2P: REJECT "Gas kill switch active"
+    end
+
+    Note over V: 5. Deny List Check
+    V->>DL: isDenied(sender)?
+    alt Denied AND gas >= premium
+        V->>DL: Remove from deny list (paying premium)
+        Note right of DL: Triggers quota bonus
+        V->>V: Continue to RLN validation
+    else Denied AND gas < premium
+        V-->>P2P: REJECT "Sender on deny list"
+    end
+
+    Note over V: 6. Global Premium Bypass
+    alt gas >= premium threshold
+        V->>MP: Allow without RLN validation
+    end
+
+    Note over V: 7. Pre-check Karma Quota
+    V->>KS: GetUserTierInfo(sender)
+    alt epochTxCount > dailyQuota
+        V-->>P2P: REJECT "Quota exceeded"
+    else epochTxCount == dailyQuota
+        V->>DL: Add to deny list (last allowed tx)
+    end
+
+    Note over V: 8. Wait for RLN Proof
+    V->>C: Get proof by tx_hash
+    alt Proof not cached
+        V->>V: Create CompletableFuture, wait (timeout: 1000ms)
+        alt Timeout
+            V-->>P2P: REJECT "Proof not found after timeout"
+        end
+    end
+
+    Note over V: 9. Validate Proof Epoch
+    V->>V: Check proof epoch vs current epoch (±tolerance)
+    alt Outside tolerance window
+        V-->>P2P: REJECT "Proof epoch outside acceptable window"
+    end
+
+    Note over V: 10. Check Nullifier
+    V->>NT: checkAndMarkNullifier(nullifier, epoch)
+    alt Already used
+        V-->>P2P: REJECT "Nullifier already used"
+    end
+
+    Note over V: 11. Final Quota Check
+    V->>KS: GetUserTierInfo(sender)
+    alt epochTxCount > dailyQuota
+        V-->>P2P: REJECT "Quota exceeded"
+    else epochTxCount == dailyQuota
+        V->>DL: Add to deny list
+    end
+
+    V->>MP: ALLOW → block building proceeds
 ```
 
 **Source**: [`RlnVerifierValidator.java:924-1201`](../besu-plugins/linea-sequencer/sequencer/src/main/java/net/consensys/linea/sequencer/txpoolvalidation/validators/RlnVerifierValidator.java)
 
 ### Step 6: Block Building
 
-Once the transaction passes all validators (including the standard Linea validators for trace limits, gas limits, calldata, profitability, and simulation), it enters the sequencer's transaction pool. The standard Linea block building process picks it up and includes it in a block. The transaction executes with `gasPrice = 0` — the user pays nothing.
+After passing all validators (including the standard Linea ones for trace limits, gas limits, calldata, profitability, and simulation), the transaction enters the mempool. Standard Linea block building picks it up, includes it in a block, and it executes with `gasPrice = 0`. The user pays nothing.
 
 ---
 
@@ -303,55 +361,40 @@ Once the transaction passes all validators (including the standard Linea validat
 
 ### RPC Node Layer
 
-The RPC node is a Besu instance running with `--plugin-linea-node-type=RPC`. It has two critical Status Network modifications:
+The RPC node is a Besu instance running with `--plugin-linea-node-type=RPC`. We added two things to it.
 
 #### Modified `LineaEstimateGas` RPC
 
 **File**: [`LineaEstimateGas.java`](../besu-plugins/linea-sequencer/sequencer/src/main/java/net/consensys/linea/rpc/methods/LineaEstimateGas.java)
 
-The standard Linea `linea_estimateGas` endpoint was extended with gasless logic that runs before the standard estimation. The modification adds three dependencies injected via `SharedServiceManager`:
+We extended the standard Linea `linea_estimateGas` endpoint with gasless logic that runs before the normal estimation. Three dependencies get injected via `SharedServiceManager`: the `DenyListManager` gives read-only access to the deny list (backed by gRPC to the prover service), the `KarmaServiceClient` queries user tier and quota information from the prover, and the `GasKillSwitchMonitor` provides a file-based emergency disable for all gasless features.
 
-- **`DenyListManager`** — Read-only access to the deny list (backed by gRPC to the prover service)
-- **`KarmaServiceClient`** — Queries user tier and quota information from the prover service
-- **`GasKillSwitchMonitor`** — File-based emergency disable for all gasless features
-
-The gasless logic is bounded by `// --- Linea Gasless Logic Start ---` and `// --- Linea Gasless Logic End ---` markers in the source. The endpoint enforces the two-mode gas pricing model — it only ever returns zero gas or premium gas:
+The gasless code path is marked with `// --- Linea Gasless Logic Start ---` / `// --- Linea Gasless Logic End ---` in the source. There's no middle ground on gas pricing. It's either zero or premium:
 
 | Scenario | gasLimit | baseFee | priorityFee |
 |----------|----------|---------|-------------|
-| **Gasless** — User has Karma + available quota | `0x0` | `0x0` | `0x0` |
-| **Premium** — User on deny list, no Karma, quota exhausted, or karma service unavailable | Normal × 1.5 | Actual | max(estimated, premiumThreshold) |
+| **Gasless** (user has Karma + available quota) | `0x0` | `0x0` | `0x0` |
+| **Premium** (user on deny list, no Karma, quota exhausted, or karma service unavailable) | Normal estimate | Actual | max(estimated, premiumThreshold) |
 
-The zero response is the signal that triggers the wallet to submit a zero-gas transaction. The premium response ensures the `priorityFee` is at least the premium gas price threshold (`premiumGasPriceThresholdGWei` converted to Wei). This is enforced by `enforcePremiumMinPriorityFee()`, which takes the maximum of the standard estimation and the configured threshold. Without this, on a zero-baseFee chain the standard estimation returns near-zero, and wallets would submit transactions that the sequencer rejects.
+Zero means "go ahead, gasless." Premium means "you're paying." Premium pricing is purely priority-fee-based — the gas limit is a normal estimate (no multiplier), and only the priority fee floor is enforced. The `enforcePremiumMinPriorityFee()` method takes the max of the standard estimation and the configured threshold. This is necessary because a zero-baseFee chain returns near-zero estimates and wallets submit into the dead zone.
 
-**Configuration flags**:
-- `--plugin-linea-rpc-gasless-enabled=true` — Enables the gasless code path
-- `--plugin-linea-rpc-allow-zero-gas-estimation-for-gasless=true` — Allows returning 0 gas
+Two flags control this: `--plugin-linea-rpc-gasless-enabled=true` enables the gasless code path, and `--plugin-linea-rpc-allow-zero-gas-estimation-for-gasless=true` allows returning 0 gas.
 
 #### `RlnProverForwarderValidator`
 
 **File**: [`RlnProverForwarderValidator.java`](../besu-plugins/linea-sequencer/sequencer/src/main/java/net/consensys/linea/sequencer/txpoolvalidation/validators/RlnProverForwarderValidator.java)
 
-This validator is added to the Besu transaction pool validation chain exclusively on RPC nodes (`--plugin-linea-rpc-rln-prover-forwarder-enabled=true`). It implements `PluginTransactionPoolValidator` and is positioned first in the validator chain (before trace limit, gas limit, calldata, and profitability validators).
+Only runs on RPC nodes (`--plugin-linea-rpc-rln-prover-forwarder-enabled=true`). It's positioned first in the validator chain, before trace limit, gas limit, calldata, and profitability validators.
 
-**Gas estimation for proof generation**: A critical implementation detail is that the forwarder estimates the actual gas the transaction will use before forwarding to the prover. This is necessary because the prover uses gas consumption to calculate how many quota units the transaction consumes (`estimated_gas_used / tx_gas_quota`). Three strategies are used:
+One thing that tripped us up: the forwarder needs to estimate the actual gas the transaction will use *before* sending it to the prover. The prover needs this to figure out how many quota units to charge (`estimated_gas_used / tx_gas_quota`). For simple ETH transfers with empty calldata it hardcodes 21,000 gas. If `TransactionSimulationService` is available it runs a full EVM simulation for a more accurate number. Otherwise it falls back to the transaction's declared gas limit.
 
-1. **Fast path**: Simple ETH transfers with empty calldata → hardcoded 21,000 gas
-2. **Simulation**: If `TransactionSimulationService` is available, run a full EVM simulation
-3. **Fallback**: Use the transaction's declared gas limit
-
-**Statistics tracking**: The validator maintains `AtomicInteger` counters for monitoring:
-- `validationCallCount` — Total validation calls
-- `localTransactionCount` — Local transactions forwarded
-- `peerTransactionCount` — Peer transactions skipped
-- `grpcSuccessCount` / `grpcFailureCount` — gRPC outcome tracking
-- `karmaBypassCount` — Transactions with gasless priority
+There are `AtomicInteger` counters for monitoring: `validationCallCount` tracks total validation calls, `localTransactionCount` and `peerTransactionCount` track local vs peer transactions, `grpcSuccessCount`/`grpcFailureCount` track gRPC outcomes, and `karmaBypassCount` counts transactions that had gasless priority.
 
 #### Validator Chain Order
 
 **File**: [`LineaTransactionPoolValidatorFactory.java`](../besu-plugins/linea-sequencer/sequencer/src/main/java/net/consensys/linea/sequencer/txpoolvalidation/LineaTransactionPoolValidatorFactory.java)
 
-The factory assembles validators differently based on node type:
+The factory wires up different validator chains depending on node type:
 
 **RPC Node validator chain**:
 1. `RlnProverForwarderValidator` ← Status Network addition
@@ -377,25 +420,22 @@ Note: `RlnProverForwarderValidator` only runs on RPC nodes; `RlnVerifierValidato
 
 **File**: [`SharedServiceManager.java`](../besu-plugins/linea-sequencer/sequencer/src/main/java/net/consensys/linea/sequencer/txpoolvalidation/shared/SharedServiceManager.java)
 
-This singleton manages the lifecycle of shared gasless services. It is initialized once during plugin startup and injected into both `LineaEstimateGas` and the validators. Services managed:
+Singleton that owns the shared gasless services. Gets initialized once at plugin startup and injected into both `LineaEstimateGas` and the validators.
 
 | Service | Purpose | Backend |
 |---------|---------|---------|
 | `DenyListManager` | TTL-based deny list with gRPC sync | gRPC to prover's deny list endpoints |
 | `KarmaServiceClient` | User tier and quota queries | gRPC `GetUserTierInfo` on prover |
-| `NullifierTracker` | Nullifier deduplication (1M capacity, 2× epoch TTL) | In-memory Caffeine cache |
+| `NullifierTracker` | Nullifier deduplication (1M capacity, 2x epoch TTL) | In-memory Caffeine cache |
 | `GasKillSwitchMonitor` | Emergency gasless disable | File polling (configurable path) |
 
-Gasless services are initialized when any of these flags are true:
-- `--plugin-linea-rln-enabled=true`
-- `--plugin-linea-rpc-gasless-enabled=true`
-- `--plugin-linea-rpc-rln-prover-forwarder-enabled=true`
+Gasless services get initialized when any of `--plugin-linea-rln-enabled`, `--plugin-linea-rpc-gasless-enabled`, or `--plugin-linea-rpc-rln-prover-forwarder-enabled` is set to true.
 
 ---
 
 ### RLN Prover Service
 
-The RLN Prover is a standalone Rust service that handles zero-knowledge proof generation, user management, and quota tracking. It is the central coordination point for gasless transactions.
+Standalone Rust service that generates ZK proofs, manages users, and tracks quotas. Everything gasless flows through here.
 
 **Source**: [`rln-prover/`](../rln-prover/)
 
@@ -427,19 +467,11 @@ service RlnProver {
 
 #### Proof Generation Pipeline
 
-The proof generation pipeline is the most performance-critical component. It uses a multi-stage architecture:
+Proof generation is the hot path and has three stages.
 
-**Stage 1: Request Acceptance** (`grpc_service.rs`)
-- Validates sender exists in the user database
-- Computes quota increment: `ceil(estimated_gas_used / tx_gas_quota)`
-- Atomically increments the user's epoch transaction counter in PostgreSQL
-- Performs rate limiting check against the user's tier limit
-- Enqueues a `ProofGenerationData` struct to a bounded async channel (capacity 256)
+**Stage 1: Request Acceptance** (`grpc_service.rs`). The service validates that the sender exists in the user database, computes the quota increment as `ceil(estimated_gas_used / tx_gas_quota)`, and atomically increments the user's epoch transaction counter in PostgreSQL. It then checks the counter against the user's tier limit and, if the user is within quota, enqueues a `ProofGenerationData` struct to a bounded async channel (capacity 256).
 
-**Stage 2: Proof Computation** (`proof_service.rs`)
-- Worker instances (configurable via `--proof-service`, default 8) consume from the async channel
-- Each worker fetches the user's Merkle proof from PostgreSQL
-- Spawns a CPU-bound Rayon task to perform the actual Groth16 proof computation:
+**Stage 2: Proof Computation** (`proof_service.rs`). Worker instances (configurable via `--proof-service`, default 8) consume from the async channel. Each worker fetches the user's Merkle proof from PostgreSQL and spawns a CPU-bound Rayon task to perform the actual Groth16 proof computation:
   ```
   Input:
     - identity_secret: User's RLN identity (from registration)
@@ -447,7 +479,7 @@ The proof generation pipeline is the most performance-critical component. It use
     - path_indexes: Left/right path through Merkle tree
     - message_id: Transaction counter (message_id within epoch)
     - data: hash_to_field_le(transaction_hash)
-    - epoch: hash_to_field_le(current_epoch || current_epoch_slice)
+    - epoch: hash_to_field_le(current_epoch)
     - rln_identifier: Network-specific identifier string
 
   Output (public inputs):
@@ -458,95 +490,102 @@ The proof generation pipeline is the most performance-critical component. It use
     - epoch: The epoch field element used in proof
   ```
 
-**Stage 3: Broadcast** (`proof_service.rs`)
-- The serialized proof (288 bytes) is broadcast via a Tokio broadcast channel
-- All `GetProofs` stream subscribers receive the proof in real-time
-- Metrics are recorded: `PROOF_SERVICE_GEN_PROOF_TIME`, `PROOF_SERVICE_PROOF_COMPUTED`
+**Stage 3: Broadcast** (`proof_service.rs`). The serialized proof (288 bytes) is broadcast via a Tokio broadcast channel so all `GetProofs` stream subscribers receive it in real-time. Metrics for proof generation time and proof count are recorded at this stage.
 
-**Rate Limit Edge Case**: When `tx_counter == rate_limit`, the proof service uses `message_id = tx_counter - 1`. This is a protocol requirement of the Zerokit RLN implementation — the verifier needs to be able to recover the secret hash from the Shamir shares, which requires the message_id to be within the valid range.
+**Rate Limit Edge Case.** When `tx_counter == rate_limit`, the proof service uses `message_id = tx_counter - 1`. This is a protocol requirement of the Zerokit RLN implementation. The verifier needs to be able to recover the secret hash from the Shamir shares, which requires the message_id to be within the valid range.
 
 #### User Registration Flow
 
-The `KarmaScEventListener` monitors the Karma ERC-20 contract for `Transfer` events from the zero address (minting):
+User registration is an async pipeline with three background tasks. The `KarmaScEventListener` detects mints, a `ManagedRLNRegister` queues registrations, and a `NonceManager` sequences on-chain transactions with retry and gas-bumping:
 
-```
-Karma Contract emits Transfer(from=0x0, to=user, amount)
-    │
-    ▼
-KarmaScEventListener detects mint event
-    │
-    ├─ Check: user balance ≥ minimal_amount?
-    │   └─ If balance too low: skip registration
-    │
-    ├─ Register user in PostgreSQL:
-    │   ├─ Generate RLN identity commitment
-    │   ├─ Insert into users table
-    │   └─ Add to Merkle tree
-    │
-    └─ Register identity on RLN smart contract:
-        ├─ Call rln_sc.register_user(address, identity_commitment)
-        │
-        ├─ If SC registration fails:
-        │   ├─ Rollback: remove user from PostgreSQL
-        │   └─ Panic (data inconsistency)
-        │
-        └─ If rollback also fails: Panic (unrecoverable)
+```mermaid
+sequenceDiagram
+    participant KC as Karma Contract
+    participant EL as KarmaScEventListener
+    participant DB as PostgreSQL
+    participant Q as Registration Queue (cap: 256)
+    participant PR as process_registrations task
+    participant NM as NonceManager
+    participant SC as RLN Contract
+    participant MON as monitor_stuck_transactions task
+
+    KC->>EL: Transfer(from=0x0, to=user, amount)
+    EL->>EL: Check balance ≥ minimal_amount
+    alt Balance too low
+        EL->>EL: Skip registration
+    end
+
+    EL->>DB: Register user in PostgreSQL
+    Note right of DB: Generate RLN identity commitment<br/>Insert into users table<br/>Add to Merkle tree
+
+    EL->>Q: Queue via ManagedRLNRegister
+
+    Q->>PR: Dequeue registration
+
+    PR->>NM: allocate_nonce()
+    NM-->>PR: Next sequential nonce
+    PR->>SC: register_user(address, identity_commitment)
+    PR->>NM: mark_submitted(nonce, tx_hash)
+
+    alt Confirmed on-chain
+        PR->>NM: mark_confirmed(nonce)
+    else Failed
+        PR->>NM: mark_failed(nonce)
+        PR->>DB: Rollback (remove user)
+        PR->>PR: Retry with backoff (base 1s, max 30s, ≤5 attempts)
+    end
+
+    loop Continuously
+        MON->>NM: Check for pending > stuck_timeout (120s)
+        alt Stuck transaction found
+            MON->>SC: Replace tx (25% gas bump)
+            MON->>NM: Sync nonce from chain
+        end
+    end
 ```
 
-The registration is atomic — either both the database and the smart contract have the user, or neither does. A failure in the smart contract call triggers a database rollback, and if the rollback fails, the service panics (unrecoverable data inconsistency).
+The `NonceManager` is backed by PostgreSQL so pending registrations survive prover restarts. On startup, `recover_pending()` picks up any registrations that were in-flight when the service last stopped. Registration gas price must be at least the premium threshold to bypass RLN validation on the sequencer (configurable via `--registration-gas-price-gwei`).
+
+If the DB insert succeeds but the on-chain registration ultimately fails after all retries, the DB entry is rolled back. The system maintains the invariant that either both the DB and the contract have the user, or neither does.
 
 #### Epoch Management
 
-The `EpochService` manages quota reset cycles:
+The `EpochService` handles quota reset cycles:
 
 | Setting | Production | Testing |
 |---------|-----------|---------|
 | Epoch duration | 24 hours (86,400s) | 60 seconds |
-| Epoch slice | 2 minutes (120s) | 10 seconds |
-| Slices per epoch | 720 | 6 |
 
 **Epoch calculation**:
 ```
 current_epoch = (now - genesis) / epoch_duration
-current_epoch_slice = ((now - genesis) % epoch_duration) / epoch_slice_duration
 ```
 
-At each epoch transition, the `UserDbService` resets all users' transaction counters to zero in PostgreSQL.
-
-The epoch slice subdivision provides finer-grained time windows for proof generation. The proof's epoch field element is computed as `hash_to_field_le(epoch_bytes)` where `epoch_bytes = current_epoch || current_epoch_slice`.
+Every epoch transition, `UserDbService` zeros out all transaction counters in PostgreSQL. The proof's epoch field element is `hash_to_field_le(current_epoch)`.
 
 #### Database Schema
 
-PostgreSQL stores:
-- **`users`**: Address → RLN identity commitment mapping
-- **`tx_counter`**: Address → (epoch, epoch_counter) for quota tracking
-- **`m_tree_config`**: Merkle tree configurations (depth, next_index per tree)
-- **`pgfr_mtree_N`**: Per-tree node storage for RLN membership Merkle trees (via `pg_merkle_tree` extension)
-- **`tier_limits`**: Tier name → quota limit (synced from KarmaTiers contract)
-- **`deny_list`**: Address → (denied_at, expires_at, reason) with TTL
-- **`nullifiers`**: Per-epoch nullifier storage for replay prevention
+PostgreSQL backs all persistent state. The `users` table maps addresses to RLN identity commitments, and `tx_counter` tracks each address's current epoch and counter for quota enforcement. Merkle tree state is split across `m_tree_config` (tree-level configs like depth and next index) and `pgfr_mtree_N` tables (per-tree node storage, powered by the `pg_merkle_tree` extension). The `tier_limits` table holds tier name to quota mappings, synced from the KarmaTiers contract. The `deny_list` table stores addresses with TTL-based expiry, and `nullifiers` records per-epoch nullifiers for replay prevention.
 
 ---
 
 ### Sequencer Node Layer
 
-The sequencer is a Besu instance running with `--plugin-linea-node-type=SEQUENCER`. It has the authoritative enforcement role.
+The sequencer runs Besu with `--plugin-linea-node-type=SEQUENCER`. It's the final authority. If the sequencer says no, the transaction doesn't go through.
 
 #### `RlnVerifierValidator`
 
 **File**: [`RlnVerifierValidator.java`](../besu-plugins/linea-sequencer/sequencer/src/main/java/net/consensys/linea/sequencer/txpoolvalidation/validators/RlnVerifierValidator.java)
 
-This is the most complex component. Key architectural decisions:
+Most complex component in the system. A few things worth calling out:
 
-**Static shared state**: The proof cache, pending futures, and gRPC subscription are all `static` fields. This is critical because Besu's `createTransactionValidator()` creates new validator instances for each validation call. Without static sharing, each instance would create its own gRPC subscription and cache, leading to missed proofs.
+Everything is `static` and there's a good reason for that. Besu's `createTransactionValidator()` creates new validator instances for each validation call. If the proof cache, pending futures, and gRPC subscription weren't static, each instance would spin up its own gRPC subscription and cache, and proofs would get lost. This was a fun one to debug.
 
-**CompletableFuture-based proof waiting**: When a transaction arrives before its proof, the validator creates a `CompletableFuture<CachedProof>` and waits (with configurable timeout). When the proof arrives via the gRPC stream, the `StreamObserver.onNext()` handler completes the future, unblocking the validation thread. This avoids polling and provides efficient thread utilization.
+When a transaction shows up before its proof, the validator creates a `CompletableFuture<CachedProof>` and blocks on it with a configurable timeout. When the proof arrives via the gRPC stream, `StreamObserver.onNext()` completes the future and unblocks the validation thread. No polling. There's a concurrency cap of 100 concurrent proof waits via an `AtomicInteger` counter, because without it a burst of transactions without proofs would exhaust resources.
 
-**Concurrency limits**: A maximum of 100 concurrent proof waits is enforced via `AtomicInteger` counter. This prevents resource exhaustion if many transactions arrive simultaneously without proofs.
+The validator calls into the Rust `zerokit` library via `JniRlnVerificationService` for proof verification. `parseAndVerifyRlnProof` handles both parsing and cryptographic verification, and only verified proofs get cached.
 
-**Proof verification via JNI**: The validator uses `JniRlnVerificationService` which calls into the Rust `zerokit` library via JNI. The `parseAndVerifyRlnProof` method both parses the serialized proof and cryptographically verifies it. Only verified proofs are cached.
-
-**Epoch validation strategy**: Different epoch modes have different tolerance windows:
+Different epoch modes allow different staleness:
 
 | Mode | Current Epoch | Tolerance |
 |------|--------------|-----------|
@@ -554,67 +593,55 @@ This is the most complex component. Key architectural decisions:
 | `TIMESTAMP_1H` | SHA-256 hash of hourly timestamp | ±1 hour |
 | `TEST` / `FIXED_FIELD_ELEMENT` | Hardcoded values | Always valid |
 
-**gRPC stream resilience**: The proof stream subscription implements exponential backoff reconnection:
-- Base delay from configuration (`rlnProofStreamRetryIntervalMs`)
-- Exponential increase: `delay = base × 2^(retry_count)`
-- Maximum delay capped at `maxBackoffDelayMs`
-- Maximum retry attempts before giving up (`rlnProofStreamRetries`)
-- Retry count resets on any successful message
+The proof stream reconnects with exponential backoff. It starts from the base delay configured in `rlnProofStreamRetryIntervalMs` and doubles on each retry up to `maxBackoffDelayMs`. After `rlnProofStreamRetries` consecutive failures it gives up, and the retry count resets on any successful message.
 
 #### DenyListManager
 
-The deny list is a shared data structure across `LineaEstimateGas` and `RlnVerifierValidator`. It provides:
+Shared between `LineaEstimateGas` and `RlnVerifierValidator`. The sequencer writes to it (adds users when they hit their quota), and the gas estimation endpoint reads from it (denied users get premium pricing instead of zero). Entries have a TTL and expire automatically. Users can also clear themselves by paying premium gas on their next transaction — when the sequencer sees a denied user paying premium, it calls `RemoveFromDenyList` which triggers the [quota bonus mechanism](#quota-bonus-deny-list-recovery) to restore gasless access without resetting the epoch counter.
 
-- **Write access** from `RlnVerifierValidator`: Users are added when they reach their quota limit
-- **Read access** from `LineaEstimateGas`: Denied users receive premium gas estimates instead of zero
-- **TTL expiration**: Deny list entries expire automatically
-- **Premium gas redemption**: Users on the deny list can remove themselves by paying premium gas in their next transaction
-
-The deny list is backed by the prover service's PostgreSQL database via gRPC calls, ensuring consistency across node restarts.
+Backed by the prover's PostgreSQL via gRPC, so deny list state survives node restarts.
 
 #### NullifierTracker
 
-The nullifier tracker prevents the same RLN proof from being used twice within an epoch. It uses a high-performance in-memory cache:
-
-- **Capacity**: 1,000,000 entries (supports 500+ TPS)
-- **TTL**: 2× epoch duration (ensures coverage across epoch boundaries)
-- **Operation**: `checkAndMarkNullifier(nullifier, epoch)` — atomic check-and-set
-
-If a nullifier has been seen before in the same epoch, the transaction is rejected with a security violation error. This prevents replay attacks where someone captures a valid proof and submits it multiple times.
+Prevents proof replay within an epoch using an in-memory Caffeine cache. The cache holds up to 1,000,000 entries (enough for 500+ TPS) with a TTL of 2x the epoch duration to ensure coverage across epoch boundaries. The `checkAndMarkNullifier(nullifier, epoch)` call does an atomic check-and-set. If the same nullifier appears twice in one epoch it gets rejected, which stops someone from capturing a valid proof and replaying it.
 
 ---
 
 ## Smart Contract Integration
 
-The gasless system relies on four key smart contracts. Full contract documentation is in [`status-network-contracts/docs/`](../status-network-contracts/docs/), but here is how they integrate with the protocol layer:
+Four contracts matter for gasless. Full specs live in [`status-network-contracts/docs/`](../status-network-contracts/docs/). Here's how they plug into the protocol layer:
 
 ### Karma (ERC-20)
 
-- **Non-transferable**: Users cannot send Karma to others (transfer whitelisting controls exceptions)
-- **Integration point**: The prover's `KarmaScEventListener` watches for `Transfer` events from zero address (minting) to detect new users who should be registered for RLN
-- **Balance check**: The `GetUserTierInfo` gRPC call reads the user's Karma balance from the contract to determine their tier
+Karma is non-transferable. Users cannot send it to others, though transfer whitelisting controls exceptions for specific addresses. The prover's `KarmaScEventListener` watches for `Transfer` events from the zero address (minting) to detect new users who should be registered for RLN. When the sequencer needs to check a user's tier, the `GetUserTierInfo` gRPC call reads the user's Karma balance from the contract.
 
 ### KarmaTiers
 
-- **Tier → Quota mapping**: Each tier defines a name and a daily transaction quota limit
-- **Integration point**: The prover's `TiersListener` watches for tier updates on-chain and syncs them to PostgreSQL
-- **Example tiers**:
-  | Tier | Min Karma | Daily Quota |
-  |------|-----------|-------------|
-  | Bronze | 1 | 100 |
-  | Silver | 100 | 500 |
-  | Gold | 1000 | 2000 |
+Each tier defines a name, a karma range, and a transaction quota per epoch. The prover's `TiersListener` watches for tier updates on-chain and syncs them to PostgreSQL. Tiers must be contiguous, and the first tier must start at minKarma=0. The actual tiers deployed via [`scripts/initialize-karma-tiers.ts`](../scripts/initialize-karma-tiers.ts):
+
+| Tier ID | Name | Karma Range (tokens) | TX per Epoch |
+|---------|------|----------------------|--------------|
+| 0 | none | 0 to <1 | 0 |
+| 1 | entry | 1 | 2 |
+| 2 | newbie | >1 to <50 | 6 |
+| 3 | basic | 50 to <500 | 16 |
+| 4 | active | 500 to <5,000 | 96 |
+| 5 | regular | 5,000 to <20,000 | 480 |
+| 6 | power | 20,000 to <100,000 | 960 |
+| 7 | pro | 100,000 to <500,000 | 10,080 |
+| 8 | high-throughput | 500,000 to <5,000,000 | 108,000 |
+| 9 | s-tier | 5,000,000 to <10,000,000 | 240,000 |
+| 10 | legendary | 10,000,000+ | 480,000 |
+
+Users with zero karma (tier "none") cannot make gasless transactions at all. Karma uses 18 decimals like a standard ERC-20.
 
 ### RLN Registry
 
-- **Identity commitments**: Stores Poseidon hash commitments for each registered user
-- **Integration point**: The prover calls `register_user()` when a new user is detected via Karma events
-- **Slashing**: If a user is slashed (via the commit-reveal mechanism), the `AccountSlashed` event triggers user removal from the prover's database
+The RLN Registry stores Poseidon hash commitments for each registered user. The prover calls `register_user()` when a new user is detected via Karma events. If a user is slashed through the commit-reveal mechanism, the `AccountSlashed` event triggers user removal from the prover's database.
 
 ### StakeManager
 
-- **Staking rewards**: Users earn Karma by staking, which flows through reward distributors
-- **Integration point**: Staking creates Karma balance → Karma balance determines tier → tier determines gasless quota
+Users earn Karma by staking, which flows through reward distributors. The chain is: stake to earn Karma, Karma determines tier, and tier determines gasless quota.
 
 ---
 
@@ -622,15 +649,23 @@ The gasless system relies on four key smart contracts. Full contract documentati
 
 ### How Quotas Work
 
-1. Each epoch (default: 24 hours in production) starts with all users' transaction counters at zero
-2. When a user sends a gasless transaction, the prover increments their counter
-3. The quota consumed per transaction depends on gas usage: `increment = ceil(estimated_gas_used / tx_gas_quota)`
-4. When the counter reaches the tier limit, the user is added to the deny list
-5. At epoch reset, all counters return to zero and deny list entries eventually expire
+Each epoch (default 24 hours in production) starts with all users' transaction counters at zero. When a user sends a gasless transaction, the prover increments their counter. The amount consumed depends on the transaction's gas usage: `increment = ceil(estimated_gas_used / tx_gas_quota)`. Once the counter reaches the user's tier limit, they get added to the deny list. At epoch reset, all counters return to zero and deny list entries eventually expire.
+
+### Quota Bonus (Deny List Recovery)
+
+When a denied user pays premium gas, they can recover gasless quota mid-epoch without waiting for the epoch to reset. But we can't just reset their transaction counter to zero — the RLN proof's `message_id` is derived from the counter, and resetting it would cause nullifier collisions with proofs already generated earlier in the epoch.
+
+Instead, the system adds a **quota bonus** to the user's effective tier limit. When `remove_from_deny_list` is called with `reset_epoch_counter=true`, the prover fetches the user's tier limit and adds it as a bonus:
+
+```
+effective_limit = tier.tx_per_epoch + quota_bonus
+```
+
+For example, a "basic" tier user with 16 tx/epoch who hits their limit at counter=16 and then pays premium gas gets `quota_bonus += 16`, making their effective limit 32. Their counter stays at 16 and continues incrementing from there, so `message_id` values remain unique. The bonus is stored in the `tx_counter` table's `quota_bonus` column and resets to zero at epoch boundaries along with everything else.
 
 ### Gas-Weighted Quotas
 
-The quota system is gas-weighted, not simply transaction-count-based. The `tx_gas_quota` parameter (default: 100,000 gas units) defines how much gas constitutes one "quota unit":
+Quotas aren't just counted by transaction. They're weighted by gas. The `tx_gas_quota` parameter (default 100,000 gas units) defines one "quota unit":
 
 | Transaction | Gas Used | Quota Units Consumed |
 |------------|----------|---------------------|
@@ -639,7 +674,7 @@ The quota system is gas-weighted, not simply transaction-count-based. The `tx_ga
 | Complex contract call | 200,000 | 2 |
 | Very heavy computation | 500,000 | 5 |
 
-This prevents users from consuming disproportionate resources with expensive transactions while using only one quota slot.
+Without gas-weighting, a user could blow their entire quota on a few heavy contract calls while barely touching block space with simple transfers.
 
 ### Epoch Modes
 
@@ -650,7 +685,7 @@ This prevents users from consuming disproportionate resources with expensive tra
 | `TEST` | Hardcoded value | Local development |
 | `FIXED_FIELD_ELEMENT` | Hardcoded field element | Debugging |
 
-The prover and sequencer use different epoch calculation methods, but the proof's epoch value is embedded in the ZK proof itself, so the sequencer validates it against its own epoch calculation with a tolerance window.
+Prover and sequencer compute epochs independently, but that's fine. The epoch value is embedded in the ZK proof, and the sequencer validates it against its own calculation with a tolerance window.
 
 ---
 
@@ -658,19 +693,14 @@ The prover and sequencer use different epoch calculation methods, but the proof'
 
 ### RLN Cryptographic Properties
 
-The RLN (Rate Limiting Nullifier) system provides the following security guarantees:
-
-1. **Membership proof**: The ZK proof includes a Merkle tree root that proves the user is a registered member of the RLN group, without revealing which member they are
-2. **Rate limiting**: Each proof includes a `message_id` (transaction counter) and epoch. If a user exceeds their rate limit, they reveal their secret key through Shamir's Secret Sharing, enabling slashing of their karma
-3. **Nullifier uniqueness**: Each (user, epoch, message_id) tuple produces a unique nullifier. The sequencer's NullifierTracker prevents reuse
-4. **Non-transferability**: Proofs are bound to the user's identity secret, which is derived from their RLN registration
+The ZK proof includes a Merkle tree root that proves the user is in the RLN group without revealing which member they are. Each proof also includes a `message_id` (tx counter) and epoch. If a user exceeds their rate limit, they reveal their secret key via Shamir's Secret Sharing and their karma gets slashed. Every (user, epoch, message_id) tuple produces a unique nullifier, and the sequencer's NullifierTracker prevents any nullifier from being used twice. Proofs are bound to the user's identity secret, which is derived from their RLN registration, so they can't be transferred to someone else.
 
 ### Defense Layers
 
 | Layer | Mechanism | Enforced By |
 |-------|-----------|-------------|
 | **Rate limiting** | RLN proof embeds tx counter | Prover (generation) + Sequencer (verification) |
-| **Quota enforcement** | Karma tier → daily limit | Sequencer (KarmaServiceClient check) |
+| **Quota enforcement** | Karma tier to daily limit | Sequencer (KarmaServiceClient check) |
 | **Replay prevention** | Nullifier tracking | Sequencer (NullifierTracker) |
 | **Epoch validation** | Proof epoch vs current epoch | Sequencer (tolerance window) |
 | **Premium gas fallback** | Pay to bypass RLN | Both RPC and Sequencer |
@@ -682,14 +712,7 @@ The RLN (Rate Limiting Nullifier) system provides the following security guarant
 
 **File**: [`GasKillSwitchMonitor.java`](../besu-plugins/linea-sequencer/sequencer/src/main/java/net/consensys/linea/config/GasKillSwitchMonitor.java), [`kill_switch.rs`](../rln-prover/prover/src/kill_switch.rs)
 
-The gas kill switch is a file-based emergency mechanism shared across all components:
-
-- **Activation**: Write `"true"` or `"enabled"` to the configured file path
-- **Deactivation**: Write any other value, or delete the file
-- **Poll interval**: Configurable (default: 5 seconds)
-- **Effect on RPC node**: Returns premium gas estimate (skips gasless/zero-gas path) and skips prover forwarding
-- **Effect on sequencer**: Rejects all gasless transactions (premium gas still allowed)
-- **Effect on prover**: Returns `Status::unavailable()` for new proof requests
+Dead simple file-based emergency mechanism shared across all components. Write `"true"` or `"enabled"` to the configured file path to activate, and any other value (or delete the file) to deactivate. Each component polls the file every 5 seconds by default. When active, the RPC node returns premium gas estimates (instead of zero-gas) and skips prover forwarding, the sequencer rejects all gasless transactions (premium gas still works), and the prover returns `Status::unavailable()` for new proof requests.
 
 #### Docker Compose
 
@@ -748,7 +771,7 @@ Propagation time: ~30-60 seconds (kubelet ConfigMap volume sync) + 5 seconds (po
 
 ### Fail-Open vs Fail-Secure
 
-The system uses different failure strategies depending on the component:
+Different components fail differently:
 
 | Component | Failure Mode | Strategy | Rationale |
 |-----------|-------------|----------|-----------|
@@ -772,7 +795,7 @@ The system uses different failure strategies depending on the component:
 | `--plugin-linea-rln-proof-service` | `localhost:50051` | RLN proof service gRPC endpoint (host:port) |
 | `--plugin-linea-rln-karma-service` | `localhost:50052` | Karma service gRPC endpoint (host:port) |
 | `--plugin-linea-rln-use-tls` | auto | Use TLS for gRPC connections |
-| `--plugin-linea-rln-premium-gas-threshold-gwei` | `10` | Premium gas threshold in GWei |
+| `--plugin-linea-rln-premium-gas-threshold-gwei` | `12` | Premium gas threshold in GWei |
 | `--plugin-linea-rln-epoch-mode` | `TIMESTAMP_1H` | Epoch strategy (BLOCK, TIMESTAMP_1H, TEST) |
 | `--plugin-linea-rpc-rln-prover-forwarder-enabled` | `false` | Enable RLN prover forwarder on RPC nodes |
 | `--plugin-linea-rpc-gasless-enabled` | `false` | Enable gasless features in linea_estimateGas |
@@ -797,7 +820,6 @@ The system uses different failure strategies depending on the component:
 | `--spam-limit` | `10000` | Global rate limit (max txs per epoch) |
 | `--tx-gas-quota` | `100000` | Gas units per counted transaction |
 | `--epoch-duration-secs` | `86400` | Epoch duration in seconds |
-| `--epoch-slice-secs` | `120` | Epoch slice duration in seconds |
 | `--proof-service` | `8` | Number of proof generation workers |
 | `--broadcast-channel-size` | `100` | Broadcast channel buffer size |
 | `--transaction-channel-size` | `256` | Proof request queue depth |
@@ -829,7 +851,7 @@ L2 Network (11.11.11.0/24)
     │   └── Epoch mode: TEST (30s)
     │
     ├── RPC Node (RPC mode)
-    │   ├── RLN validation: enabled
+    │   ├── RLN validation: disabled (no proof verification on RPC)
     │   ├── Prover forwarder: enabled
     │   ├── Gasless: enabled
     │   ├── Storage: BONSAI
@@ -852,29 +874,18 @@ L2 Network (11.11.11.0/24)
 
 **Files**: [`k8s/helm/status-network/`](../k8s/helm/status-network/)
 
-The Helm chart deploys all components with production configuration:
-
-- **Sequencer**: StatefulSet with persistent storage, RLN validation enabled, prover forwarder disabled
-- **L2 Node**: Deployment with RLN prover forwarder enabled, gasless estimation enabled
-- **RLN Prover**: Deployment connected to real smart contracts (no mock mode), PostgreSQL for state
-- **Gas Kill Switch**: ConfigMap shared across all pods via volume mounts
-
-Key production differences from local development:
-- `--plugin-linea-rln-epoch-mode=TIMESTAMP_1H` (24-hour epochs instead of 30-second test epochs)
-- Real smart contract addresses instead of mock mode
-- TLS enabled for gRPC connections
-- Higher resource limits and replicas
+The Helm chart deploys everything with production config. The main differences from local dev are that epoch mode is `TIMESTAMP_1H` (24-hour epochs instead of 30-second test epochs), real smart contract addresses are used instead of mock mode, TLS is enabled for gRPC connections, and resource limits and replica counts are higher.
 
 ### Configuration by Node Role
 
 | Setting | RPC Node | Sequencer |
 |---------|----------|-----------|
 | `--plugin-linea-node-type` | `RPC` | `SEQUENCER` |
-| `--plugin-linea-rln-enabled` | `true` | `true` |
+| `--plugin-linea-rln-enabled` | `false` | `true` |
 | `--plugin-linea-rpc-rln-prover-forwarder-enabled` | `true` | `false` |
 | `--plugin-linea-rpc-gasless-enabled` | `true` | `false` |
 | `--plugin-linea-rpc-allow-zero-gas-estimation-for-gasless` | `true` | — |
-| `--plugin-linea-rln-premium-gas-threshold-gwei` | `12` | `10` |
+| `--plugin-linea-rln-premium-gas-threshold-gwei` | `12` | `12` |
 | `data-storage-format` | `BONSAI` | `FOREST` |
 | `tx-pool-simulation-check-api-enabled` | `true` | — |
 
@@ -882,7 +893,7 @@ Key production differences from local development:
 
 ## Summary of Modifications from Base Linea
 
-This section catalogs every modification made to the Linea codebase to enable gasless transactions:
+Everything we added or changed on top of Linea:
 
 ### New Files (Status Network Additions)
 
@@ -904,18 +915,10 @@ This section catalogs every modification made to the Linea codebase to enable ga
 
 | File | Modification |
 |------|-------------|
-| `LineaEstimateGas.java` | Added gasless logic: deny list check → karma query → zero gas response path |
+| `LineaEstimateGas.java` | Added gasless logic: deny list check, karma query, zero gas response path |
 | `LineaEstimateGasEndpointPlugin.java` | Inject SharedServiceManager dependencies (DenyListManager, KarmaServiceClient, GasKillSwitchMonitor) |
 | `LineaTransactionPoolValidatorFactory.java` | Add RlnProverForwarderValidator (RPC) and RlnVerifierValidator (sequencer) to validator chains |
 
 ### Integration Pattern
 
-All Status Network modifications follow a consistent pattern:
-
-1. **Conditional activation**: Every new component is gated behind CLI flags (`--plugin-linea-rln-enabled`, `--plugin-linea-rpc-gasless-enabled`, etc.). When disabled, the system behaves identically to base Linea.
-
-2. **Shared service injection**: New dependencies are managed by `SharedServiceManager` and injected during plugin initialization, not hardcoded.
-
-3. **Graceful degradation**: Every new code path has explicit fallback behavior for when external services (prover, karma) are unavailable.
-
-4. **Security-first sequencer**: The sequencer always enforces full validation. The RPC node's relaxed validation (fail-open) is acceptable because it only affects which transactions enter the mempool — the sequencer has final say.
+Everything is gated behind CLI flags (`--plugin-linea-rln-enabled`, `--plugin-linea-rpc-gasless-enabled`, etc.). When disabled, the system behaves identically to base Linea. New dependencies go through `SharedServiceManager` and get injected at plugin init. Every external service call (prover, karma) has explicit fallback behavior. The sequencer always enforces full validation regardless. The RPC node can be more relaxed because it only controls what enters the mempool, not what gets included in blocks.
