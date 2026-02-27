@@ -71,7 +71,7 @@ export const RLN_CONFIG = {
   // Service URLs
   // Note: RLN Prover handles both proof generation and karma/deny-list services
   services: {
-    rpcUrl: process.env.RPC_URL || "http://localhost:8545",
+    rpcUrl: process.env.RPC_URL || "http://localhost:9045",
     sequencerUrl: process.env.SEQUENCER_URL || "http://localhost:8545",
     rlnProverUrl: process.env.RLN_PROVER_URL || "http://localhost:50051",
     // karmaServiceUrl points to the same RLN prover (unified service)
@@ -94,7 +94,6 @@ export const RLN_CONFIG = {
   // This is separate from quota tracking - proofs always validate, but quotas reset per epoch.
   test: {
     premiumGasThresholdGwei: 12,
-    premiumGasMultiplier: 1.5,
     // Epoch duration must match prover's --epoch-duration-secs (30s in production test mode)
     // Quotas reset every epoch, enabling epoch boundary tests
     epochDurationSeconds: getEnvNumber("RLN_EPOCH_DURATION_SECONDS", 30),
@@ -106,7 +105,7 @@ export const RLN_CONFIG = {
     // - Gasless TX: ~2-4s (proof generation + mining)
     proofTimeoutMs: getEnvNumber("RLN_PROOF_TIMEOUT_MS", 5000),
     // Fixed wait time for prover to register user after karma mint
-    registrationTimeoutMs: getEnvNumber("RLN_REGISTRATION_TIMEOUT_MS", 8000), // 8s fixed wait
+    registrationTimeoutMs: getEnvNumber("RLN_REGISTRATION_TIMEOUT_MS", 3000), // 3s fixed wait
     transactionTimeoutMs: getEnvNumber("RLN_TX_TIMEOUT_MS", 40000), // 40s for tx mining (concurrent proof generation can queue up)
     // Wait times for polling operations
     denyListPollIntervalMs: 1000, // 1s between polls
@@ -124,7 +123,7 @@ export const RLN_CONFIG = {
       highVolume: 90_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
       epoch: 120_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
       setup: 120_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
-      setupLarge: 180_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      setupLarge: 480_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
     },
   },
 

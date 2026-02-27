@@ -363,7 +363,7 @@ export class KarmaTestManager {
     userAddress: string,
     timeout: number = RLN_CONFIG.test.registrationTimeoutMs,
   ): Promise<void> {
-    const pollIntervalMs = 2000;
+    const pollIntervalMs = 500;
 
     logger.debug("Waiting for RLN registration", {
       user: userAddress,
