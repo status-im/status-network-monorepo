@@ -176,7 +176,7 @@ impl UserDb2 {
         &self,
         address: &Address,
         incr_value: Option<i64>,
-    ) -> Result<EpochCounter, SqlxError> {
+    ) -> Result<(EpochCounter, i64), SqlxError> {
         let incr_value = incr_value.unwrap_or(1);
         let (epoch, _epoch_slice) = *self.epoch_store.read();
         tracing::info!(
@@ -199,7 +199,8 @@ impl UserDb2 {
             let model_epoch_counter = res.epoch_counter;
 
             if model_epoch == 0 || epoch != Epoch::from(model_epoch) {
-                let res: TxCounterSqlx = sqlx::query_as("UPDATE tx_counter SET epoch = $1, epoch_counter = $2 WHERE address = $3 RETURNING *")
+                // New epoch: reset counter and quota_bonus
+                let res: TxCounterSqlx = sqlx::query_as("UPDATE tx_counter SET epoch = $1, epoch_counter = $2, quota_bonus = 0 WHERE address = $3 RETURNING *")
                     .bind(i64::from(epoch))
                     .bind(incr_value)
                     .bind(address.0.0)
@@ -229,25 +230,34 @@ impl UserDb2 {
 
         txn.commit().await?;
         // FIXME: no 'as'
-        Ok((new_tx_counter.epoch_counter as u64).into())
+        Ok(((new_tx_counter.epoch_counter as u64).into(), new_tx_counter.quota_bonus))
     }
 
-    /// Reset the epoch transaction counter to 0 for the current epoch.
+    /// Add quota bonus for the current epoch.
     /// Used when a premium gas payment should restore a user's gasless quota.
-    pub(crate) async fn reset_tx_counter(&self, address: &Address) -> Result<(), SqlxError> {
+    /// Instead of resetting the counter (which would cause nullifier collisions),
+    /// we increase the effective quota so the counter can keep incrementing.
+    pub(crate) async fn add_quota_bonus(
+        &self,
+        address: &Address,
+        bonus: i64,
+    ) -> Result<(), SqlxError> {
         let (epoch, _) = *self.epoch_store.read();
-        sqlx::query("UPDATE tx_counter SET epoch = $1, epoch_counter = 0 WHERE address = $2")
-            .bind(i64::from(epoch))
-            .bind(address.0.0)
-            .execute(&self.db)
-            .await?;
+        sqlx::query(
+            "UPDATE tx_counter SET epoch = $1, quota_bonus = quota_bonus + $2 WHERE address = $3",
+        )
+        .bind(i64::from(epoch))
+        .bind(bonus)
+        .bind(address.0.0)
+        .execute(&self.db)
+        .await?;
         Ok(())
     }
 
     pub(crate) async fn get_tx_counter(
         &self,
         address: &Address,
-    ) -> Result<EpochCounter, TxCounterError2> {
+    ) -> Result<(EpochCounter, i64), TxCounterError2> {
         let res: Option<TxCounterSqlx> =
             sqlx::query_as("SELECT * FROM tx_counter WHERE address = $1 LIMIT 1")
                 .bind(address.0.0)
@@ -260,7 +270,7 @@ impl UserDb2 {
         }
     }
 
-    fn counters_from_key(&self, model: TxCounterSqlx) -> EpochCounter {
+    fn counters_from_key(&self, model: TxCounterSqlx) -> (EpochCounter, i64) {
         let (epoch, _epoch_slice) = *self.epoch_store.read();
         let cmp = model.epoch == i64::from(epoch);
 
@@ -274,9 +284,10 @@ impl UserDb2 {
                     db_epoch = model.epoch,
                     current_epoch = i64::from(epoch),
                     epoch_counter = model.epoch_counter,
+                    quota_bonus = model.quota_bonus,
                     "counters_from_key: epochs match, returning actual counter"
                 );
-                (model.epoch_counter as u64).into()
+                ((model.epoch_counter as u64).into(), model.quota_bonus)
             }
             false => {
                 // EpochCounter.epoch (stored in DB) != epoch_store.epoch
@@ -290,7 +301,7 @@ impl UserDb2 {
                     "counters_from_key: EPOCH MISMATCH - returning 0 instead of {}",
                     model.epoch_counter
                 );
-                EpochCounter::from(0)
+                (EpochCounter::from(0), 0)
             }
         }
     }
@@ -449,12 +460,12 @@ impl UserDb2 {
         &self,
         address: &Address,
         incr_value: Option<i64>,
-    ) -> Result<EpochCounter, TxCounterError2> {
+    ) -> Result<(EpochCounter, i64), TxCounterError2> {
         let has_user = self.has_user(address).await?;
 
         if has_user {
-            let epoch_counter = self.incr_tx_counter(address, incr_value).await?;
-            Ok(epoch_counter)
+            let result = self.incr_tx_counter(address, incr_value).await?;
+            Ok(result)
         } else {
             Err(TxCounterError2::NotRegistered(*address))
         }
@@ -491,7 +502,7 @@ impl UserDb2 {
             .map_err(|e| UserTierInfoError2::Contract(e))?;
 
         // TODO
-        let epoch_tx_count = self.get_tx_counter(address).await?;
+        let (epoch_tx_count, quota_bonus) = self.get_tx_counter(address).await?;
         // TODO: avoid db query the tier limits (keep it in memory)
         let tier_limits = self.get_tier_limits().await?;
         let tier_match = tier_limits.get_tier_by_karma(&karma_amount);
@@ -510,13 +521,38 @@ impl UserDb2 {
 
             if let TierMatch::Matched(tier) = tier_match {
                 t.tier_name = Some(tier.name.into());
-                t.tier_limit = Some(TierLimit::from(tier.tx_per_epoch));
+                // Include quota_bonus in effective limit so sequencer sees the correct quota
+                t.tier_limit =
+                    Some(TierLimit::from(tier.tx_per_epoch + quota_bonus as u32));
             }
 
             t
         };
 
         Ok(user_tier_info)
+    }
+
+    /// Get the raw tier tx_per_epoch limit for a user (without quota bonus).
+    /// Used to determine how much quota bonus to add after premium gas payment.
+    pub(crate) async fn get_user_tier_tx_limit<
+        E: std::error::Error,
+        KSC: KarmaAmountExt<Error = E>,
+    >(
+        &self,
+        address: &Address,
+        karma_sc: &KSC,
+    ) -> Result<u32, UserTierInfoError2<E>> {
+        let karma_amount = karma_sc
+            .karma_amount(address)
+            .await
+            .map_err(|e| UserTierInfoError2::Contract(e))?;
+
+        let tier_limits = self.get_tier_limits().await?;
+        let tier_match = tier_limits.get_tier_by_karma(&karma_amount);
+        match tier_match {
+            TierMatch::Matched(tier) => Ok(tier.tx_per_epoch),
+            _ => Ok(0),
+        }
     }
 
     // ============ Deny List Methods ============
@@ -837,7 +873,7 @@ mod tests {
         assert!(user_db.get_user_identity(&addr).await.is_some());
         assert_eq!(
             user_db.get_tx_counter(&addr).await.unwrap(),
-            EpochCounter::from(0)
+            (EpochCounter::from(0), 0)
         );
 
         assert!(user_db.get_user_identity(&ADDR_1).await.is_none());
@@ -845,13 +881,13 @@ mod tests {
         assert!(user_db.get_user_identity(&ADDR_1).await.is_some());
         assert_eq!(
             user_db.get_tx_counter(&addr).await.unwrap(),
-            EpochCounter::from(0)
+            (EpochCounter::from(0), 0)
         );
 
         user_db.incr_tx_counter(&addr, Some(42)).await.unwrap();
         assert_eq!(
             user_db.get_tx_counter(&addr).await.unwrap(),
-            EpochCounter::from(42)
+            (EpochCounter::from(42), 0)
         );
     }
 
@@ -882,13 +918,13 @@ mod tests {
 
         user_db.register_user(addr).await.unwrap();
 
-        let ec = user_db.get_tx_counter(&addr).await.unwrap();
+        let (ec, bonus) = user_db.get_tx_counter(&addr).await.unwrap();
         assert_eq!(ec, EpochCounter::from(0));
-        // assert_eq!(ecs, EpochSliceCounter::from(0u64));
+        assert_eq!(bonus, 0);
 
-        let ecs_2 = user_db.incr_tx_counter(&addr, Some(42)).await.unwrap();
-        // TODO
+        let (ecs_2, bonus_2) = user_db.incr_tx_counter(&addr, Some(42)).await.unwrap();
         assert_eq!(ecs_2, EpochCounter::from(42));
+        assert_eq!(bonus_2, 0);
     }
 
     #[tokio::test]
@@ -932,7 +968,7 @@ mod tests {
         user_db.register_user(addr).await.unwrap();
         // Now update user tx counter
         assert_eq!(
-            user_db.on_new_tx(&addr, None).await.unwrap(),
+            user_db.on_new_tx(&addr, None).await.unwrap().0,
             EpochCounter::from(1)
         );
         let tier_info = user_db

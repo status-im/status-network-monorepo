@@ -62,45 +62,45 @@ mod tests {
 
         assert_eq!(
             user_db.get_tx_counter(&ADDR_1).await.unwrap(),
-            EpochCounter::from(0)
+            (EpochCounter::from(0), 0)
         );
         assert_eq!(
             user_db.get_tx_counter(&ADDR_2).await.unwrap(),
-            EpochCounter::from(0)
+            (EpochCounter::from(0), 0)
         );
 
         // Now update user tx counter
         assert_eq!(
             user_db.on_new_tx(&ADDR_1, None).await.unwrap(),
-            EpochCounter::from(1)
+            (EpochCounter::from(1), 0)
         );
         assert_eq!(
             user_db.on_new_tx(&ADDR_1, None).await.unwrap(),
-            EpochCounter::from(2)
+            (EpochCounter::from(2), 0)
         );
         assert_eq!(
             user_db.on_new_tx(&ADDR_1, Some(2)).await.unwrap(),
-            EpochCounter::from(4)
+            (EpochCounter::from(4), 0)
         );
 
         assert_eq!(
             user_db.on_new_tx(&ADDR_2, None).await.unwrap(),
-            EpochCounter::from(1)
+            (EpochCounter::from(1), 0)
         );
 
         assert_eq!(
             user_db.on_new_tx(&ADDR_2, None).await.unwrap(),
-            EpochCounter::from(2)
+            (EpochCounter::from(2), 0)
         );
 
         assert_eq!(
             user_db.get_tx_counter(&ADDR_1).await.unwrap(),
-            EpochCounter::from(4)
+            (EpochCounter::from(4), 0)
         );
 
         assert_eq!(
             user_db.get_tx_counter(&ADDR_2).await.unwrap(),
-            EpochCounter::from(2)
+            (EpochCounter::from(2), 0)
         );
     }
 
@@ -152,11 +152,11 @@ mod tests {
 
             assert_eq!(
                 user_db.on_new_tx(&ADDR_1, Some(2)).await.unwrap(),
-                EpochCounter::from(2)
+                (EpochCounter::from(2), 0)
             );
             assert_eq!(
                 user_db.on_new_tx(&ADDR_2, Some(1000)).await.unwrap(),
-                EpochCounter::from(1000)
+                (EpochCounter::from(1000), 0)
             );
 
             db_conn.close().await;
@@ -189,11 +189,11 @@ mod tests {
             assert!(user_db.has_user(&ADDR_2).await.unwrap());
             assert_eq!(
                 user_db.get_tx_counter(&ADDR_1).await.unwrap(),
-                EpochCounter::from(2)
+                (EpochCounter::from(2), 0)
             );
             assert_eq!(
                 user_db.get_tx_counter(&ADDR_2).await.unwrap(),
-                EpochCounter::from(1000)
+                (EpochCounter::from(1000), 0)
             );
 
             let user_model = user_db.get_user(&ADDR_1).await.unwrap().unwrap();
@@ -507,7 +507,7 @@ mod tests {
         };
 
         let (_, db_conn) =
-            create_database_connection("user_db_tests_test_deny_list_2", true, config.clone())
+            create_database_connection("user_db_tests_test_deny_list_cleanup", true, config.clone())
                 .await?;
 
         let user_db = UserDb2::new(
@@ -571,11 +571,9 @@ mod tests {
             tree_depth,
         };
 
-        println!("create db conn...");
         let (_, db_conn) =
-            create_database_connection("user_db_tests_test_deny_list_1", true, config.clone())
+            create_database_connection("user_db_tests_test_nullifier_1", true, config.clone())
                 .await?;
-        println!("create db conn DONE");
 
         let user_db = UserDb2::new(
             db_conn.clone(),
@@ -623,7 +621,7 @@ mod tests {
         };
 
         let (_, db_conn) =
-            create_database_connection("user_db_tests_test_deny_list_1", true, config.clone())
+            create_database_connection("user_db_tests_test_nullifier_cleanup", true, config.clone())
                 .await?;
 
         let user_db = UserDb2::new(

@@ -35,6 +35,7 @@ pub struct TxCounterSqlx {
     pub address: Vec<u8>, // unique
     pub epoch: i64,
     pub epoch_counter: i64,
+    pub quota_bonus: i64,
 }
 
 #[derive(sqlx::FromRow)]

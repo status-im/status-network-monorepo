@@ -13,6 +13,8 @@ pub struct Migrator();
 
 impl Migrator {
     const UP_0_VERSION: &str = "m20250203_init";
+    const UP_1_VERSION: &str = "m20260226_nonce_manager";
+    const UP_2_VERSION: &str = "m20260227_quota_bonus";
 
     pub async fn up(&self, db: Pool<Postgres>, config: MigrationConfig) -> Result<(), SqlxError> {
         let mut txn = db.begin().await?;
@@ -23,13 +25,14 @@ impl Migrator {
             self.up_0(&mut *txn, config.clone()).await?;
             self.migration_add(&mut *txn, Self::UP_0_VERSION).await?;
         }
-        /*
-        let up_1_version = "m20291231_another_migration";
-        if !self.migration_exists(&mut *txn, up_1_version).await? {
-            self.up_0(&mut *txn, config.clone()).await?;
-            self.migration_add(&mut *txn, up_1_version).await?;
+        if !self.migration_exists(&mut *txn, Self::UP_1_VERSION).await? {
+            self.up_1(&mut *txn).await?;
+            self.migration_add(&mut *txn, Self::UP_1_VERSION).await?;
         }
-        */
+        if !self.migration_exists(&mut *txn, Self::UP_2_VERSION).await? {
+            self.up_2(&mut *txn).await?;
+            self.migration_add(&mut *txn, Self::UP_2_VERSION).await?;
+        }
         txn.commit().await?;
         Ok(())
     }
@@ -245,11 +248,62 @@ impl Migrator {
         Ok(())
     }
 
-    /*
-    async fn up_1(&self, db: &mut PgConnection, config: MigrationConfig) -> Result<(), SqlxError> {
-        unimplemented!()
+    async fn up_2(&self, db: &mut PgConnection) -> Result<(), SqlxError> {
+        sqlx::query("ALTER TABLE tx_counter ADD COLUMN quota_bonus BIGINT NOT NULL DEFAULT 0")
+            .execute(&mut *db)
+            .await?;
+        Ok(())
     }
-    */
+
+    async fn up_1(&self, db: &mut PgConnection) -> Result<(), SqlxError> {
+        sqlx::query(
+            r#"
+            CREATE TABLE nonce_state (
+                id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                wallet_address BYTEA NOT NULL CHECK (OCTET_LENGTH(wallet_address) = 20),
+                current_nonce BIGINT NOT NULL DEFAULT 0,
+                last_synced_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT nonce_state_wallet UNIQUE(wallet_address)
+            )
+        "#,
+        )
+        .execute(&mut *db)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE pending_registrations (
+                id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                user_address BYTEA NOT NULL CHECK (OCTET_LENGTH(user_address) = 20),
+                identity_commitment BYTEA NOT NULL CHECK (OCTET_LENGTH(identity_commitment) = 32),
+                nonce BIGINT NOT NULL,
+                tx_hash BYTEA,
+                status TEXT NOT NULL DEFAULT 'queued',
+                gas_price BIGINT,
+                attempt_count INT NOT NULL DEFAULT 0,
+                max_attempts INT NOT NULL DEFAULT 5,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                submitted_at TIMESTAMP,
+                confirmed_at TIMESTAMP,
+                last_error TEXT,
+                CONSTRAINT pending_registrations_nonce UNIQUE(nonce)
+            )
+        "#,
+        )
+        .execute(&mut *db)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX idx_pending_registrations_status
+            ON pending_registrations (status) WHERE status IN ('queued', 'submitted')
+        "#,
+        )
+        .execute(&mut *db)
+        .await?;
+
+        Ok(())
+    }
 
     pub async fn down(&self, db: Pool<Postgres>) -> Result<(), SqlxError> {
         let mut txn = db.begin().await?;
@@ -257,11 +311,37 @@ impl Migrator {
         // Note: this forces the creation of the migration table so we can query it
         self.migrations_init(&mut *txn).await?;
 
+        // Down in reverse order
+        if self.migration_exists(&mut *txn, Self::UP_2_VERSION).await? {
+            self.down_2(&mut *txn).await?;
+            self.migration_remove(&mut *txn, Self::UP_2_VERSION).await?;
+        }
+        if self.migration_exists(&mut *txn, Self::UP_1_VERSION).await? {
+            self.down_1(&mut *txn).await?;
+            self.migration_remove(&mut *txn, Self::UP_1_VERSION).await?;
+        }
         if self.migration_exists(&mut *txn, Self::UP_0_VERSION).await? {
             self.down_0(&mut *txn).await?;
             self.migration_remove(&mut *txn, Self::UP_0_VERSION).await?;
         }
         txn.commit().await?;
+        Ok(())
+    }
+
+    async fn down_2(&self, db: &mut PgConnection) -> Result<(), SqlxError> {
+        sqlx::query("ALTER TABLE tx_counter DROP COLUMN IF EXISTS quota_bonus")
+            .execute(&mut *db)
+            .await?;
+        Ok(())
+    }
+
+    async fn down_1(&self, db: &mut PgConnection) -> Result<(), SqlxError> {
+        sqlx::query("DROP TABLE IF EXISTS pending_registrations")
+            .execute(&mut *db)
+            .await?;
+        sqlx::query("DROP TABLE IF EXISTS nonce_state")
+            .execute(&mut *db)
+            .await?;
         Ok(())
     }
 

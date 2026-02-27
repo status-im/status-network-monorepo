@@ -229,6 +229,7 @@ mod tests {
             epoch_slice_secs: AppArgs::default_epoch_slice_secs(),
             kill_switch_file: String::new(),
             kill_switch_poll_secs: 5,
+            registration_gas_price_gwei: 0,
         };
 
         info!("Starting prover with args: {:?}", app_args);
@@ -486,6 +487,7 @@ mod tests {
             epoch_slice_secs: AppArgs::default_epoch_slice_secs(),
             kill_switch_file: String::new(),
             kill_switch_poll_secs: 5,
+            registration_gas_price_gwei: 0,
         };
 
         info!("Starting prover with args: {:?}", app_args);

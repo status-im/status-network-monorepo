@@ -163,7 +163,7 @@ where
         };
 
         // Update the counter as soon as possible (should help to prevent spamming...)
-        let counter = match self
+        let (counter, _quota_bonus) = match self
             .user_db
             .on_new_tx(&sender, tx_counter_incr.map(|v| v as i64))
             .await
@@ -479,15 +479,34 @@ where
                     debug!("Address {} was not on deny list", address);
                 }
 
-                // After removing from deny list, reset epoch counter if requested
+                // After removing from deny list, add quota bonus instead of resetting counter.
+                // Resetting the counter would cause nullifier collisions since message_id
+                // is derived from the counter. Instead, we increase the effective quota.
                 if req.reset_epoch_counter.unwrap_or(false) {
-                    if let Err(e) = self.user_db.reset_tx_counter(&address).await {
-                        error!("Failed to reset epoch counter for {}: {:?}", address, e);
+                    let bonus = match self
+                        .user_db
+                        .get_user_tier_tx_limit(&address, &self.karma_sc)
+                        .await
+                    {
+                        Ok(limit) => limit as i64,
+                        Err(e) => {
+                            warn!(
+                                "Failed to fetch tier limit for {}: {:?}. Using 0 bonus.",
+                                address, e
+                            );
+                            0
+                        }
+                    };
+                    if let Err(e) = self.user_db.add_quota_bonus(&address, bonus).await {
+                        error!("Failed to add quota bonus for {}: {:?}", address, e);
                         return Err(Status::internal(format!(
-                            "Failed to reset epoch counter: {e}"
+                            "Failed to add quota bonus: {e}"
                         )));
                     }
-                    info!("Epoch counter reset for {} (premium gas payment)", address);
+                    info!(
+                        "Quota bonus {} added for {} (premium gas payment)",
+                        bonus, address
+                    );
                 }
 
                 Ok(Response::new(RemoveFromDenyListReply {

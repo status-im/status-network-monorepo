@@ -29,7 +29,6 @@ public class LineaRpcConfiguration implements LineaOptionsConfiguration {
   // Gasless transaction features
   private boolean gaslessTransactionsEnabled;
   private boolean rlnProverForwarderEnabled;
-  private double premiumGasMultiplier;
   private boolean allowZeroGasEstimationForGasless;
   private LineaSharedGaslessConfiguration sharedGaslessConfig;
 }

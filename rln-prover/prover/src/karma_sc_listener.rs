@@ -10,7 +10,7 @@ use num_bigint::BigUint;
 use tonic::codegen::tokio_stream::StreamExt;
 use tracing::{debug, error, info};
 // internal
-use crate::error::{AppError2, HandleTransferError2, RegisterSCError};
+use crate::error::{AppError2, HandleTransferError2};
 // use crate::user_db::UserDb;
 use crate::user_db_2::UserDb2;
 use crate::user_db_error::RegisterError2;
@@ -39,13 +39,16 @@ impl KarmaScEventListener {
     }
 
     /// Listen to Smart Contract specified events
-    pub(crate) async fn listen<P: Provider + Clone, PS: Provider>(
+    pub(crate) async fn listen<P: Provider + Clone, RLNSC>(
         &self,
         provider: P,
-        provider_with_signer: PS,
-    ) -> Result<(), AppError2> {
+        rln_sc: RLNSC,
+    ) -> Result<(), AppError2>
+    where
+        RLNSC: RLNRegister,
+        RLNSC::Error: Into<HandleTransferError2> + std::fmt::Debug,
+    {
         let karma_sc = KarmaSC::new(self.karma_sc_address, provider.clone());
-        let rln_sc = KarmaRLNSC::new(self.rln_sc_address, provider_with_signer);
 
         // Subscribe to both Transfer and AccountSlashed events
         // Using event_signature() with OR for multiple events
@@ -125,8 +128,9 @@ impl KarmaScEventListener {
     /// Decode transfert event from log and call `handle_transfer_event`
     async fn transfer_event<
         E: Into<AlloyContractError>,
+        RE: Into<HandleTransferError2> + std::fmt::Debug,
         KSC: KarmaAmountExt<Error = E>,
-        RLNSC: RLNRegister<Error = E>,
+        RLNSC: RLNRegister<Error = RE>,
     >(
         &self,
         log: &Log,
@@ -183,8 +187,9 @@ impl KarmaScEventListener {
     /// never happen)
     async fn handle_transfer_event<
         E: Into<AlloyContractError>,
+        RE: Into<HandleTransferError2> + std::fmt::Debug,
         KSC: KarmaAmountExt<Error = E>,
-        RLNSC: RLNRegister<Error = E>,
+        RLNSC: RLNRegister<Error = RE>,
     >(
         &self,
         karma_sc: &KSC,
@@ -258,8 +263,7 @@ impl KarmaScEventListener {
                         }
                     }
 
-                    let e_ = RegisterSCError::from(e.into());
-                    return Err(HandleTransferError2::ScRegister(e_));
+                    return Err(e.into());
                 }
             }
         }
