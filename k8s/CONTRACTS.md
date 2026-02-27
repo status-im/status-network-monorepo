@@ -3,8 +3,10 @@
 Contract addresses for the internal testnet deployment on Hoodi L1 + Status Network L2.
 
 - **L1**: Hoodi (Chain ID 560048)
-- **L2**: Status Network (Chain ID 59141)
+- **L2**: Status Network (Chain ID 374)
 - **L2 RPC**: Via internal load balancer (see `values-secrets.yaml`)
+
+> **Note:** Chain ID changed from 59141 to 374 on 2026-02-26. All contracts were redeployed from scratch.
 
 ---
 
@@ -14,16 +16,16 @@ Deployed on Hoodi L1 via `contracts/local-deployments-artifacts/deployPlonkVerif
 
 | Contract | Address | Description |
 |----------|---------|-------------|
-| **LineaRollupV6 (Proxy)** | `0x2f4EF244C53E249bcF3A7188557cB9F94e1E5340` | Main rollup contract (TransparentUpgradeableProxy) |
-| **LineaRollupV6 (Implementation)** | `0xeD9c939a317B479d9c7E78d2Af2E581adcf2fb27` | Implementation behind the proxy |
-| **ProxyAdmin** | `0x8eD54661C2A7fDC8f4a2f96089Ec40f6fB79ea0f` | Owner of the TransparentUpgradeableProxy |
-| **IntegrationTestTrueVerifier** | `0xb7CF9699777EFd1Ca3f4B3Ca864D98bcdFF4bD0F` | ZK proof verification (test verifier, accepts any proof) |
+| **LineaRollupV6 (Proxy)** | `0x41C5351c40Ce8097C8a65202ecaAF3282720a93f` | Main rollup contract (TransparentUpgradeableProxy) |
+| **LineaRollupV6 (Implementation)** | `0x88DC8be84fBf2DddB58f7b9cC6D5eE4FCa6a23dC` | Implementation behind the proxy |
+| **ProxyAdmin** | `0x2621F080D39CF57C1Af15A3f501038EeaA76b84f` | Owner of the TransparentUpgradeableProxy |
+| **IntegrationTestTrueVerifier** | `0x1705ACa799be36ffE6ccFD108ca0D16d678ff8C0` | ZK proof verification (test verifier, accepts any proof) |
 
 Deployer/Operator: `0x8E5bA9C1DF138754076FAfaC0DeeDAf3d598ed35`
 
 ### Genesis Parameters
 
-These are baked into the L1 contract's `initialize()` call and **must match L2 block 0**.
+These are baked into the L1 contract's `initialize()` call and **must match shomei's ZK state root at L2 block 0**.
 
 | Parameter | Value |
 |-----------|-------|
@@ -32,7 +34,7 @@ These are baked into the L1 contract's `initialize()` call and **must match L2 b
 | Genesis timestamp | `1683325137` (2023-05-05T22:18:57Z, from L2 block 0) |
 | Initial L2 block number | `0` |
 
-> **Important:** The `LINEA_ROLLUP_GENESIS_TIMESTAMP` passed to `initialize()` MUST match the L2 block 0 timestamp exactly. The coordinator reads the genesis timestamp from L2 block 0 and computes `currentFinalizedState = keccak256(messageNumber, rollingHash, timestamp)`. A mismatch causes `FinalizationStateIncorrect` errors.
+> **Important:** The `LINEA_ROLLUP_INITIAL_STATE_ROOT_HASH` MUST be shomei's ZK state root (Poseidon sparse merkle trie), NOT the Ethereum state root from L2 block 0 headers. These are different hash algorithms over the same state. Query shomei: `rollup_getZkEVMStateMerkleProofV0` for blocks 0-0, use `zkEndStateRootHash`. The `LINEA_ROLLUP_GENESIS_TIMESTAMP` MUST match the L2 block 0 timestamp exactly.
 
 ---
 
@@ -55,9 +57,9 @@ Deployed on L2 after genesis. Handle L2->L1 messaging.
 
 | Contract | Address | Description |
 |----------|---------|-------------|
-| **L2MessageService** | `0x37329AFc217D487d1db339F8EfEE8C4eEA8C1648` | L2->L1 message dispatching, L1->L2 message claiming |
+| **L2MessageService** | `0xeB0b0a14F92e3BA35aEF3a2B6A24D7ED1D11631B` | L2->L1 message dispatching, L1->L2 message claiming |
 
-Deployer: `0x1B9AbEeC3215D8AdE8A33607f2cF0f4F60e5F0D0`
+Deployer: `0x1B9AbEeC3215D8AdE8a33607f2cF0f4F60e5F0D0`
 
 ---
 
@@ -67,13 +69,17 @@ Deployed on L2 via Foundry (forge scripts). These implement the Status Network p
 
 | Contract | Address | Description |
 |----------|---------|-------------|
-| **KarmaTiers** | `0x729409FAD88CafdA895E41f9ED00Ef4094F8d130` | Tier management for Karma holders |
-| **Karma (proxy)** | `0xe537D669CA013d86EBeF1D64e40fC74CADC91987` | ERC20 reputation token |
-| **RLN (proxy)** | `0x5C95Bcd50E6D1B4E3CDC478484C9030Ff0a7D493` | Rate Limiting Nullifier for gasless transactions |
-| **StakeManager (proxy)** | `0xeB0b0a14F92e3BA35aEF3a2B6A24D7ED1D11631B` | Manages user staking and creates StakeVault clones |
-| **KarmaNFT** | `0xCC1B08B17301e090cbb4c1F5598Cbaa096d591FB` | NFT representation of Karma holdings |
+| **KarmaTiers** | `0x5D7F9C0249F82277699DDd94cEFD9b0D1C56BC30` | Tier management for Karma holders |
+| **Karma (proxy)** | `0x5C95Bcd50E6D1B4E3CDC478484C9030Ff0a7D493` | ERC20 reputation token |
+| **RLN (proxy)** | `0xc407C7Bc2b3C109b8bCDE7C681d84a6a4B600eA5` | Rate Limiting Nullifier for gasless transactions |
+| **StakeManager (proxy)** | `0xE4392c8ecC46b304C83cDB5edaf742899b1bda93` | Manages user staking and creates StakeVault clones |
+| **KarmaNFT** | `0x37329AFc217D487d1db339F8EfEE8C4eEA8C1648` | NFT representation of Karma holdings |
+| **VaultFactory** | `0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0` | Creates StakeVault proxies for users |
+| **StakeVault (implementation)** | `0x5FbDB2315678afecb367f032d93F642f64180aa3` | StakeVault logic contract used by VaultFactory |
+| **SimpleKarmaDistributor (proxy)** | `0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9` | Distributes Karma rewards to users |
+| **SimpleKarmaDistributor (impl)** | `0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9` | Implementation behind the proxy |
 
-Deployer: `0x1B9AbEeC3215D8AdE8A33607f2cF0f4F60e5F0D0`
+Deployer: `0x1B9AbEeC3215D8AdE8a33607f2cF0f4F60e5F0D0`
 
 ### Deployment Order
 
@@ -82,6 +88,8 @@ Deployer: `0x1B9AbEeC3215D8AdE8A33607f2cF0f4F60e5F0D0`
 3. **StakeManager** (depends on Karma address)
 4. **RLN** (depends on Karma address)
 5. **KarmaNFT** (depends on Karma address)
+6. **VaultFactory** (depends on StakeManager + Karma addresses)
+7. **SimpleKarmaDistributor** (depends on Karma address)
 
 ---
 
@@ -92,14 +100,14 @@ These addresses are configured in `values-internal-testnet.yaml`:
 ```yaml
 network:
   contracts:
-    l1Rollup: "0x2f4EF244C53E249bcF3A7188557cB9F94e1E5340"
-    l2MessageService: "0x37329AFc217D487d1db339F8EfEE8C4eEA8C1648"
+    l1Rollup: "0x41C5351c40Ce8097C8a65202ecaAF3282720a93f"
+    l2MessageService: "0xeB0b0a14F92e3BA35aEF3a2B6A24D7ED1D11631B"
 
 l2:
   rlnProver:
-    karmaContract: "0xe537D669CA013d86EBeF1D64e40fC74CADC91987"
-    rlnContract: "0x5C95Bcd50E6D1B4E3CDC478484C9030Ff0a7D493"
-    tiersContract: "0x729409FAD88CafdA895E41f9ED00Ef4094F8d130"
+    karmaContract: "0x5C95Bcd50E6D1B4E3CDC478484C9030Ff0a7D493"
+    rlnContract: "0xc407C7Bc2b3C109b8bCDE7C681d84a6a4B600eA5"
+    tiersContract: "0x5D7F9C0249F82277699DDd94cEFD9b0D1C56BC30"
 ```
 
 ### Where Addresses Are Used
@@ -125,7 +133,7 @@ l2:
 | Account | Address | Used For |
 |---------|---------|----------|
 | Hoodi Deployer/Operator | `0x8E5bA9C1DF138754076FAfaC0DeeDAf3d598ed35` | L1 contract deployment, rollup operations |
-| L2 Deployer | `0x1B9AbEeC3215D8AdE8A33607f2cF0f4F60e5F0D0` | L2MessageService, Status Network contracts |
+| L2 Deployer | `0x1B9AbEeC3215D8AdE8a33607f2cF0f4F60e5F0D0` | L2MessageService, Status Network contracts |
 
 > **Note:** Private keys are stored in `values-secrets.yaml` (gitignored, NEVER commit).
 
@@ -145,3 +153,5 @@ l2:
 ```
 
 > **Tip:** The deploy script uses `process.env.RPC_URL` (NOT `BLOCKCHAIN_NODE`). If `RPC_URL` is undefined, ethers defaults to `http://localhost:8545`. Scale coordinator to 0 replicas before deploying to L1 (pending blob type-3 txs conflict with deploy type-2 txs).
+
+> **Known issue:** The coordinator reads its config from `/initialization/coordinator-config-v2-hardforks.toml` on the `l2-genesis-data` PVC (baked during genesis init), NOT directly from the K8s Secret. If you update the coordinator Secret after genesis, you must also update the file on the PVC (via `kubectl exec`) and restart the coordinator.

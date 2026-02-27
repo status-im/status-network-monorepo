@@ -191,4 +191,23 @@ spec:
   resources:
     requests:
       storage: 1Gi
+
+{{- if .Values.l2.postgresReplica.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-replica-data
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "postgres-replica") | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+
+  resources:
+    requests:
+      storage: {{ .Values.l2.postgresReplica.storage.size }}
+{{- end }}
 {{- end }}

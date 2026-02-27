@@ -118,15 +118,24 @@ start-env-with-rln-production:
 	echo "  Karma: $$KARMA_ADDR" && \
 	echo "  RLN: $$RLN_ADDR" && \
 	echo "  KarmaTiers: $$TIERS_ADDR" && \
-	echo "Step 3: Initializing karma tiers..." && \
-	(cd e2e && KARMA_TIERS_ADDRESS=$$TIERS_ADDR npx ts-node ../scripts/initialize-karma-tiers.ts || true) && \
+	echo "Step 3: Initializing karma tiers via Foundry..." && \
+	(cd status-network-contracts && forge script script/InitializeKarmaTiers.s.sol:InitializeKarmaTiersScript \
+		--rpc-url http://localhost:8545 \
+		--private-key 0x1dd171cec7e2995408b5513004e8207fe88d6820aeff0d82463b3e41df251aae \
+		--broadcast --legacy --with-gas-price 15000000000 || true) && \
+	echo "Step 3.5: Minting Karma to deployer for admin tier access..." && \
+	(cast send --legacy --gas-price 15000000000 \
+		--private-key 0x1dd171cec7e2995408b5513004e8207fe88d6820aeff0d82463b3e41df251aae \
+		--rpc-url http://localhost:8545 \
+		$$KARMA_ADDR "mint(address,uint256)" \
+		0x1B9AbEeC3215D8AdE8a33607f2cF0f4F60e5F0D0 $$(cast --to-wei 100000 ether) || true) && \
 	echo "Step 4: Setting up prover account permissions..." && \
 	(cd e2e && NODE_PATH=node_modules KARMA_CONTRACT_ADDRESS=$$KARMA_ADDR RLN_CONTRACT_ADDRESS=$$RLN_ADDR node ../scripts/setup-prover-account.js || true) && \
 	(cd e2e && NODE_PATH=node_modules KARMA_CONTRACT_ADDRESS=$$KARMA_ADDR node ../scripts/grant-operator-role.js || true) && \
 	echo "Step 5: Restarting RLN prover in production mode..." && \
 	docker stop rln-prover karma-service 2>/dev/null || true && \
 	docker rm rln-prover karma-service 2>/dev/null || true && \
-	RLN_PROVER_IMAGE=$$(docker images --format '{{.Repository}}:{{.Tag}}' | grep status-network-rln-prover | grep -v ecr | grep -v 0xnadeem | head -1) && \
+	RLN_PROVER_IMAGE=$$(grep 'image:.*status-network-rln-prover' docker/compose-spec-l2-services-rln.yml | head -1 | sed 's/.*image: *//') && \
 	echo "  Using prover image: $$RLN_PROVER_IMAGE" && \
 	docker run -d --name rln-prover --hostname rln-prover \
 		--network docker_linea --ip 11.11.11.120 \
@@ -141,6 +150,7 @@ start-env-with-rln-production:
 		--ksc $$KARMA_ADDR --rlnsc $$RLN_ADDR --tsc $$TIERS_ADDR \
 		--registration-min 1 \
 		--db postgres://postgres:postgres@postgres:5432/prover_db \
+		--registration-gas-price-gwei 12 \
 		--epoch-duration-secs 30 --epoch-slice-secs 10 && \
 	echo "✅ RLN environment running in PRODUCTION mode!" && \
 	echo "   - RLN Prover connected to real smart contracts" && \
