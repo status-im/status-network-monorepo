@@ -222,9 +222,15 @@ public class LineaEstimateGas {
 
       // --- Linea Gasless Logic Start ---
       boolean killSwitchActive = gasKillSwitchMonitor != null && gasKillSwitchMonitor.isActive();
-      if (gaslessTransactionsEnabled
-          && !killSwitchActive
-          && callParameters.getSender().isPresent()) {
+      if (gaslessTransactionsEnabled && callParameters.getSender().isPresent()) {
+        if (killSwitchActive) {
+          log.info(
+              "[{}] Gas kill switch active. Returning premium gas estimate for sender {}.",
+              logId,
+              callParameters.getSender().get().toHexString());
+          return buildPremiumGasResponse(callParameters, maybeStateOverrides, logId, minGasPrice);
+        }
+
         Address sender = callParameters.getSender().get();
 
         // Check if sender is on deny list (read-only operation)

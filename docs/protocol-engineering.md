@@ -106,7 +106,9 @@ sequenceDiagram
 
     RPC->>RPC: Check gas kill switch
     alt Kill switch active
-        RPC-->>W: Standard gas estimation (skip gasless)
+        RPC->>RPC: Estimate gas normally
+        RPC->>RPC: enforcePremiumMinPriorityFee()
+        RPC-->>W: {gasLimit: normalEstimate, baseFee: actual, priorityFee: premiumThreshold}
     end
 
     RPC->>RPC: Check gasless features enabled
@@ -710,7 +712,7 @@ The ZK proof includes a Merkle tree root that proves the user is in the RLN grou
 
 **File**: [`GasKillSwitchMonitor.java`](../besu-plugins/linea-sequencer/sequencer/src/main/java/net/consensys/linea/config/GasKillSwitchMonitor.java), [`kill_switch.rs`](../rln-prover/prover/src/kill_switch.rs)
 
-Dead simple file-based emergency mechanism shared across all components. Write `"true"` or `"enabled"` to the configured file path to activate, and any other value (or delete the file) to deactivate. Each component polls the file every 5 seconds by default. When active, the RPC node skips gasless estimation and prover forwarding, the sequencer rejects all gasless transactions (premium gas still works), and the prover returns `Status::unavailable()` for new proof requests.
+Dead simple file-based emergency mechanism shared across all components. Write `"true"` or `"enabled"` to the configured file path to activate, and any other value (or delete the file) to deactivate. Each component polls the file every 5 seconds by default. When active, the RPC node returns premium gas estimates (instead of zero-gas) and skips prover forwarding, the sequencer rejects all gasless transactions (premium gas still works), and the prover returns `Status::unavailable()` for new proof requests.
 
 #### Docker Compose
 
