@@ -5,7 +5,6 @@ use ark_bn254::{Bn254, Fr};
 use ark_groth16::{Proof, ProvingKey};
 use ark_relations::r1cs::ConstraintMatrices;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use prover_pmtree::{Hasher, Value};
 use rln::utils::IdSecret;
 use rln::{
     circuit::zkey_from_folder,
@@ -131,32 +130,6 @@ pub fn compute_rln_proof_and_values(
         rln_identifier.graph.as_slice(),
     )?;
     Ok((proof, proof_values))
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct ProverPoseidonHash;
-
-impl Hasher for ProverPoseidonHash {
-    type Fr = Fr;
-
-    fn serialize(value: Self::Fr) -> Value {
-        let mut buffer = vec![];
-        // FIXME: unwrap safe?
-        value.serialize_compressed(&mut buffer).unwrap();
-        buffer
-    }
-
-    fn deserialize(value: Value) -> Self::Fr {
-        // FIXME: unwrap safe?
-        CanonicalDeserialize::deserialize_compressed(value.as_slice()).unwrap()
-    }
-
-    fn default_leaf() -> Self::Fr {
-        Self::Fr::from(0)
-    }
-    fn hash(inputs: &[Self::Fr]) -> Self::Fr {
-        poseidon_hash(inputs)
-    }
 }
 
 #[cfg(test)]

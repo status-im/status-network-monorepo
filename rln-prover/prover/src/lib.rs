@@ -74,16 +74,15 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
     use crate::epoch_service::EpochServiceConfig;
 
     let epoch_duration = Duration::from_secs(app_args.epoch_duration_secs);
-    let epoch_slice_duration = Duration::from_secs(app_args.epoch_slice_secs);
 
     info!(
-        "Starting epoch service: epoch_duration={}s, epoch_slice_duration={}s",
-        app_args.epoch_duration_secs, app_args.epoch_slice_secs
+        "Starting epoch service: epoch_duration={}s",
+        app_args.epoch_duration_secs
     );
 
     let epoch_config = EpochServiceConfig::with_epoch_duration(
         epoch_duration,
-        epoch_slice_duration,
+        Duration::from_secs(10), // default value - unused
         ARGS_DEFAULT_GENESIS,
     );
     let epoch_service =

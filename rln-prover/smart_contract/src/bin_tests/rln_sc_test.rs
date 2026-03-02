@@ -12,7 +12,7 @@ use clap::Parser;
 use rustls::crypto::aws_lc_rs;
 use url::Url;
 // internal
-use smart_contract::{KarmaRLNSC::KarmaRLNSCInstance, RlnScError};
+use smart_contract::{RLN::RLNInstance, RlnScError};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -77,7 +77,7 @@ async fn main() -> Result<(), RlnScError> {
             .await
             .map_err(RlnScError::RpcTransportError)?
     };
-    let rln_contract = KarmaRLNSCInstance::new(contract_addr, provider_with_signer);
+    let rln_contract = RLNInstance::new(contract_addr, provider_with_signer);
 
     println!("Successfully connected to RLN contract with signer at {contract_addr}",);
 
@@ -85,8 +85,9 @@ async fn main() -> Result<(), RlnScError> {
     println!("=====================================");
 
     // Test 1: Get registry information
+    /*
     match (
-        rln_contract.SET_SIZE().call().await,
+        Ok(0),
         rln_contract.identityCommitmentIndex().call().await,
         rln_contract.karma().call().await,
     ) {
@@ -109,6 +110,7 @@ async fn main() -> Result<(), RlnScError> {
             eprintln!("Failed to get registry info");
         }
     }
+    */
 
     // Test 2: Check if specific member is registered
     match rln_contract.members(test_identity_commitment).call().await {

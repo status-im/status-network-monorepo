@@ -79,7 +79,6 @@ l2:
         memory: 4Gi
     # Epoch configuration - shorter epochs for testing
     epochDurationSecs: 300
-    epochSliceSecs: 60
 
   sequencer:
     resources:

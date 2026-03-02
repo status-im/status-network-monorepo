@@ -11,6 +11,6 @@ pub use common::{
 };
 pub use karma_sc::{KarmaAmountExt, KarmaSC, KarmaScError};
 pub use karma_tiers::{KarmaTiers, KarmaTiersError, Tier};
-pub use rln_sc::{KarmaRLNSC, RLNRegister, RlnScError};
+pub use rln_sc::{RLN, RLNRegister, RlnScError};
 
 pub use mock::{MockKarmaRLNSc, MockKarmaSc, TIER_LIMITS};

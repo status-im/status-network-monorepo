@@ -4,11 +4,8 @@ members = [
     "smart_contract",
     "prover",
     "prover_cli",
-    "prover_client", "prover_db_migration_sqlx",
-    # "prover_db_migration",
-    # "prover_db_entity",
-    # "prover_pmtree",
-    # "prover_pmtree_db_impl",
+    "prover_client",
+    "prover_db_migration_sqlx",
 ]
 resolver = "2"
 
@@ -24,10 +21,10 @@ ark-ff = { version = "0.5.0", default-features = false, features = ["asm"] }
 ark-groth16 = { version = "0.5.0", default-features = false, features = [] }
 ark-serialize = { version = "0.5.0", default-features = false, features = [] }
 # ark-serialize = { git = "https://github.com/arkworks-rs/algebra", features = ["std", "serde", "serde_with"] }
-tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread"] }
-clap = { version = "4.5.50", features = ["derive", "wrap_help"] }
-url = { version = "2.5.7", features = ["serde"] }
-alloy = { version = "1.0.41", features = [
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }
+clap = { version = "4.5.60", features = ["derive", "wrap_help"] }
+url = { version = "2.5.8", features = ["serde"] }
+alloy = { version = "1.7.3", features = [
     "getrandom",
     "sol-types",
     "contract",
@@ -35,33 +32,21 @@ alloy = { version = "1.0.41", features = [
     "provider-anvil-node",
 ] }
 async-trait = "0.1.89"
-derive_more = "2.0.1"
-thiserror = "2.0.17"
+derive_more = "2.1.1"
+thiserror = "2.0.18"
 rustls = "0.23.33"
 zeroize = "1.8.2"
-tonic = "0.14.2"
-tonic-web = "0.14.2"
-tonic-reflection = "0.14.2"
-prost = "0.14.1"
-tonic-prost = "0.14.2"
-tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
-tracing = "0.1.41"
+tonic = "0.14.5"
+tonic-web = "0.14.5"
+tonic-reflection = "0.14.5"
+prost = "0.14.3"
+tonic-prost = "0.14.5"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+tracing = "0.1.44"
 serde = { version = "1.0.228", features = ["derive"] }
-
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "migrate"] }
-# sea-orm = { version = "2.0.0-rc.19", default-features = false, features = [
-#     "runtime-tokio-native-tls",
-#     "sqlx-postgres",
-#     # "sqlx-sqlite",
-# ]}
-# sea-orm-migration = { version = "2.0.0-rc.19", features = [
-#     "runtime-tokio-native-tls",
-#     "sqlx-postgres",
-#     # "sqlx-sqlite"
-# ]}
-
 # for build
-tonic-prost-build = "0.14.2"
+tonic-prost-build = "0.14.5"
 # for becnhmark
 criterion = { version = "0.7.0", features = ["async_tokio"] }
 

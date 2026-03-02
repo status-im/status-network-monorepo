@@ -44,7 +44,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["--no-config", "--ip", "0.0.0.0", "--port", "50051", "--mock-sc", "true", "--mock-user", "/app/mock_users.json", "--db", "postgres://postgres:postgres@postgres:5432/prover_db", "--epoch-duration-secs", "30", "--epoch-slice-secs", "10", "--registration-gas-price-gwei", "12"]
+    command: ["--no-config", "--ip", "0.0.0.0", "--port", "50051", "--mock-sc", "true", "--mock-user", "/app/mock_users.json", "--db", "postgres://postgres:postgres@postgres:5432/prover_db", "--epoch-duration-secs", "30", "--registration-gas-price-gwei", "12"]
     environment:
       RUST_LOG: "${RUST_LOG:-debug}"
       DATABASE_URL: "postgres://postgres:postgres@postgres:5432/prover_db"

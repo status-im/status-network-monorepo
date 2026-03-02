@@ -208,14 +208,6 @@ pub struct AppArgs {
     )]
     pub epoch_duration_secs: u64,
 
-    #[arg(
-        help_heading = "prover config",
-        long = "epoch-slice-secs",
-        help = "Epoch slice duration in seconds (subdivision of epoch). Must be < epoch_duration/2. Default: 120 (2min). For testing use 10-30 seconds.",
-        default_value_t = AppArgs::default_epoch_slice_secs(),
-    )]
-    pub epoch_slice_secs: u64,
-
     // Hidden option - expect user set it via a config file
     #[arg(
         long = "broadcast-channel-size",
