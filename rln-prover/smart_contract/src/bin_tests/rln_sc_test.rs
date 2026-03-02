@@ -129,13 +129,9 @@ async fn main() -> Result<(), RlnScError> {
     }
 
     // Test 3: Get role information
-    match (
-        rln_contract.SLASHER_ROLE().call().await,
-        rln_contract.REGISTER_ROLE().call().await,
-    ) {
-        (Ok(slasher_role), Ok(register_role)) => {
+    match rln_contract.REGISTER_ROLE().call().await {
+        Ok(register_role) => {
             println!("Role Information:");
-            println!("   Slasher role: 0x{}", hex::encode(slasher_role));
             println!("   Register role: 0x{}", hex::encode(register_role));
         }
         _ => {
@@ -144,11 +140,8 @@ async fn main() -> Result<(), RlnScError> {
     }
 
     // Test 4: Check permissions for test user
-    match (
-        rln_contract.REGISTER_ROLE().call().await,
-        rln_contract.SLASHER_ROLE().call().await,
-    ) {
-        (Ok(register_role), Ok(slasher_role)) => {
+    match rln_contract.REGISTER_ROLE().call().await {
+        Ok(register_role) => {
             match rln_contract
                 .hasRole(register_role, test_user_address)
                 .call()
@@ -158,17 +151,6 @@ async fn main() -> Result<(), RlnScError> {
                     println!("Account {test_user_address} can register: {can_register}",);
                 }
                 Err(e) => eprintln!("Failed to check register permission: {e}"),
-            }
-
-            match rln_contract
-                .hasRole(slasher_role, test_user_address)
-                .call()
-                .await
-            {
-                Ok(can_slash) => {
-                    println!("Account {test_user_address} can slash: {can_slash}");
-                }
-                Err(e) => eprintln!("Failed to check slash permission: {e}"),
             }
         }
         _ => {
