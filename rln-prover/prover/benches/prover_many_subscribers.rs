@@ -162,7 +162,6 @@ fn proof_generation_bench(c: &mut Criterion) {
         no_grpc_reflection: true,
         tx_gas_quota: AppArgs::default_tx_gas_quota(),
         epoch_duration_secs: AppArgs::default_epoch_duration_secs(),
-        epoch_slice_secs: AppArgs::default_epoch_slice_secs(),
         kill_switch_file: String::new(),
         kill_switch_poll_secs: 5,
     };
