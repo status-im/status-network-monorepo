@@ -109,7 +109,7 @@ impl ProofProcessService {
 
         let db_entry = guard.insert_proof(&sender_addr, &proof);
 
-        if db_entry.seen_proof_count > self.config.rln_limit {
+        if db_entry.seen_proof_count >= self.config.rln_limit {
             info!("Detected too many messages for address: {:?}", sender_addr);
 
             let slashing_data = SlashingData {

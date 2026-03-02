@@ -143,9 +143,11 @@ impl ProofService {
                     // Note: Zerokit can only recover user secret hash with 2 messages with the
                     //       same message_id so here we force to use the previous message_id
                     //       so the Verifier could recover the secret hash
+                    // debug!("m_id: {:?} vs rate_limit: {:?}", m_id, rate_limit);
                     if RateLimit::from(m_id) == rate_limit {
                         m_id -= 1;
                     }
+                    // debug!("final m_id: {:?}", m_id);
                     m_id
                 };
 
