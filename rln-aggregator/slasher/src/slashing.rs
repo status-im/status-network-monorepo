@@ -38,7 +38,7 @@ impl SlashingService {
     // #[tracing::instrument(skip(self))]
     pub(crate) async fn serve<P: Provider + Clone + 'static>(
         &mut self,
-        rln_sc_: RLNInstance<P>
+        rln_sc_: RLNInstance<P>,
     ) -> anyhow::Result<()> {
         // let rln_sc_ = RLN::new(self.config.rln_sc_address, provider);
 
@@ -116,7 +116,10 @@ async fn slash<P: Provider>(
 ) -> anyhow::Result<()> {
     let sender = slashing_data.sender;
     let recovered_identity_secret_hash = recover(slashing_data)?;
-    debug!("recovered secret hash: {:?}", recovered_identity_secret_hash);
+    debug!(
+        "recovered secret hash: {:?}",
+        recovered_identity_secret_hash
+    );
     rln_sc
         .slash(sender, recovered_identity_secret_hash, account_to_reward)
         .await

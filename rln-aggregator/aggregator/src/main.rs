@@ -92,7 +92,6 @@ async fn run_aggregator(app_args: AppArgs) -> anyhow::Result<()> {
         set.spawn(async move { mock.serve().await });
     } else {
         for (id, url) in app_args.urls.into_iter().enumerate() {
-
             let tx = bcast_tx.clone();
 
             // rln-prover clients
@@ -105,7 +104,7 @@ async fn run_aggregator(app_args: AppArgs) -> anyhow::Result<()> {
 
     while let Some(res) = set.join_next().await {
         match res {
-            Ok(Ok(_)) => {},
+            Ok(Ok(_)) => {}
             Ok(Err(e)) => {
                 error!("Task error: {:#}", e);
                 break;
@@ -136,7 +135,8 @@ impl ProverClient {
         Ok(Self {
             id,
             url: url.clone(),
-            client: RlnProverClient::connect(url.clone()).await
+            client: RlnProverClient::connect(url.clone())
+                .await
                 .context(format!("Cannot connect to {}", url))?,
             sender,
         })

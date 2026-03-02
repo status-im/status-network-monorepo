@@ -1,13 +1,13 @@
 use crate::smart_contract::KarmaSC::{KarmaSCErrors, KarmaSCInstance};
 use crate::smart_contract::RLN::{RLNErrors, RLNInstance};
+use alloy::primitives::address;
+use alloy::sol_types::SolCall;
 use alloy::{
     primitives::{Address, U256, keccak256},
     providers::Provider,
     sol,
     sol_types::SolValue,
 };
-use alloy::primitives::address;
-use alloy::sol_types::SolCall;
 use ark_ff::PrimeField;
 use derive_more::Display;
 use rln::utils::IdSecret;
@@ -294,32 +294,32 @@ sol! {
     }
 }
 
-    sol! {
+sol! {
 
-        // src: status-network-contracts/lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol
-        interface IERC20 {
-            event Transfer(address indexed from, address indexed to, uint256 value);
-            event Approval(address indexed owner, address indexed spender, uint256 value);
-            function totalSupply() external view returns (uint256);
-            function balanceOf(address account) external view returns (uint256);
-            function transfer(address to, uint256 amount) external returns (bool);
-            function allowance(address owner, address spender) external view returns (uint256);
-            function approve(address spender, uint256 amount) external returns (bool);
-            function transferFrom(address from, address to, uint256 amount) external returns (bool);
-        }
-
-        // src: status-network-contracts/test/mocks/KarmaDistributorMock.sol
-        // Compile bytecode (in status-network-contracts)
-        // docker run -v ./:/sources ethereum/solc:0.8.26 --bin --via-ir --optimize --optimize-runs 1 --overwrite  @openzeppelin/contracts=/sources/lib/openzeppelin-contracts/contracts @openzeppelin/contracts-upgradeable=/sources/lib/openzeppelin-contracts-upgradeable/contracts /sources/test/mocks/KarmaDistributorMock.sol
-
-        #[sol(rpc, bytecode="608034607057601f6103f038819003918201601f19168301916001600160401b03831184841017607457808492602094604052833981010312607057516001600160a01b03811690819003607057600380546001600160a01b03191691909117905560405161036790816100898239f35b5f80fd5b634e487b7160e01b5f52604160045260245ffdfe6080806040526004361015610012575f80fd5b5f3560e01c90816316c38b3c146102de57816329cdf1d2146102c557816333dc41c714610277575080635c975abb146100f857806371976aae146100a05780638bb87710146102435780639262187b14610153578063a47bd4961461013a578063a98cdada1461011d578063b187bd26146100f8578063b58ba163146100db5763c1414263146100a0575f80fd5b346100d75760203660031901126100d7576001600160a01b036100c161031b565b165f525f602052602060405f2054604051908152f35b5f80fd5b346100d7575f3660031901126100d7576020600254604051908152f35b346100d7575f3660031901126100d757602060ff60035460a01c166040519015158152f35b346100d7575f3660031901126100d7576020600154604051908152f35b346100d75760403660031901126100d757600435600255005b346100d75760203660031901126100d7576001600160a01b0361017461031b565b16805f525f60205260405f20545f602060018060a01b036003541660446040518094819363a9059cbb60e01b83528860048401528760248401525af18015610238576101d2575b506020915f525f82525f6040812055604051908152f35b60203d602011610231575b601f8101601f191682016001600160401b0381118382101761021d576020918391604052810103126100d757519182151583036100d757915060206101bb565b634e487b7160e01b5f52604160045260245ffd5b503d6101dd565b6040513d5f823e3d90fd5b346100d75760403660031901126100d7576001600160a01b0361026461031b565b165f525f60205260243560405f20555f80f35b346100d75760203660031901126100d75760649061029361031b565b5062461bcd60e51b815260206004820152600f60248201526e139bdd081a5b5c1b195b595b9d1959608a1b6044820152fd5b346100d75760203660031901126100d757600435600155005b346100d75760203660031901126100d7576004358015158091036100d7576003805460ff60a01b191660a09290921b60ff60a01b16919091179055005b600435906001600160a01b03821682036100d75756fea264697066735822122095965f3a23fb2575f9fd4a2536186e8d68cb123ebcbc0eab6c00da64cb76e31d64736f6c634300081a0033")]
-        contract KarmaDistributorMock is IRewardDistributor {
-            constructor(IERC20 _rewardToken);
-            function setUserKarmaShare(address user, uint256 karma) external;
-            function setTotalKarmaShares(uint256 karma) external;
-            // function setReward(uint256 amount, uint256) external override;
-        }
+    // src: status-network-contracts/lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol
+    interface IERC20 {
+        event Transfer(address indexed from, address indexed to, uint256 value);
+        event Approval(address indexed owner, address indexed spender, uint256 value);
+        function totalSupply() external view returns (uint256);
+        function balanceOf(address account) external view returns (uint256);
+        function transfer(address to, uint256 amount) external returns (bool);
+        function allowance(address owner, address spender) external view returns (uint256);
+        function approve(address spender, uint256 amount) external returns (bool);
+        function transferFrom(address from, address to, uint256 amount) external returns (bool);
     }
+
+    // src: status-network-contracts/test/mocks/KarmaDistributorMock.sol
+    // Compile bytecode (in status-network-contracts)
+    // docker run -v ./:/sources ethereum/solc:0.8.26 --bin --via-ir --optimize --optimize-runs 1 --overwrite  @openzeppelin/contracts=/sources/lib/openzeppelin-contracts/contracts @openzeppelin/contracts-upgradeable=/sources/lib/openzeppelin-contracts-upgradeable/contracts /sources/test/mocks/KarmaDistributorMock.sol
+
+    #[sol(rpc, bytecode="608034607057601f6103f038819003918201601f19168301916001600160401b03831184841017607457808492602094604052833981010312607057516001600160a01b03811690819003607057600380546001600160a01b03191691909117905560405161036790816100898239f35b5f80fd5b634e487b7160e01b5f52604160045260245ffdfe6080806040526004361015610012575f80fd5b5f3560e01c90816316c38b3c146102de57816329cdf1d2146102c557816333dc41c714610277575080635c975abb146100f857806371976aae146100a05780638bb87710146102435780639262187b14610153578063a47bd4961461013a578063a98cdada1461011d578063b187bd26146100f8578063b58ba163146100db5763c1414263146100a0575f80fd5b346100d75760203660031901126100d7576001600160a01b036100c161031b565b165f525f602052602060405f2054604051908152f35b5f80fd5b346100d7575f3660031901126100d7576020600254604051908152f35b346100d7575f3660031901126100d757602060ff60035460a01c166040519015158152f35b346100d7575f3660031901126100d7576020600154604051908152f35b346100d75760403660031901126100d757600435600255005b346100d75760203660031901126100d7576001600160a01b0361017461031b565b16805f525f60205260405f20545f602060018060a01b036003541660446040518094819363a9059cbb60e01b83528860048401528760248401525af18015610238576101d2575b506020915f525f82525f6040812055604051908152f35b60203d602011610231575b601f8101601f191682016001600160401b0381118382101761021d576020918391604052810103126100d757519182151583036100d757915060206101bb565b634e487b7160e01b5f52604160045260245ffd5b503d6101dd565b6040513d5f823e3d90fd5b346100d75760403660031901126100d7576001600160a01b0361026461031b565b165f525f60205260243560405f20555f80f35b346100d75760203660031901126100d75760649061029361031b565b5062461bcd60e51b815260206004820152600f60248201526e139bdd081a5b5c1b195b595b9d1959608a1b6044820152fd5b346100d75760203660031901126100d757600435600155005b346100d75760203660031901126100d7576004358015158091036100d7576003805460ff60a01b191660a09290921b60ff60a01b16919091179055005b600435906001600160a01b03821682036100d75756fea264697066735822122095965f3a23fb2575f9fd4a2536186e8d68cb123ebcbc0eab6c00da64cb76e31d64736f6c634300081a0033")]
+    contract KarmaDistributorMock is IRewardDistributor {
+        constructor(IERC20 _rewardToken);
+        function setUserKarmaShare(address user, uint256 karma) external;
+        function setTotalKarmaShares(uint256 karma) external;
+        // function setReward(uint256 amount, uint256) external override;
+    }
+}
 
 const addr_alice: Address = address!("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
 const addr_bob: Address = address!("0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
@@ -334,10 +334,13 @@ pub(crate) async fn deploy_sc_for_slashing<P: Provider + Clone + 'static>(
 ) {
     let contract_karma_sc_0 = KarmaSC::deploy(provider.clone()).await.unwrap();
     let init_data = KarmaSC::initializeCall { _owner: addr_alice }.abi_encode();
-    let contract_proxy =
-        ERC1967Proxy::deploy(provider.clone(), *contract_karma_sc_0.address(), init_data.into())
-            .await
-            .unwrap();
+    let contract_proxy = ERC1967Proxy::deploy(
+        provider.clone(),
+        *contract_karma_sc_0.address(),
+        init_data.into(),
+    )
+    .await
+    .unwrap();
     // println!("contract_proxy: {:?}", contract_proxy.address());
     let contract_karma_sc = KarmaSC::new(*contract_proxy.address(), provider.clone());
     // println!("contract KarmaSC: {:?}", contract_proxy.address());
@@ -354,11 +357,14 @@ pub(crate) async fn deploy_sc_for_slashing<P: Provider + Clone + 'static>(
         _token: *contract_karma_sc.address(),
         _poseidonHasher: *contract_poseidon_hasher.address(),
     }
-        .abi_encode();
-    let contract_proxy_rln =
-        ERC1967Proxy::deploy(provider.clone(), *contract_rln_0.address(), init_data_1.into())
-            .await
-            .unwrap();
+    .abi_encode();
+    let contract_proxy_rln = ERC1967Proxy::deploy(
+        provider.clone(),
+        *contract_rln_0.address(),
+        init_data_1.into(),
+    )
+    .await
+    .unwrap();
     // println!("contract_proxy_rln: {:?}", contract_proxy_rln.address());
     let contract_rln = RLN::new(*contract_proxy_rln.address(), provider.clone());
 
@@ -383,8 +389,7 @@ pub(crate) async fn deploy_sc_for_slashing<P: Provider + Clone + 'static>(
             KarmaDistributorMock::deploy(provider.clone(), *contract_karma_sc.address())
                 .await
                 .unwrap();
-        let call_add_d =
-            contract_karma_sc.addRewardDistributor(*contract_distributor_1.address());
+        let call_add_d = contract_karma_sc.addRewardDistributor(*contract_distributor_1.address());
         let _ = call_add_d.send().await.unwrap().watch().await.unwrap();
 
         // let call_set_rwd = contract_karma_sc.setReward(
@@ -432,8 +437,6 @@ pub(crate) async fn deploy_sc_for_slashing<P: Provider + Clone + 'static>(
     (contract_poseidon_hasher, contract_karma_sc, contract_rln)
 }
 
-
-
 #[cfg(feature = "anvil")]
 #[cfg(test)]
 mod tests {
@@ -457,7 +460,6 @@ mod tests {
     use ark_ff::{BigInt, BigInteger, One, PrimeField, Zero};
     use rln::hashers::poseidon_hash;
     use rln::protocol::keygen;
-
 
     #[tokio::test]
     async fn test_register() {
@@ -762,8 +764,6 @@ mod tests {
 
     }
     */
-
-
 
     async fn deploy_sc_for_slashing<P: Provider>(
         provider: &P,

@@ -6,13 +6,13 @@ mod smart_contract;
 use std::net::IpAddr;
 use std::str::FromStr;
 // third-party
+use alloy::primitives::{U256, address};
 use alloy::{
     network::EthereumWallet,
     primitives::Address,
     providers::{ProviderBuilder, WsConnect},
     signers::local::PrivateKeySigner,
 };
-use alloy::primitives::{address, U256};
 use anyhow::{Context, anyhow};
 use ark_bn254::Fr;
 use clap::Parser;
@@ -24,10 +24,10 @@ use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitEx
 use url::Url;
 use zeroize::Zeroizing;
 // internal
+use crate::common::SlashingData;
 use crate::slashing::{SlashingService, SlashingServiceConfig};
 use proof_process::{ProofProcessConfig, ProofProcessService};
 use smart_contract::deploy_sc_for_slashing;
-use crate::common::SlashingData;
 
 // Internal - proto file
 pub mod prover_proto {
@@ -49,7 +49,12 @@ use crate::smart_contract::RLN;
 #[derive(Debug, Clone, Parser)]
 #[command(about = "RLN slasher node", long_about = None)]
 pub struct AppArgs {
-    #[arg(short = 'i', long = "ip", default_value = "::1", help = "RLN aggregator ip address")]
+    #[arg(
+        short = 'i',
+        long = "ip",
+        default_value = "::1",
+        help = "RLN aggregator ip address"
+    )]
     pub ip: IpAddr,
     #[arg(
         short = 'p',
@@ -101,7 +106,7 @@ pub struct AppArgs {
     #[arg(
         help_heading = "mock",
         long = "mock-register",
-        help = "Test only - register user in RLN smart contract (using Anvil)",
+        help = "Test only - register user in RLN smart contract (using Anvil)"
     )]
     pub mock_register: Option<Vec<MockRegisterArg>>,
 }
@@ -167,7 +172,6 @@ async fn main() -> anyhow::Result<()> {
 
             match pr_ {
                 Some(Ok(pr)) => {
-
                     debug!("Received proof reply: {:?}", pr);
 
                     match pr.resp {
@@ -204,7 +208,7 @@ async fn main() -> anyhow::Result<()> {
 
     while let Some(res) = set.join_next().await {
         match res {
-            Ok(Ok(_)) => {},
+            Ok(Ok(_)) => {}
             Ok(Err(e)) => {
                 error!("Task error: {:#}", e);
                 break;
@@ -219,11 +223,13 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn start_slashing_service(app_args: AppArgs, slashing_rx: Receiver<SlashingData>, set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
-
+async fn start_slashing_service(
+    app_args: AppArgs,
+    slashing_rx: Receiver<SlashingData>,
+    set: &mut JoinSet<anyhow::Result<()>>,
+) -> anyhow::Result<()> {
     match app_args.mock_smart_contract {
         Some(true) => {
-
             let provider = ProviderBuilder::new().connect_anvil_with_wallet();
             // Need to deploy the SC in Anvil
             let (_, _, rln_sc) = deploy_sc_for_slashing(provider.clone()).await;
@@ -232,12 +238,16 @@ async fn start_slashing_service(app_args: AppArgs, slashing_rx: Receiver<Slashin
             let account_to_reward = address!("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
 
             if app_args.mock_register.is_some() {
-
                 for mock_register_arg in app_args.mock_register.unwrap().iter() {
-                    let address = Address::from_str(mock_register_arg.address.as_str()).expect("Invalid address");
+                    let address = Address::from_str(mock_register_arg.address.as_str())
+                        .expect("Invalid address");
                     // let id_commitment = Fr::from_str(mock_register_arg.value.as_str()).expect("Invalid address");
-                    let id_commitment = U256::from_str(mock_register_arg.value.as_str()).expect("Invalid address");
-                    info!("Registering user: {}, with id_commitment: {}", address, id_commitment);
+                    let id_commitment =
+                        U256::from_str(mock_register_arg.value.as_str()).expect("Invalid address");
+                    info!(
+                        "Registering user: {}, with id_commitment: {}",
+                        address, id_commitment
+                    );
                     let call_1 = rln_sc.register(id_commitment, address);
                     let tx_hash_1 = call_1.send().await.unwrap().watch().await.unwrap();
                 }
@@ -249,24 +259,35 @@ async fn start_slashing_service(app_args: AppArgs, slashing_rx: Receiver<Slashin
             };
             let mut slashing_service = SlashingService::new(slashing_rx, slashing_service_config);
             set.spawn(async move { slashing_service.serve(rln_sc).await });
-
-        },
+        }
         _ => {
             let pk: Zeroizing<String> =
                 Zeroizing::new(std::env::var("PRIVATE_KEY").expect("Please provide a private key"));
             let pk_signer = PrivateKeySigner::from_str(pk.as_str())?;
             let wallet = EthereumWallet::from(pk_signer);
 
-            let ws = WsConnect::new(app_args.rpc_url_ws.expect("Please provide a rpc ws endpoint").as_str());
+            let ws = WsConnect::new(
+                app_args
+                    .rpc_url_ws
+                    .expect("Please provide a rpc ws endpoint")
+                    .as_str(),
+            );
             let p = ProviderBuilder::new()
                 .wallet(wallet)
                 .connect_ws(ws)
                 .await
                 .map_err(|e| anyhow!(e))?;
 
-            let rln_sc = RLN::new(app_args.rln_sc_address.expect("Please provide RLN smart contract address"), p);
+            let rln_sc = RLN::new(
+                app_args
+                    .rln_sc_address
+                    .expect("Please provide RLN smart contract address"),
+                p,
+            );
 
-            let account_to_reward = app_args.account_to_reward.expect("Please provide an account to reward");
+            let account_to_reward = app_args
+                .account_to_reward
+                .expect("Please provide an account to reward");
 
             let slashing_service_config = SlashingServiceConfig {
                 account_to_reward,
@@ -274,7 +295,6 @@ async fn start_slashing_service(app_args: AppArgs, slashing_rx: Receiver<Slashin
             };
             let mut slashing_service = SlashingService::new(slashing_rx, slashing_service_config);
             set.spawn(async move { slashing_service.serve(rln_sc).await });
-
         }
     }
 
