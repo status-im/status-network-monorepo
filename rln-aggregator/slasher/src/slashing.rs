@@ -8,7 +8,7 @@ use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, warn};
 // RLN
 use rln::protocol::{compute_id_secret, deserialize_proof_values};
-use rln::utils::IdSecret;
+use rln::utils::{bytes_le_to_fr, IdSecret};
 use tokio::sync::TryAcquireError;
 // internal
 use crate::common::SlashingData;
@@ -90,19 +90,19 @@ fn recover(slashing_data: SlashingData) -> anyhow::Result<IdSecret> {
     let proof_1 = slashing_data.proof_1;
     let proof_2 = slashing_data.proof_2;
 
-    let _proof_1_de: Proof<Bn254> =
-        CanonicalDeserialize::deserialize_compressed(&proof_1.proof[..128])
-            .context("Failed to deserialize proof 1")?;
-    let proof_1_values_de = deserialize_proof_values(&proof_1.proof.as_slice()[128..]).0;
+    // let _proof_1_de: Proof<Bn254> =
+    //     CanonicalDeserialize::deserialize_compressed(&proof_1.proof[..128])
+    //         .context("Failed to deserialize proof 1")?;
+    // let proof_1_values_de = deserialize_proof_values(&proof_1.proof.as_slice()[128..]).0;
 
-    let _proof_2_de: Proof<Bn254> =
-        CanonicalDeserialize::deserialize_compressed(&proof_2.proof[..128])
-            .context("Failed to deserialize proof 2")?;
-    let proof_2_values_de = deserialize_proof_values(&proof_2.proof.as_slice()[128..]).0;
+    // let _proof_2_de: Proof<Bn254> =
+    //     CanonicalDeserialize::deserialize_compressed(&proof_2.proof[..128])
+    //         .context("Failed to deserialize proof 2")?;
+    // let proof_2_values_de = deserialize_proof_values(&proof_2.proof.as_slice()[128..]).0;
 
     let recovered_identity_secret_hash = compute_id_secret(
-        (proof_1_values_de.x, proof_1_values_de.y),
-        (proof_2_values_de.x, proof_2_values_de.y),
+        (bytes_le_to_fr(&proof_1.proof_x).0, bytes_le_to_fr(&proof_1.proof_y).0),
+        (bytes_le_to_fr(&proof_2.proof_x).0, bytes_le_to_fr(&proof_2.proof_y).0),
     )
     .context("Fail to recover identity secret hash")?;
 
@@ -131,7 +131,7 @@ async fn slash<P: Provider>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prover_proto::{RlnAggProof, RlnProof};
+    use crate::prover_proto::{RlnAggLightProofReply, RlnAggProof, RlnProof};
     use alloy::primitives::address;
     use ark_bn254::Fr;
     use ark_serialize::CanonicalSerialize;
@@ -142,8 +142,9 @@ mod tests {
         RLNProofValues, generate_proof, keygen, proof_values_from_witness, rln_witness_from_values,
         serialize_proof_values,
     };
-    use rln::utils::IdSecret;
+    use rln::utils::{fr_to_bytes_le, IdSecret};
     use std::io::{Cursor, Write};
+    use alloy::signers::k256::elliptic_curve::weierstrass::add;
     use zerokit_utils::{ZerokitMerkleProof, ZerokitMerkleTree};
 
     const addr_alice: Address = address!("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
@@ -237,16 +238,16 @@ mod tests {
         let proof_0_se = serialize_proof(proof_0, proof_values_0);
         let proof_1_se = serialize_proof(proof_1, proof_values_1);
         let slashing_data = SlashingData {
-            proof_1: RlnAggProof {
+            proof_1: RlnAggLightProofReply {
                 sender: addr_bob.to_vec(),
-                tx_hash: vec![0; 32],
-                proof: proof_0_se,
+                proof_x: fr_to_bytes_le(&share1.0),
+                proof_y: fr_to_bytes_le(&share1.1),
                 epoch: 0,
             },
-            proof_2: RlnAggProof {
+            proof_2: RlnAggLightProofReply {
                 sender: addr_bob.to_vec(),
-                tx_hash: vec![1; 32],
-                proof: proof_1_se,
+                proof_x: fr_to_bytes_le(&share2.0),
+                proof_y: fr_to_bytes_le(&share2.1),
                 epoch: 0,
             },
             sender: addr_alice,

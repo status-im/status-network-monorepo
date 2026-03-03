@@ -173,24 +173,10 @@ async fn main() -> anyhow::Result<()> {
             match pr_ {
                 Some(Ok(pr)) => {
                     debug!("Received proof reply: {:?}", pr);
-
-                    match pr.resp {
-                        Some(Resp::Proof(p)) => {
-                            proof_process_tx
-                                .send(p)
-                                .await
-                                .context("Failed to send proof in proof_process channel")?;
-                        }
-                        Some(Resp::Error(pe)) => {
-                            warn!("Received an proof reply with an error: {:?}", pe);
-                        }
-                        None => {
-                            warn!(
-                                "Received an unexpected empty RlnAggProofReply response: {:?}",
-                                pr
-                            );
-                        }
-                    }
+                    proof_process_tx
+                        .send(pr)
+                        .await
+                        .context("Failed to send proof in proof_process channel")?;
                 }
                 Some(Err(e)) => {
                     error!("Error has been received: {}, aborting slasher node...", e)

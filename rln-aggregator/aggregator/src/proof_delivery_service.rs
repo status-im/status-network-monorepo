@@ -21,10 +21,7 @@ use tracing::{debug, error, info, warn};
 // grpc proto
 use crate::prover_proto::rln_aggregator_server::{RlnAggregator, RlnAggregatorServer};
 use crate::prover_proto::rln_proof_reply::Resp;
-use crate::prover_proto::{
-    RlnAggFilter, RlnAggProof, RlnAggProofError, RlnAggProofReply, RlnProof, RlnProofError,
-    RlnProofReply, rln_agg_proof_reply,
-};
+use crate::prover_proto::{RlnAggFilter, RlnAggProof, RlnAggProofError, RlnAggProofReply, RlnProof, RlnProofError, RlnProofReply, rln_agg_proof_reply, RlnAggLightProofReply};
 
 const DELIVERY_SERVICE_LIMIT_PER_CONNECTION: usize = 16;
 // Timeout for all handlers of a request (increased to 5 minutes for streaming support)
@@ -35,7 +32,7 @@ const DELIVERY_SERVICE_HTTP2_MAX_FRAME_SIZE: ByteSize = ByteSize::kib(16);
 
 pub struct ProofDeliveryServer {
     config: ProofDeliveryServerConfig,
-    broadcast_channel: (Sender<RlnProofReply>, Receiver<RlnProofReply>),
+    broadcast_channel: (Sender<RlnAggLightProofReply>, Receiver<RlnAggLightProofReply>),
 }
 
 pub struct ProofDeliveryServerConfig {
@@ -59,7 +56,7 @@ impl Default for ProofDeliveryServerConfig {
 impl ProofDeliveryServer {
     pub(crate) fn new(
         config: ProofDeliveryServerConfig,
-        (tx, rx): (Sender<RlnProofReply>, Receiver<RlnProofReply>),
+        (tx, rx): (Sender<RlnAggLightProofReply>, Receiver<RlnAggLightProofReply>),
     ) -> Self {
         Self {
             config,
@@ -124,13 +121,13 @@ impl ProofDeliveryServer {
 }
 
 struct ProofDeliveryService {
-    broadcast_channel: (Sender<RlnProofReply>, Receiver<RlnProofReply>),
+    broadcast_channel: (Sender<RlnAggLightProofReply>, Receiver<RlnAggLightProofReply>),
     client_connected_limit: Arc<tokio::sync::Semaphore>,
 }
 
 #[tonic::async_trait]
 impl RlnAggregator for ProofDeliveryService {
-    type GetProofsStream = ReceiverStream<Result<RlnAggProofReply, Status>>;
+    type GetProofsStream = ReceiverStream<Result<RlnAggLightProofReply, Status>>;
 
     // #[tracing::instrument(skip(self), err, ret)]
     #[tracing::instrument(skip(self), err)]
@@ -185,8 +182,8 @@ impl RlnAggregator for ProofDeliveryService {
                         match result {
                             Ok(rln_proof_reply) => {
 
-                                let resp = rln_proof_reply.into();
-
+                                // let resp = rln_proof_reply.into();
+                                let resp = rln_proof_reply;
                                 // println!("resp: {:?} - bcast rx2 len: {}", resp, bcast_rx.len());
 
                                 // Send to the client
