@@ -162,6 +162,33 @@ impl UserDb2 {
         Ok(())
     }
 
+    async fn update_current_tier_limits(&self) -> Result<u64, SqlxError> {
+        // Copy tier_limits in "NEXT" row to "CURRENT" row
+        let result = sqlx::query(
+            r#"
+            WITH moved_data AS (
+                -- Clear the NEXT row and "catch" its old value
+                UPDATE tier_limits
+                SET tier_limits = NULL
+                WHERE name = $1
+                  AND tier_limits IS NOT NULL
+                RETURNING tier_limits
+            )
+            -- Update the CURRENT row only if moved_data actually caught something
+            UPDATE tier_limits
+            SET tier_limits = moved_data.tier_limits
+            FROM moved_data
+            WHERE name = $2;
+        "#,
+        )
+        .bind(TIER_LIMITS_NEXT_KEY)
+        .bind(TIER_LIMITS_KEY)
+        .execute(&self.db)
+        .await?;
+
+        Ok(result.rows_affected())
+    }
+
     async fn get_merkle_tree_count_from_db(db: &Pool<Postgres>) -> Result<u64, SqlxError> {
         let res: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM m_tree_config")
             .fetch_one(db)
@@ -445,7 +472,7 @@ impl UserDb2 {
         let row: (MerkleProof,) = sqlx::query_as("SELECT pgfr_mtree_get_proof($1, $2, $3)")
             .bind(i16::from(self.config.tree_depth))
             .bind(tree_index)
-            .bind(0i64)
+            .bind(index_in_mt)
             .fetch_one(&self.db)
             .await?;
 
@@ -481,6 +508,11 @@ impl UserDb2 {
         self.set_tier_limits(tier_limits)
             .await
             .map_err(SetTierLimitsError2::Db)
+    }
+
+    pub async fn on_new_epoch(&self) -> Result<u64, RegisterError2> {
+        let result = self.update_current_tier_limits().await?;
+        Ok(result)
     }
 
     /// Get user tier info
