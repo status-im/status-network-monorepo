@@ -85,8 +85,10 @@ impl UserDbService {
 
         let result = self.user_db.on_new_epoch().await;
         match result {
-            Ok(_result) => {
-                info!("Updated current tier limits");
+            Ok(result) => {
+                if result > 0 {
+                    info!("Updated current tier limits");
+                }
             }
             Err(err) => {
                 error!("Error calling on_new_epoch after epoch changes: {:#}", err);

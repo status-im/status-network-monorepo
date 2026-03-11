@@ -6,11 +6,13 @@ mod tests {
     // third-party
     use crate::epoch_service::{Epoch, EpochSlice};
     use crate::user_db_2::{MERKLE_TREE_HEIGHT, UserDb2, UserDb2Config};
-    use alloy::primitives::{Address, address};
+    use alloy::primitives::{Address, U256, address};
     use claims::assert_matches;
     use parking_lot::RwLock;
     // sqlx
     use crate::tests_common::create_database_connection;
+    use crate::tier::TierLimits;
+    use smart_contract::Tier;
     use sqlx::error::Error as SqlxError;
     // internal
     use crate::user_db_error::RegisterError2;
@@ -447,9 +449,12 @@ mod tests {
             tree_depth,
         };
 
-        let (_, db_conn) =
-            create_database_connection("user_db_tests_test_deny_list_2", true, config.clone())
-                .await?;
+        let (_, db_conn) = create_database_connection(
+            "user_db_tests_test_deny_list_upsert_res",
+            true,
+            config.clone(),
+        )
+        .await?;
 
         let user_db = UserDb2::new(
             db_conn.clone(),

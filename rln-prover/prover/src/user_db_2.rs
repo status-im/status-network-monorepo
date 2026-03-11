@@ -162,23 +162,25 @@ impl UserDb2 {
         Ok(())
     }
 
+    /// Update tier limits in "CURRENT" row from "NEXT" row ("NEXT" row is set to NULL)
+    /// return the number of affected rows:
+    /// if > 0 => there was an update
+    /// if == 0 => "NEXT" row was NULL so nothing to update
     async fn update_current_tier_limits(&self) -> Result<u64, SqlxError> {
         // Copy tier_limits in "NEXT" row to "CURRENT" row
+        // Note: this is Postgresql 18+ only
         let result = sqlx::query(
             r#"
             WITH moved_data AS (
                 -- Clear the NEXT row and "catch" its old value
                 UPDATE tier_limits
                 SET tier_limits = NULL
-                WHERE name = $1
-                  AND tier_limits IS NOT NULL
-                RETURNING tier_limits
+                WHERE name = $1 AND tier_limits IS NOT NULL
+                RETURNING OLD.tier_limits
             )
             -- Update the CURRENT row only if moved_data actually caught something
-            UPDATE tier_limits
-            SET tier_limits = moved_data.tier_limits
-            FROM moved_data
-            WHERE name = $2;
+            UPDATE tier_limits SET tier_limits = moved_data.tier_limits
+                FROM moved_data WHERE name = $2;
         "#,
         )
         .bind(TIER_LIMITS_NEXT_KEY)
@@ -838,6 +840,7 @@ mod tests {
     use claims::assert_matches;
     use derive_more::Display;
     use prover_db_migration_sqlx::MigrationConfig;
+    use smart_contract::Tier;
     use tracing_test::traced_test;
     // internal
     // use prover_db_migration::{Migrator as MigratorCreate, MigratorTrait};
@@ -1131,5 +1134,92 @@ mod tests {
             // assert_eq!(mt.leaves_set(), 2);
             assert_eq!(user_db.get_merkle_tree_leave_set(0).await, 2);
         }
+    }
+
+    #[tokio::test]
+    async fn test_tier_limits_update() -> Result<(), SqlxError> {
+        // Check UserDb nullifier cleanup
+
+        let epoch_store = Arc::new(RwLock::new(Default::default()));
+        let tree_depth = 1;
+        let tree_count_initial = 1;
+        let config = UserDb2Config {
+            tree_count: tree_count_initial,
+            max_tree_count: 1,
+            tree_depth,
+        };
+
+        let (_, db_conn) = create_database_connection(
+            "user_db_tests_test_nullifier_cleanup",
+            true,
+            config.clone(),
+        )
+        .await?;
+
+        let tier_limits = TierLimits::from([
+            Tier {
+                name: "Basic".to_string(),
+                min_karma: U256::from(10),
+                max_karma: U256::from(99),
+                tx_per_epoch: 6,
+            },
+            Tier {
+                name: "Active".to_string(),
+                min_karma: U256::from(100),
+                max_karma: U256::from(125),
+                tx_per_epoch: 120,
+            },
+        ]);
+
+        let user_db = UserDb2::new(
+            db_conn.clone(),
+            config.clone(),
+            epoch_store.clone(),
+            tier_limits.clone(),
+            Default::default(),
+        )
+        .await?;
+
+        let res = user_db.get_tier_limits().await?;
+        assert_eq!(res, tier_limits.clone());
+
+        let tier_limits_2 = TierLimits::from([
+            Tier {
+                name: "Basic".to_string(),
+                min_karma: U256::from(10),
+                max_karma: U256::from(99),
+                tx_per_epoch: 6,
+            },
+            Tier {
+                name: "Active".to_string(),
+                min_karma: U256::from(100),
+                max_karma: U256::from(255),
+                tx_per_epoch: 120,
+            },
+        ]);
+        let _ = user_db.set_tier_limits(tier_limits_2.clone()).await?;
+        // tier_limits_2 should be in NEXT (no in CURRENT)
+        let res = user_db.get_tier_limits().await?;
+        assert_eq!(res, tier_limits);
+
+        let res = user_db
+            .on_new_epoch()
+            .await
+            .expect("On new epoch fn failed");
+        assert_eq!(res, 1);
+        println!("Getting tier limits...");
+        let res = user_db.get_tier_limits().await?;
+        assert_eq!(res, tier_limits_2);
+
+        // Calling on_new_epoch again to check that CURRENT is not replaced by empty value (in NEXT)
+        let res = user_db
+            .on_new_epoch()
+            .await
+            .expect("On new epoch fn failed");
+        assert_eq!(res, 0);
+        let res = user_db.get_tier_limits().await?;
+        assert_eq!(res, tier_limits_2);
+
+        Ok(())
     }
 }
