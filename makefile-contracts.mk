@@ -188,14 +188,14 @@ deploy-status-network-contracts:
 		FOUNDRY_DISABLE_NIGHTLY_WARNING=true ETH_FROM=0x1B9AbEeC3215D8AdE8A33607f2cF0f4F60e5F0D0 forge script script/DeployKarmaTiers.s.sol:DeployKarmaTiersScript \
 			--rpc-url http://localhost:8545 \
 			--private-key $${DEPLOYMENT_PRIVATE_KEY:-0x1dd171cec7e2995408b5513004e8207fe88d6820aeff0d82463b3e41df251aae} \
-			--broadcast --root . || { echo "KarmaTiers deployment failed"; exit 1; }
+			--broadcast --slow --root . || { echo "KarmaTiers deployment failed"; exit 1; }
 		@echo "KarmaTiers deployed successfully!"
 		@echo "Deploying Karma contract..."
 		@cd status-network-contracts && \
 		FOUNDRY_DISABLE_NIGHTLY_WARNING=true ETH_FROM=0x1B9AbEeC3215D8AdE8A33607f2cF0f4F60e5F0D0 forge script script/DeployKarma.s.sol:DeployKarmaScript \
 			--rpc-url http://localhost:8545 \
 			--private-key $${DEPLOYMENT_PRIVATE_KEY:-0x1dd171cec7e2995408b5513004e8207fe88d6820aeff0d82463b3e41df251aae} \
-			--broadcast --root . || { echo "Karma deployment failed"; exit 1; }
+			--broadcast --slow --root . || { echo "Karma deployment failed"; exit 1; }
 		@echo "Karma deployed successfully!"
 		@echo "Deploying StakeManager contract..."
 		@cd status-network-contracts && \
@@ -208,7 +208,7 @@ deploy-status-network-contracts:
 		FOUNDRY_DISABLE_NIGHTLY_WARNING=true ETH_FROM=0x1B9AbEeC3215D8AdE8A33607f2cF0f4F60e5F0D0 KARMA_ADDRESS=$$KARMA_ADDRESS MAX_VAULTS_PER_USER=5 forge script script/DeployStakeManager.s.sol:DeployStakeManagerScript \
 			--rpc-url http://localhost:8545 \
 			--private-key $${DEPLOYMENT_PRIVATE_KEY:-0x1dd171cec7e2995408b5513004e8207fe88d6820aeff0d82463b3e41df251aae} \
-			--broadcast --root . || { echo "StakeManager deployment failed"; exit 1; }
+			--broadcast --slow --root . || { echo "StakeManager deployment failed"; exit 1; }
 		@echo "StakeManager deployed successfully!"
 		@echo "Deploying RLN contract..."
 		@cd status-network-contracts && \
@@ -221,7 +221,7 @@ deploy-status-network-contracts:
 		FOUNDRY_DISABLE_NIGHTLY_WARNING=true ETH_FROM=0x1B9AbEeC3215D8AdE8A33607f2cF0f4F60e5F0D0 DEPTH=20 KARMA_ADDRESS=$$KARMA_ADDRESS forge script script/RLN.s.sol:DeployRLNScript \
 			--rpc-url http://localhost:8545 \
 			--private-key $${DEPLOYMENT_PRIVATE_KEY:-0x1dd171cec7e2995408b5513004e8207fe88d6820aeff0d82463b3e41df251aae} \
-			--broadcast --root . || { echo "RLN deployment failed"; exit 1; }
+			--broadcast --slow --root . || { echo "RLN deployment failed"; exit 1; }
 		@echo "RLN deployed successfully!"
 		@echo "Deploying KarmaNFT contract..."
 		@cd status-network-contracts && \
@@ -234,7 +234,7 @@ deploy-status-network-contracts:
 		FOUNDRY_DISABLE_NIGHTLY_WARNING=true ETH_FROM=0x1B9AbEeC3215D8AdE8A33607f2cF0f4F60e5F0D0 KARMA_ADDRESS=$$KARMA_ADDRESS NFT_METADATA_GENERATOR_ADDRESS=0x1B9AbEeC3215D8AdE8A33607f2cF0f4F60e5F0D0 forge script script/DeployKarmaNFT.s.sol:DeployKarmaNFTScript \
 			--rpc-url http://localhost:8545 \
 			--private-key $${DEPLOYMENT_PRIVATE_KEY:-0x1dd171cec7e2995408b5513004e8207fe88d6820aeff0d82463b3e41df251aae} \
-			--broadcast --root . || { echo "KarmaNFT deployment failed"; exit 1; }
+			--broadcast --slow --root . || { echo "KarmaNFT deployment failed"; exit 1; }
 		@echo "KarmaNFT deployed successfully!"
 		@echo "All Status Network contracts deployed successfully!"
 		@echo "Deployment Summary:"

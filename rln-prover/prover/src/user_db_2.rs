@@ -1,17 +1,16 @@
-use std::{fmt::Formatter, sync::Arc, time::Duration};
+use std::{fmt::Formatter, sync::Arc};
 // third-party
 use alloy::primitives::{Address, U256};
 use ark_bn254::Fr;
 use ark_ff::AdditiveGroup;
-use chrono::Utc;
 use parking_lot::RwLock;
 // RLN
 use rln::{hashers::poseidon_hash, protocol::keygen};
 // sqlx
 use sqlx::{
-    Decode, Encode, Pool, Row, Type,
+    Pool, Row,
     error::Error as SqlxError,
-    postgres::{PgArgumentBuffer, PgHasArrayType, PgTypeInfo, PgValueRef, Postgres, types::Oid},
+    postgres::{Postgres, types::Oid},
     types::Json,
 };
 // internal
@@ -26,7 +25,7 @@ use crate::user_db_error::{
     GetMerkleTreeProofError2, RegisterError2, SetTierLimitsError2, TxCounterError2,
     UserTierInfoError2,
 };
-use crate::user_db_types::{EpochCounter, EpochSliceCounter, RateLimit};
+use crate::user_db_types::{EpochCounter, EpochSliceCounter, QuotaBonus, RateLimit};
 use rln_proof::RlnUserIdentity;
 use smart_contract::KarmaAmountExt;
 
@@ -176,7 +175,7 @@ impl UserDb2 {
         &self,
         address: &Address,
         incr_value: Option<i64>,
-    ) -> Result<EpochCounter, SqlxError> {
+    ) -> Result<(EpochCounter, QuotaBonus), SqlxError> {
         let incr_value = incr_value.unwrap_or(1);
         let (epoch, _epoch_slice) = *self.epoch_store.read();
         tracing::info!(
@@ -199,7 +198,8 @@ impl UserDb2 {
             let model_epoch_counter = res.epoch_counter;
 
             if model_epoch == 0 || epoch != Epoch::from(model_epoch) {
-                let res: TxCounterSqlx = sqlx::query_as("UPDATE tx_counter SET epoch = $1, epoch_counter = $2 WHERE address = $3 RETURNING *")
+                // New epoch: reset counter and quota_bonus
+                let res: TxCounterSqlx = sqlx::query_as("UPDATE tx_counter SET epoch = $1, epoch_counter = $2, quota_bonus = 0 WHERE address = $3 RETURNING *")
                     .bind(i64::from(epoch))
                     .bind(incr_value)
                     .bind(address.0.0)
@@ -229,25 +229,37 @@ impl UserDb2 {
 
         txn.commit().await?;
         // FIXME: no 'as'
-        Ok((new_tx_counter.epoch_counter as u64).into())
+        Ok((
+            (new_tx_counter.epoch_counter as u64).into(),
+            new_tx_counter.quota_bonus,
+        ))
     }
 
-    /// Reset the epoch transaction counter to 0 for the current epoch.
+    /// Add quota bonus for the current epoch.
     /// Used when a premium gas payment should restore a user's gasless quota.
-    pub(crate) async fn reset_tx_counter(&self, address: &Address) -> Result<(), SqlxError> {
+    /// Instead of resetting the counter (which would cause nullifier collisions),
+    /// we increase the effective quota so the counter can keep incrementing.
+    pub(crate) async fn add_quota_bonus(
+        &self,
+        address: &Address,
+        bonus: QuotaBonus,
+    ) -> Result<(), SqlxError> {
         let (epoch, _) = *self.epoch_store.read();
-        sqlx::query("UPDATE tx_counter SET epoch = $1, epoch_counter = 0 WHERE address = $2")
-            .bind(i64::from(epoch))
-            .bind(address.0.0)
-            .execute(&self.db)
-            .await?;
+        sqlx::query(
+            "UPDATE tx_counter SET epoch = $1, quota_bonus = quota_bonus + $2 WHERE address = $3",
+        )
+        .bind(i64::from(epoch))
+        .bind(i64::from(bonus))
+        .bind(address.0.0)
+        .execute(&self.db)
+        .await?;
         Ok(())
     }
 
     pub(crate) async fn get_tx_counter(
         &self,
         address: &Address,
-    ) -> Result<EpochCounter, TxCounterError2> {
+    ) -> Result<(EpochCounter, QuotaBonus), TxCounterError2> {
         let res: Option<TxCounterSqlx> =
             sqlx::query_as("SELECT * FROM tx_counter WHERE address = $1 LIMIT 1")
                 .bind(address.0.0)
@@ -260,7 +272,7 @@ impl UserDb2 {
         }
     }
 
-    fn counters_from_key(&self, model: TxCounterSqlx) -> EpochCounter {
+    fn counters_from_key(&self, model: TxCounterSqlx) -> (EpochCounter, QuotaBonus) {
         let (epoch, _epoch_slice) = *self.epoch_store.read();
         let cmp = model.epoch == i64::from(epoch);
 
@@ -274,9 +286,10 @@ impl UserDb2 {
                     db_epoch = model.epoch,
                     current_epoch = i64::from(epoch),
                     epoch_counter = model.epoch_counter,
+                    quota_bonus = i64::from(model.quota_bonus),
                     "counters_from_key: epochs match, returning actual counter"
                 );
-                (model.epoch_counter as u64).into()
+                ((model.epoch_counter as u64).into(), model.quota_bonus)
             }
             false => {
                 // EpochCounter.epoch (stored in DB) != epoch_store.epoch
@@ -290,7 +303,7 @@ impl UserDb2 {
                     "counters_from_key: EPOCH MISMATCH - returning 0 instead of {}",
                     model.epoch_counter
                 );
-                EpochCounter::from(0)
+                (EpochCounter::from(0), QuotaBonus::default())
             }
         }
     }
@@ -449,12 +462,12 @@ impl UserDb2 {
         &self,
         address: &Address,
         incr_value: Option<i64>,
-    ) -> Result<EpochCounter, TxCounterError2> {
+    ) -> Result<(EpochCounter, QuotaBonus), TxCounterError2> {
         let has_user = self.has_user(address).await?;
 
         if has_user {
-            let epoch_counter = self.incr_tx_counter(address, incr_value).await?;
-            Ok(epoch_counter)
+            let result = self.incr_tx_counter(address, incr_value).await?;
+            Ok(result)
         } else {
             Err(TxCounterError2::NotRegistered(*address))
         }
@@ -491,7 +504,7 @@ impl UserDb2 {
             .map_err(|e| UserTierInfoError2::Contract(e))?;
 
         // TODO
-        let epoch_tx_count = self.get_tx_counter(address).await?;
+        let (epoch_tx_count, quota_bonus) = self.get_tx_counter(address).await?;
         // TODO: avoid db query the tier limits (keep it in memory)
         let tier_limits = self.get_tier_limits().await?;
         let tier_match = tier_limits.get_tier_by_karma(&karma_amount);
@@ -510,7 +523,10 @@ impl UserDb2 {
 
             if let TierMatch::Matched(tier) = tier_match {
                 t.tier_name = Some(tier.name.into());
-                t.tier_limit = Some(TierLimit::from(tier.tx_per_epoch));
+                // Include quota_bonus in effective limit so sequencer sees the correct quota
+                t.tier_limit = Some(TierLimit::from(
+                    tier.tx_per_epoch + i64::from(quota_bonus) as u32,
+                ));
             }
 
             t
@@ -519,69 +535,89 @@ impl UserDb2 {
         Ok(user_tier_info)
     }
 
-    // ============ Deny List Methods ============
-
-    /// Check if an address is on the deny list and not expired
-    ///
-    /// Returns true if the address is denied (and not expired), false otherwise
-    pub async fn is_denied<F: Fn() -> Duration>(
+    /// Get the raw tier tx_per_epoch limit for a user (without quota bonus).
+    /// Used to determine how much quota bonus to add after premium gas payment.
+    pub(crate) async fn get_user_tier_tx_limit<
+        E: std::error::Error,
+        KSC: KarmaAmountExt<Error = E>,
+    >(
         &self,
         address: &Address,
-        now: &F,
-    ) -> Result<bool, SqlxError> {
-        let now_ = now().as_secs() as i64;
+        karma_sc: &KSC,
+    ) -> Result<u32, UserTierInfoError2<E>> {
+        let karma_amount = karma_sc
+            .karma_amount(address)
+            .await
+            .map_err(|e| UserTierInfoError2::Contract(e))?;
 
-        // Single query: check if exists AND (no expiry OR not expired)
-        let res: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM deny_list WHERE address = $1 AND (expires_at IS NULL OR expires_at > $2)")
-            .bind(address.0.0)
-            .bind(now_)
-            .fetch_one(&self.db)
-            .await?;
+        let tier_limits = self.get_tier_limits().await?;
+        let tier_match = tier_limits.get_tier_by_karma(&karma_amount);
+        match tier_match {
+            TierMatch::Matched(tier) => Ok(tier.tx_per_epoch),
+            _ => Ok(0),
+        }
+    }
+
+    // ============ Deny List Methods ============
+
+    /// Check if an address is on the deny list for the current epoch
+    ///
+    /// Returns true if the address is denied in the current epoch, false otherwise
+    pub async fn is_denied(&self, address: &Address) -> Result<bool, SqlxError> {
+        let (current_epoch, _) = *self.epoch_store.read();
+        let current_epoch_i64 = i64::from(current_epoch);
+
+        let res: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM deny_list WHERE address = $1 AND epoch >= $2")
+                .bind(address.0.0)
+                .bind(current_epoch_i64)
+                .fetch_one(&self.db)
+                .await?;
 
         Ok(res > 0)
     }
 
-    /// Add an address to the deny list
+    /// Add an address to the deny list for the current epoch
     /// Uses UPSERT for atomicity and performance
     ///
     /// - `address`: The address to deny
     /// - `reason`: Optional reason for denial (logged but not stored for performance)
-    /// - `ttl_seconds`: Optional time-to-live in seconds (None means no expiry)
-    /// - `now`: Function returning the current Duration till UNIX_EPOCH
     ///
     /// Returns true if the address was newly added, false if it was already present
-    pub async fn add_to_deny_list<F: Fn() -> Duration>(
+    pub async fn add_to_deny_list(
         &self,
         address: &Address,
         reason: Option<String>,
-        ttl_seconds: Option<i64>,
-        now: &F,
     ) -> Result<bool, SqlxError> {
-        let now_ = now().as_secs() as i64;
-        let expires_at = ttl_seconds.map(|ttl| now_ + ttl);
+        let (current_epoch, _) = *self.epoch_store.read();
+        let current_epoch_i64 = i64::from(current_epoch);
+        let now_ = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("Clock may have gone backwards")
+            .as_secs() as i64;
 
         if let Some(reason) = &reason {
             tracing::info!(
                 address = %address,
                 reason = %reason,
-                expires_at = ?expires_at,
+                epoch = current_epoch_i64,
                 "Adding address to deny list"
             );
         } else {
             tracing::info!(
                 address = %address,
-                expires_at = ?expires_at,
+                epoch = current_epoch_i64,
                 "Adding address to deny list"
             );
         }
 
         let result = sqlx::query(r#"
-            INSERT INTO deny_list (address, expires_at, denied_at) VALUES ($1, $2, $3)
-            ON CONFLICT (address) DO UPDATE SET expires_at = EXCLUDED.expires_at, denied_at = EXCLUDED.denied_at
+            INSERT INTO deny_list (address, denied_at, epoch) VALUES ($1, $2, $3)
+            ON CONFLICT (address) DO UPDATE SET denied_at = EXCLUDED.denied_at, epoch = EXCLUDED.epoch
             RETURNING (xmax = 0) as "is_insert!" "#)
             .bind(address.0.0)
-            .bind(expires_at)
             .bind(now_)
+            .bind(current_epoch_i64)
             .fetch_one(&self.db)
             .await?;
 
@@ -601,39 +637,36 @@ impl UserDb2 {
         Ok(result.rows_affected() > 0)
     }
 
-    /// Get deny list entry for an address (if exists and not expired)
+    /// Get deny list entry for an address (if exists and in current epoch)
     ///
-    /// Returns the deny list entry model if found and not expired
-    pub async fn get_deny_list_entry<F: Fn() -> Duration>(
+    /// Returns the deny list entry model if found and in current epoch
+    pub async fn get_deny_list_entry(
         &self,
         address: &Address,
-        now: &F,
     ) -> Result<Option<DenyListSqlx>, SqlxError> {
-        let now_ = now().as_secs() as i64;
+        let (current_epoch, _) = *self.epoch_store.read();
+        let current_epoch_i64 = i64::from(current_epoch);
 
-        // Single query with expiry check
-        let result: Option<DenyListSqlx> = sqlx::query_as("SELECT * FROM deny_list WHERE address = $1 AND (expires_at IS NULL OR expires_at > $2)")
-            .bind(address.0.0)
-            .bind(now_)
-            .fetch_optional(&self.db)
-            .await?;
+        let result: Option<DenyListSqlx> =
+            sqlx::query_as("SELECT * FROM deny_list WHERE address = $1 AND epoch >= $2")
+                .bind(address.0.0)
+                .bind(current_epoch_i64)
+                .fetch_optional(&self.db)
+                .await?;
 
         Ok(result)
     }
 
-    /// Clean up expired deny list entries
+    /// Clear deny list entries from previous epochs (called on epoch boundary)
     ///
-    /// Returns the number of entries removed
-    pub async fn cleanup_expired_deny_list_entries<F: Fn() -> Duration>(
-        &self,
-        now: &F,
-    ) -> Result<u64, SqlxError> {
-        let now_ = now().as_secs() as i64;
-        let result =
-            sqlx::query("DELETE FROM deny_list WHERE expires_at IS NOT NULL AND expires_at <= $1")
-                .bind(now_)
-                .execute(&self.db)
-                .await?;
+    /// When a new epoch starts, all quotas reset, so deny list entries from
+    /// previous epochs are no longer relevant.
+    /// Returns the number of entries removed.
+    pub async fn clear_deny_list(&self, current_epoch: i64) -> Result<u64, SqlxError> {
+        let result = sqlx::query("DELETE FROM deny_list WHERE epoch < $1")
+            .bind(current_epoch)
+            .execute(&self.db)
+            .await?;
 
         Ok(result.rows_affected())
     }
@@ -837,7 +870,7 @@ mod tests {
         assert!(user_db.get_user_identity(&addr).await.is_some());
         assert_eq!(
             user_db.get_tx_counter(&addr).await.unwrap(),
-            EpochCounter::from(0)
+            (EpochCounter::from(0), QuotaBonus::default())
         );
 
         assert!(user_db.get_user_identity(&ADDR_1).await.is_none());
@@ -845,13 +878,13 @@ mod tests {
         assert!(user_db.get_user_identity(&ADDR_1).await.is_some());
         assert_eq!(
             user_db.get_tx_counter(&addr).await.unwrap(),
-            EpochCounter::from(0)
+            (EpochCounter::from(0), QuotaBonus::default())
         );
 
         user_db.incr_tx_counter(&addr, Some(42)).await.unwrap();
         assert_eq!(
             user_db.get_tx_counter(&addr).await.unwrap(),
-            EpochCounter::from(42)
+            (EpochCounter::from(42), QuotaBonus::default())
         );
     }
 
@@ -882,13 +915,13 @@ mod tests {
 
         user_db.register_user(addr).await.unwrap();
 
-        let ec = user_db.get_tx_counter(&addr).await.unwrap();
+        let (ec, bonus) = user_db.get_tx_counter(&addr).await.unwrap();
         assert_eq!(ec, EpochCounter::from(0));
-        // assert_eq!(ecs, EpochSliceCounter::from(0u64));
+        assert_eq!(bonus, QuotaBonus::default());
 
-        let ecs_2 = user_db.incr_tx_counter(&addr, Some(42)).await.unwrap();
-        // TODO
+        let (ecs_2, bonus_2) = user_db.incr_tx_counter(&addr, Some(42)).await.unwrap();
         assert_eq!(ecs_2, EpochCounter::from(42));
+        assert_eq!(bonus_2, QuotaBonus::default());
     }
 
     #[tokio::test]
@@ -932,7 +965,7 @@ mod tests {
         user_db.register_user(addr).await.unwrap();
         // Now update user tx counter
         assert_eq!(
-            user_db.on_new_tx(&addr, None).await.unwrap(),
+            user_db.on_new_tx(&addr, None).await.unwrap().0,
             EpochCounter::from(1)
         );
         let tier_info = user_db

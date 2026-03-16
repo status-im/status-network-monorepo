@@ -247,6 +247,14 @@ pub struct AppArgs {
     pub no_grpc_reflection: bool,
 
     #[arg(
+        help_heading = "prover config",
+        long = "registration-gas-price-gwei",
+        help = "Minimum gas price in gwei for registration transactions sent to the RLN SC. Must be >= the sequencer's RLN premium gas threshold (default: 12 gwei) to bypass RLN proof validation. Default: 0 (use provider default).",
+        default_value_t = 0
+    )]
+    pub registration_gas_price_gwei: u64,
+
+    #[arg(
         help_heading = "kill switch",
         long = "kill-switch-file",
         help = "Path to the gas kill switch file. When file contains 'true' or 'enabled', proof generation is disabled. Empty string disables the feature.",

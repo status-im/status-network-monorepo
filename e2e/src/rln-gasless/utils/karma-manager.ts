@@ -278,48 +278,24 @@ export class KarmaTestManager {
   }
 
   /**
-   * Exhaust a user's quota by submitting transactions
-   * Returns the number of transactions sent
+   * Exhaust a user's quota by submitting transactions.
+   * The expectedQuota parameter is required since there is no REST API to query tier info
+   * (the RLN prover is gRPC-only).
+   * Returns the number of transactions sent.
    */
-  async exhaustUserQuota(user: ethers.Signer, recipientAddress: string, expectedQuota?: number): Promise<number> {
+  async exhaustUserQuota(user: ethers.Signer, recipientAddress: string, expectedQuota: number): Promise<number> {
     const userAddress = await user.getAddress();
 
-    logger.debug("Exhausting user quota", { user: userAddress });
+    logger.debug("Exhausting user quota", { user: userAddress, quota: expectedQuota });
 
-    // Get user's tier info from karma service
-    let quota: number;
-    let alreadyUsed: number;
-
-    try {
-      const tierInfo = await this.rlnClient.getUserTierInfo(userAddress);
-      quota = expectedQuota ?? tierInfo.dailyQuota;
-      alreadyUsed = tierInfo.epochTxCount;
-    } catch {
-      // If karma service is unavailable, use expected quota
-      if (!expectedQuota) {
-        throw new Error("Cannot determine quota - karma service unavailable and no expectedQuota provided");
-      }
-      quota = expectedQuota;
-      alreadyUsed = 0;
-    }
-
-    const remainingQuota = quota - alreadyUsed;
-
-    logger.debug("User quota info", {
-      user: userAddress,
-      totalQuota: quota,
-      used: alreadyUsed,
-      remaining: remainingQuota,
-    });
-
-    if (remainingQuota <= 0) {
-      logger.debug("User quota already exhausted", { user: userAddress });
+    if (expectedQuota <= 0) {
+      logger.debug("User quota already exhausted or zero", { user: userAddress });
       return 0;
     }
 
     // Submit transactions to exhaust quota
     const timestamp = Date.now();
-    for (let i = 0; i < remainingQuota; i++) {
+    for (let i = 0; i < expectedQuota; i++) {
       const uniqueData = ethers.hexlify(ethers.toUtf8Bytes(`exhaust-quota-${i}-${timestamp}`));
 
       const receipt = await this.rlnClient.sendGaslessTransaction(user, {
@@ -331,17 +307,17 @@ export class KarmaTestManager {
 
       logger.debug("Quota consumption transaction", {
         index: i + 1,
-        total: remainingQuota,
+        total: expectedQuota,
         txHash: receipt.hash,
       });
     }
 
     logger.debug("User quota exhausted", {
       user: userAddress,
-      transactionsSent: remainingQuota,
+      transactionsSent: expectedQuota,
     });
 
-    return remainingQuota;
+    return expectedQuota;
   }
 
   /**

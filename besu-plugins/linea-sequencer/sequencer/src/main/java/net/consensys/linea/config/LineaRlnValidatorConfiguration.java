@@ -34,7 +34,6 @@ import net.consensys.linea.plugins.LineaOptionsConfiguration;
  * @param karmaServiceTimeoutMs Timeout for karma service requests in milliseconds.
  * @param exponentialBackoffEnabled Whether to use exponential backoff for gRPC reconnections.
  * @param maxBackoffDelayMs Maximum backoff delay for gRPC reconnections in milliseconds.
- * @param defaultEpochForQuota Default epoch identifier.
  * @param rlnJniLibPath Optional explicit path to the rln_jni native library.
  */
 public record LineaRlnValidatorConfiguration(
@@ -55,7 +54,6 @@ public record LineaRlnValidatorConfiguration(
     long karmaServiceTimeoutMs,
     boolean exponentialBackoffEnabled,
     long maxBackoffDelayMs,
-    String defaultEpochForQuota,
     Optional<String> rlnJniLibPath,
     String gasKillSwitchFilePath,
     long gasKillSwitchPollSeconds)
@@ -70,7 +68,7 @@ public record LineaRlnValidatorConfiguration(
           false, // rlnProofServiceUseTls
           10000L, // rlnProofCacheMaxSize
           300L, // rlnProofCacheExpirySeconds (5 minutes)
-          5, // rlnProofStreamRetries
+          20, // rlnProofStreamRetries
           5000L, // rlnProofStreamRetryIntervalMs (5 seconds)
           200L, // rlnProofLocalWaitTimeoutMs (200ms)
           LineaSharedGaslessConfiguration.V1_DEFAULT,
@@ -79,8 +77,7 @@ public record LineaRlnValidatorConfiguration(
           false, // karmaServiceUseTls
           5000L, // karmaServiceTimeoutMs (5 seconds)
           true, // exponentialBackoffEnabled
-          60000L, // maxBackoffDelayMs (60 seconds)
-          "TIMESTAMP_1H", // defaultEpochForQuota
+          5000L, // maxBackoffDelayMs (5 seconds — fast reconnect after prover restart)
           Optional.empty(), // rlnJniLibPath
           "", // gasKillSwitchFilePath (empty = disabled)
           5L // gasKillSwitchPollSeconds
@@ -90,15 +87,5 @@ public record LineaRlnValidatorConfiguration(
   public long premiumGasPriceThresholdWei() {
     return sharedGaslessConfig.premiumGasPriceThresholdGWei()
         * 1_000_000_000L; // Convert GWei to Wei
-  }
-
-  // Accessor for deny list refresh seconds for convenience
-  public long denyListRefreshSeconds() {
-    return sharedGaslessConfig.denyListRefreshSeconds();
-  }
-
-  // Accessor for deny list entry max age in minutes for convenience
-  public long denyListEntryMaxAgeMinutes() {
-    return sharedGaslessConfig.denyListEntryMaxAgeMinutes();
   }
 }

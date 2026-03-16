@@ -6,6 +6,7 @@ members = [
     "prover_cli",
     "prover_client",
     "prover_db_migration_sqlx",
+    "migrate_spam_limit",
 ]
 resolver = "2"
 

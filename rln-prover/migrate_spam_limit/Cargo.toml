@@ -1,0 +1,16 @@
+[package]
+name = "migrate_spam_limit"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rln_proof = { path = "../rln_proof" }
+rln.workspace = true
+ark-bn254.workspace = true
+ark-serialize.workspace = true
+ark-ff.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+clap = { version = "4.5.60", features = ["derive", "wrap_help", "env"] }
+serde.workspace = true
+serde_json = "1.0.149"

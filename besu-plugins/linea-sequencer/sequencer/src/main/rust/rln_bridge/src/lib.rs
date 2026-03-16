@@ -9,9 +9,24 @@ use ark_std::vec::Vec;
 use ark_ff::PrimeField;
 
 use rln::protocol::{verify_proof, RLNProofValues, deserialize_proof_values};
-use rln::circuit::zkey_from_folder;
+use rln::circuit::zkey_from_raw;
 use std::io::Cursor;
 use std::panic;
+use std::sync::OnceLock;
+
+/// Custom RLN circuit artifacts compiled with LIMIT_BIT_SIZE=20 (supports ~1M message limit).
+/// The default zerokit v0.9.0 ships with LIMIT_BIT_SIZE=16 (max 65,535), which causes
+/// Groth16 verification failure for limits above 65,535.
+const CUSTOM_ARKZKEY_BYTES: &[u8] = include_bytes!("../resources/rln_final.arkzkey");
+
+static CUSTOM_ARKZKEY: OnceLock<(ark_groth16::ProvingKey<Bn254>, ark_relations::r1cs::ConstraintMatrices<Fr>)> = OnceLock::new();
+
+/// Load custom RLN circuit (LIMIT_BIT_SIZE=20) instead of zerokit's built-in (LIMIT_BIT_SIZE=16).
+fn custom_zkey() -> &'static (ark_groth16::ProvingKey<Bn254>, ark_relations::r1cs::ConstraintMatrices<Fr>) {
+    CUSTOM_ARKZKEY.get_or_init(|| {
+        zkey_from_raw(CUSTOM_ARKZKEY_BYTES).expect("Failed to load custom RLN circuit (LIMIT_BIT_SIZE=20)")
+    })
+}
 
 // Helper function to convert hex string to Field Element (Fr)
 fn fr_from_hex(hex_str: &str) -> Result<Fr, String> {
@@ -123,11 +138,9 @@ pub extern "system" fn Java_net_consensys_linea_rln_jni_RlnBridge_verifyRlnProof
 
     // Now, the part that can panic, using only Rust types
     let result = panic::catch_unwind(|| -> Result<bool, String> {
-        // Use zerokit's built-in verifying key for height 20 trees instead of external key
-        let proving_key = zkey_from_folder();
+        // Use custom circuit with LIMIT_BIT_SIZE=20 (supports ~1M message limit)
+        let proving_key = custom_zkey();
         let vk = &proving_key.0.vk;
-        
-        // Note: Using zerokit's built-in verifying key for height 20 trees (external VK bytes ignored)
 
         let proof = Proof::<Bn254>::deserialize_compressed(&mut Cursor::new(proof_bytes))
             .map_err(|e| format!("Failed to deserialize Proof: {}", e))?;
@@ -214,11 +227,9 @@ pub extern "system" fn Java_net_consensys_linea_rln_jni_RlnBridge_parseAndVerify
 
     // Parse and verify the proof
     let result = panic::catch_unwind(|| -> Result<Vec<String>, String> {
-        // Use zerokit's built-in verifying key for height 20 trees instead of external key
-        let proving_key = zkey_from_folder();
+        // Use custom circuit with LIMIT_BIT_SIZE=20 (supports ~1M message limit)
+        let proving_key = custom_zkey();
         let vk = &proving_key.0.vk;
-        
-        // Note: Using zerokit's built-in verifying key for height 20 trees (external VK bytes ignored)
 
         // Parse the combined proof format: proof + proof_values
         let mut proof_cursor = Cursor::new(&combined_proof_bytes);
@@ -229,24 +240,26 @@ pub extern "system" fn Java_net_consensys_linea_rln_jni_RlnBridge_parseAndVerify
         let proof_values_bytes = &combined_proof_bytes[position..];
         let (proof_values, _) = deserialize_proof_values(proof_values_bytes);
 
-        // Log the epochs for debugging
+        // Log detailed debug info
+        eprintln!("DEBUG: combined_proof_bytes len: {}", combined_proof_bytes.len());
+        eprintln!("DEBUG: proof position after deser: {}", position);
+        eprintln!("DEBUG: proof_values_bytes len: {}", proof_values_bytes.len());
+        eprintln!("DEBUG: Proof x: {}", fr_to_hex(&proof_values.x));
+        eprintln!("DEBUG: Proof y: {}", fr_to_hex(&proof_values.y));
         eprintln!("DEBUG: Proof epoch (external_nullifier): {}", fr_to_hex(&proof_values.external_nullifier));
+        eprintln!("DEBUG: Proof root: {}", fr_to_hex(&proof_values.root));
+        eprintln!("DEBUG: Proof nullifier: {}", fr_to_hex(&proof_values.nullifier));
         eprintln!("DEBUG: Current epoch from sequencer: {}", current_epoch_string);
 
-        // More flexible epoch validation: Accept the proof's epoch if it's reasonable
-        // The RLN prover generates its own epoch, so we need to be flexible here
-        // For now, we'll accept any valid field element as epoch and use it for verification
-        // In production, you might want to add additional epoch validation logic here
-        
-        // Optionally validate that the proof epoch is within reasonable bounds
-        // For example, check if it's not zero or some other sanity checks
+        // Hash the VK for comparison
+        let mut vk_bytes = Vec::new();
+        vk.serialize_compressed(&mut vk_bytes).unwrap_or_default();
+        eprintln!("DEBUG: VK bytes len: {}, first 16 bytes: {:?}", vk_bytes.len(), &vk_bytes[..std::cmp::min(16, vk_bytes.len())]);
+
         let zero_fr = Fr::from(0u64);
         if proof_values.external_nullifier == zero_fr {
             return Err("Invalid epoch: epoch cannot be zero".to_string());
         }
-
-        // Use the proof's epoch for verification (this is the standard RLN approach)
-        // The epoch in the proof is what was used during proof generation, so we must use it
 
         // Verify the proof
         match verify_proof(vk, &proof, &proof_values) {

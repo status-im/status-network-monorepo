@@ -151,5 +151,16 @@ pub enum HandleTransferError2 {
     #[error("Fail to register user in RLN SC: {0}")]
     ScRegister(#[from] RegisterSCError),
     #[error("Unable to query balance: {0}")]
-    FetchBalanceOf(#[from] alloy::contract::Error),
+    FetchBalanceOf(alloy::contract::Error),
+    #[error("Nonce manager error: {0}")]
+    NonceManager(#[from] crate::nonce_manager::NonceManagerError),
+}
+
+// Route alloy::contract::Error -> ScRegister (not FetchBalanceOf)
+// This allows `RE: Into<HandleTransferError2>` to work for both
+// alloy::contract::Error and NonceManagerError in handle_transfer_event.
+impl From<alloy::contract::Error> for HandleTransferError2 {
+    fn from(e: alloy::contract::Error) -> Self {
+        HandleTransferError2::ScRegister(RegisterSCError::from(e))
+    }
 }

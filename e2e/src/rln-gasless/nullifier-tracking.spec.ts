@@ -85,12 +85,7 @@ describe("RLN Nullifier Tracking", () => {
     admin = new ethers.Wallet(RLN_CONFIG.accounts.admin, rpcProvider);
     contracts = loadRlnContracts(rpcProvider, admin);
 
-    rlnClient = new RlnTestClient(
-      rpcProvider,
-      sequencerProvider,
-      RLN_CONFIG.services.rpcUrl,
-      RLN_CONFIG.services.karmaServiceUrl,
-    );
+    rlnClient = new RlnTestClient(rpcProvider, sequencerProvider, RLN_CONFIG.services.rpcUrl);
 
     karmaManager = new KarmaTestManager(contracts.karma, contracts.rln, admin, rlnClient);
     denyListManager = new DenyListTestManager();
@@ -307,8 +302,9 @@ describe("RLN Nullifier Tracking", () => {
       const nonce = await rpcProvider.getTransactionCount(user.address, "latest");
       const txData = uniqueTxData("null004-original");
 
-      // Send original transaction
-      const tx = await user.sendTransaction({
+      // Send through RPC node (which has prover forwarder)
+      const gaslessUser = user.connect(sequencerProvider);
+      const tx = await gaslessUser.sendTransaction({
         to: TEST_RECIPIENT,
         value: 0n,
         data: txData,
@@ -323,7 +319,7 @@ describe("RLN Nullifier Tracking", () => {
 
       // Attempt to send same transaction again with same nonce (replay)
       try {
-        await user.sendTransaction({
+        await gaslessUser.sendTransaction({
           to: TEST_RECIPIENT,
           value: 0n,
           data: txData,

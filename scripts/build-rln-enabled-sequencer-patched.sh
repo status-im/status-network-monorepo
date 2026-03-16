@@ -427,6 +427,7 @@ WORKDIR /build
 # Copy source
 COPY Cargo.toml Cargo.lock* ./
 COPY src ./src
+COPY resources ./resources
 
 # Build native
 RUN cargo build --release
@@ -837,6 +838,7 @@ if [[ -f "$COMPOSE_FILE" ]]; then
         awk -v besu_img="$BESU_IMAGE_REMOTE" -v rln_img="$RLN_PROVER_IMAGE_REMOTE" '
             /^[[:space:]]*container_name:[[:space:]]*sequencer$/ { tgt = "besu" }
             /^[[:space:]]*container_name:[[:space:]]*l2-node-besu$/ { tgt = "besu" }
+            /^[[:space:]]*container_name:[[:space:]]*l2-node-besu-follower$/ { tgt = "besu" }
             /^[[:space:]]*container_name:[[:space:]]*rln-prover$/ { tgt = "rln" }
             /^[[:space:]]*container_name:[[:space:]]*karma-service$/ { tgt = "rln" }
             {
@@ -857,6 +859,7 @@ if [[ -f "$COMPOSE_FILE" ]]; then
         awk -v besu_img="$BESU_IMAGE_REMOTE" '
             /^[[:space:]]*container_name:[[:space:]]*sequencer$/ { tgt = "besu" }
             /^[[:space:]]*container_name:[[:space:]]*l2-node-besu$/ { tgt = "besu" }
+            /^[[:space:]]*container_name:[[:space:]]*l2-node-besu-follower$/ { tgt = "besu" }
             {
               if (tgt == "besu" && $0 ~ /^[[:space:]]*image:[[:space:]]*/) {
                 match($0, /^[[:space:]]*/); lead = substr($0, 1, RLENGTH);

@@ -107,7 +107,6 @@ public class LineaEstimateGas {
 
   private boolean gaslessTransactionsEnabled;
   private LineaSharedGaslessConfiguration sharedGaslessConfig;
-  private double premiumGasMultiplier;
   private boolean allowZeroGasEstimationForGasless;
 
   private DenyListManager denyListManager;
@@ -173,7 +172,6 @@ public class LineaEstimateGas {
         throw new IllegalStateException(
             "sharedGaslessConfig cannot be null when gasless transactions are enabled");
       }
-      this.premiumGasMultiplier = rpcConfiguration.premiumGasMultiplier();
       this.allowZeroGasEstimationForGasless = rpcConfiguration.allowZeroGasEstimationForGasless();
 
       // Inject shared services
@@ -238,10 +236,9 @@ public class LineaEstimateGas {
 
         if (isOnDenyList) {
           log.info(
-              "[{}] Sender {} is on the deny list. Applying premium gas multiplier of {}.",
+              "[{}] Sender {} is on the deny list. Returning premium gas estimate.",
               logId,
-              sender.toHexString(),
-              premiumGasMultiplier);
+              sender.toHexString());
           return buildPremiumGasResponse(callParameters, maybeStateOverrides, logId, minGasPrice);
         }
 
@@ -276,8 +273,12 @@ public class LineaEstimateGas {
                 karmaInfo.dailyQuota());
 
             // Validate line counts even for zero-gas responses
+            // Use actual gas estimation (not hardcoded 21000) so contract deployments
+            // have enough gas for simulation to succeed
+            final long gasForValidation =
+                getGasEstimation(callParameters, maybeStateOverrides, logId);
             final var zeroGasCallParams =
-                ImmutableCallParameter.builder().from(callParameters).gas(21000L);
+                ImmutableCallParameter.builder().from(callParameters).gas(gasForValidation);
             if (callParameters.getGasPrice().isEmpty()
                 && callParameters.getMaxFeePerBlobGas().isEmpty()) {
               zeroGasCallParams.gasPrice(Wei.ZERO);
@@ -663,15 +664,14 @@ public class LineaEstimateGas {
 
   /**
    * Builds a premium gas response with validateLineCounts enforcement. Consolidates the repeated
-   * pattern of computing gas estimate, applying multiplier, and creating the response.
+   * pattern of computing gas estimate, enforcing premium priority fee, and creating the response.
    */
   private Response buildPremiumGasResponse(
       final CallParameter callParameters,
       final Optional<StateOverrideMap> maybeStateOverrides,
       final long logId,
       final Wei minGasPrice) {
-    final long originalGasEstimate = getGasEstimation(callParameters, maybeStateOverrides, logId);
-    final long premiumGasEstimate = (long) (originalGasEstimate * premiumGasMultiplier);
+    final long gasEstimate = getGasEstimation(callParameters, maybeStateOverrides, logId);
 
     final Wei baseFee =
         blockchainService
@@ -683,7 +683,7 @@ public class LineaEstimateGas {
 
     // Validate line counts for gasless paths
     final var updatedCallParams =
-        ImmutableCallParameter.builder().from(callParameters).gas(premiumGasEstimate);
+        ImmutableCallParameter.builder().from(callParameters).gas(gasEstimate);
     if (callParameters.getGasPrice().isEmpty() && callParameters.getMaxFeePerBlobGas().isEmpty()) {
       updatedCallParams.gasPrice(baseFee);
       updatedCallParams.maxFeePerGas(baseFee);
@@ -691,12 +691,12 @@ public class LineaEstimateGas {
     validateLineCounts(maybeStateOverrides, updatedCallParams.build(), logId);
 
     final Transaction tempTx =
-        createTransactionForFeeEstimation(callParameters, premiumGasEstimate, baseFee, logId);
+        createTransactionForFeeEstimation(callParameters, gasEstimate, baseFee, logId);
     final Wei estimatedPriorityFee =
         enforcePremiumMinPriorityFee(
-            getEstimatedPriorityFee(tempTx, baseFee, minGasPrice, premiumGasEstimate));
+            getEstimatedPriorityFee(tempTx, baseFee, minGasPrice, gasEstimate));
 
-    return new Response(create(premiumGasEstimate), create(baseFee), create(estimatedPriorityFee));
+    return new Response(create(gasEstimate), create(baseFee), create(estimatedPriorityFee));
   }
 
   /**

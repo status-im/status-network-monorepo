@@ -3,7 +3,6 @@
 mod tests {
     // std
     use std::sync::Arc;
-    use std::time::Duration;
     // third-party
     use crate::epoch_service::{Epoch, EpochSlice};
     use crate::user_db_2::{MERKLE_TREE_HEIGHT, UserDb2, UserDb2Config};
@@ -15,7 +14,7 @@ mod tests {
     use sqlx::error::Error as SqlxError;
     // internal
     use crate::user_db_error::RegisterError2;
-    use crate::user_db_types::EpochCounter;
+    use crate::user_db_types::{EpochCounter, QuotaBonus};
 
     const ADDR_1: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
     const ADDR_2: Address = address!("0xb20a608c624Ca5003905aA834De7156C68b2E1d0");
@@ -62,45 +61,45 @@ mod tests {
 
         assert_eq!(
             user_db.get_tx_counter(&ADDR_1).await.unwrap(),
-            EpochCounter::from(0)
+            (EpochCounter::from(0), QuotaBonus::default())
         );
         assert_eq!(
             user_db.get_tx_counter(&ADDR_2).await.unwrap(),
-            EpochCounter::from(0)
+            (EpochCounter::from(0), QuotaBonus::default())
         );
 
         // Now update user tx counter
         assert_eq!(
             user_db.on_new_tx(&ADDR_1, None).await.unwrap(),
-            EpochCounter::from(1)
+            (EpochCounter::from(1), QuotaBonus::default())
         );
         assert_eq!(
             user_db.on_new_tx(&ADDR_1, None).await.unwrap(),
-            EpochCounter::from(2)
+            (EpochCounter::from(2), QuotaBonus::default())
         );
         assert_eq!(
             user_db.on_new_tx(&ADDR_1, Some(2)).await.unwrap(),
-            EpochCounter::from(4)
+            (EpochCounter::from(4), QuotaBonus::default())
         );
 
         assert_eq!(
             user_db.on_new_tx(&ADDR_2, None).await.unwrap(),
-            EpochCounter::from(1)
+            (EpochCounter::from(1), QuotaBonus::default())
         );
 
         assert_eq!(
             user_db.on_new_tx(&ADDR_2, None).await.unwrap(),
-            EpochCounter::from(2)
+            (EpochCounter::from(2), QuotaBonus::default())
         );
 
         assert_eq!(
             user_db.get_tx_counter(&ADDR_1).await.unwrap(),
-            EpochCounter::from(4)
+            (EpochCounter::from(4), QuotaBonus::default())
         );
 
         assert_eq!(
             user_db.get_tx_counter(&ADDR_2).await.unwrap(),
-            EpochCounter::from(2)
+            (EpochCounter::from(2), QuotaBonus::default())
         );
     }
 
@@ -152,11 +151,11 @@ mod tests {
 
             assert_eq!(
                 user_db.on_new_tx(&ADDR_1, Some(2)).await.unwrap(),
-                EpochCounter::from(2)
+                (EpochCounter::from(2), QuotaBonus::default())
             );
             assert_eq!(
                 user_db.on_new_tx(&ADDR_2, Some(1000)).await.unwrap(),
-                EpochCounter::from(1000)
+                (EpochCounter::from(1000), QuotaBonus::default())
             );
 
             db_conn.close().await;
@@ -189,11 +188,11 @@ mod tests {
             assert!(user_db.has_user(&ADDR_2).await.unwrap());
             assert_eq!(
                 user_db.get_tx_counter(&ADDR_1).await.unwrap(),
-                EpochCounter::from(2)
+                (EpochCounter::from(2), QuotaBonus::default())
             );
             assert_eq!(
                 user_db.get_tx_counter(&ADDR_2).await.unwrap(),
-                EpochCounter::from(1000)
+                (EpochCounter::from(1000), QuotaBonus::default())
             );
 
             let user_model = user_db.get_user(&ADDR_1).await.unwrap().unwrap();
@@ -397,51 +396,40 @@ mod tests {
         )
         .await?;
 
-        // Define some custom 'now' functions so we are in control
-        let now_v = 10;
-        let now = || Duration::from_secs(now_v);
-        let now2 = || Duration::from_secs(12);
+        // Set epoch to 1
+        *epoch_store.write() = (Epoch::from(1i64), EpochSlice::from(0i64));
 
-        assert_eq!(user_db.is_denied(&ADDR_1, &now).await?, false);
-        assert_eq!(user_db.is_denied(&ADDR_2, &now).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_1).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_2).await?, false);
 
-        let ttl = 5;
         user_db.register_user(ADDR_3).await.unwrap();
-        user_db
-            .add_to_deny_list(&ADDR_3, None, Some(ttl), &now)
-            .await?;
+        user_db.add_to_deny_list(&ADDR_3, None).await?;
 
-        assert_eq!(user_db.is_denied(&ADDR_3, &now).await?, true);
-        // Check that in the future, ADDR_3 is not denied anymore
-        assert_eq!(
-            user_db
-                .is_denied(&ADDR_3, &|| Duration::from_secs(now_v)
-                    + Duration::from_secs(ttl as u64))
-                .await?,
-            false
-        );
-        assert_eq!(user_db.is_denied(&ADDR_1, &now).await?, false);
-        assert_eq!(user_db.is_denied(&ADDR_2, &now).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_3).await?, true);
+        // Check that in a future epoch, ADDR_3 is not denied anymore
+        *epoch_store.write() = (Epoch::from(2i64), EpochSlice::from(0i64));
+        assert_eq!(user_db.is_denied(&ADDR_3).await?, false);
+
+        // Go back to epoch 1
+        *epoch_store.write() = (Epoch::from(1i64), EpochSlice::from(0i64));
+        assert_eq!(user_db.is_denied(&ADDR_1).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_2).await?, false);
 
         user_db.remove_from_deny_list(&ADDR_3).await?;
-        assert_eq!(user_db.is_denied(&ADDR_3, &now).await?, false);
-        assert_eq!(user_db.is_denied(&ADDR_1, &now).await?, false);
-        assert_eq!(user_db.is_denied(&ADDR_2, &now).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_3).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_1).await?, false);
+        assert_eq!(user_db.is_denied(&ADDR_2).await?, false);
 
-        user_db
-            .add_to_deny_list(&ADDR_3, None, Some(5), &now2)
-            .await?;
-        assert_eq!(user_db.is_denied(&ADDR_3, &now2).await?, true);
-        let deny_list_entry = user_db.get_deny_list_entry(&ADDR_3, &now2).await?.unwrap();
+        // Add to deny list at epoch 1 again
+        user_db.add_to_deny_list(&ADDR_3, None).await?;
+        assert_eq!(user_db.is_denied(&ADDR_3).await?, true);
+        let deny_list_entry = user_db.get_deny_list_entry(&ADDR_3).await?.unwrap();
 
         assert_eq!(
             Address::from_slice(deny_list_entry.address.as_slice()),
             ADDR_3
         );
-        assert_eq!(
-            deny_list_entry.expires_at.unwrap(),
-            (now2() + Duration::from_secs(5)).as_secs() as i64
-        );
+        assert_eq!(deny_list_entry.epoch, 1i64);
 
         Ok(())
     }
@@ -472,30 +460,20 @@ mod tests {
         )
         .await?;
 
-        // Define some custom 'now' functions so we are in control
-        let now = || Duration::from_secs(10);
+        // Set epoch to 1
+        *epoch_store.write() = (Epoch::from(1i64), EpochSlice::from(0i64));
         user_db.register_user(ADDR_3).await.unwrap();
         // Check this is an INSERT
-        assert_eq!(
-            user_db
-                .add_to_deny_list(&ADDR_3, None, Some(5), &now)
-                .await?,
-            true
-        );
+        assert_eq!(user_db.add_to_deny_list(&ADDR_3, None).await?, true);
         // Check this is an UPDATE
-        assert_eq!(
-            user_db
-                .add_to_deny_list(&ADDR_3, None, Some(7), &now)
-                .await?,
-            false
-        );
+        assert_eq!(user_db.add_to_deny_list(&ADDR_3, None).await?, false);
 
         Ok(())
     }
 
     #[tokio::test]
     async fn test_deny_list_cleanup() -> Result<(), SqlxError> {
-        // Check UserDb deny_list cleanup
+        // Check UserDb deny_list cleanup via clear_deny_list(epoch)
 
         let epoch_store = Arc::new(RwLock::new(Default::default()));
         let tree_depth = 1;
@@ -506,9 +484,12 @@ mod tests {
             tree_depth,
         };
 
-        let (_, db_conn) =
-            create_database_connection("user_db_tests_test_deny_list_2", true, config.clone())
-                .await?;
+        let (_, db_conn) = create_database_connection(
+            "user_db_tests_test_deny_list_cleanup",
+            true,
+            config.clone(),
+        )
+        .await?;
 
         let user_db = UserDb2::new(
             db_conn.clone(),
@@ -519,40 +500,38 @@ mod tests {
         )
         .await?;
 
-        // Define some custom 'now' functions so we are in control
-        let now_v = 10;
-        let now2_v = 12;
-        let now = || Duration::from_secs(now_v);
-        let now2 = || Duration::from_secs(now2_v);
-        let ttl = 5;
-        let now3 = || Duration::from_secs(now_v + ttl);
-        let now4 = || Duration::from_secs(now2_v + ttl);
-
         user_db.register_user(ADDR_3).await.unwrap();
         user_db.register_user(ADDR_1).await.unwrap();
 
-        user_db
-            .add_to_deny_list(&ADDR_3, None, Some(ttl as i64), &now)
-            .await?;
-        user_db
-            .add_to_deny_list(&ADDR_1, None, Some(ttl as i64), &now2)
-            .await?;
+        // Add ADDR_3 to deny list at epoch 1
+        *epoch_store.write() = (Epoch::from(1i64), EpochSlice::from(0i64));
+        user_db.add_to_deny_list(&ADDR_3, None).await?;
 
-        // Will clean nothing (no expiration yet)
-        user_db.cleanup_expired_deny_list_entries(&now).await?;
-        assert!(user_db.get_deny_list_entry(&ADDR_3, &now).await?.is_some());
-        assert!(user_db.get_deny_list_entry(&ADDR_1, &now).await?.is_some());
+        // Add ADDR_1 to deny list at epoch 2
+        *epoch_store.write() = (Epoch::from(2i64), EpochSlice::from(0i64));
+        user_db.add_to_deny_list(&ADDR_1, None).await?;
 
-        // Cleanup only ADDR3
-        user_db.cleanup_expired_deny_list_entries(&now3).await?;
-        assert!(user_db.get_deny_list_entry(&ADDR_3, &now3).await?.is_none());
+        // clear_deny_list with epoch 1 will clean nothing (no entries with epoch < 1)
+        user_db.clear_deny_list(1).await?;
+        // Both entries still visible at epoch 1
+        *epoch_store.write() = (Epoch::from(1i64), EpochSlice::from(0i64));
+        assert!(user_db.get_deny_list_entry(&ADDR_3).await?.is_some());
+        assert!(user_db.get_deny_list_entry(&ADDR_1).await?.is_some());
+
+        // clear_deny_list with epoch 2 removes entries with epoch < 2 (i.e. ADDR_3 at epoch 1)
+        user_db.clear_deny_list(2).await?;
+        *epoch_store.write() = (Epoch::from(1i64), EpochSlice::from(0i64));
+        assert!(user_db.get_deny_list_entry(&ADDR_3).await?.is_none());
         assert!(user_db.get_raw_deny_list_entry(&ADDR_3).await?.is_none());
-        assert!(user_db.get_deny_list_entry(&ADDR_1, &now3).await?.is_some());
+        // ADDR_1 at epoch 2 is still present
+        *epoch_store.write() = (Epoch::from(2i64), EpochSlice::from(0i64));
+        assert!(user_db.get_deny_list_entry(&ADDR_1).await?.is_some());
         assert!(user_db.get_raw_deny_list_entry(&ADDR_1).await?.is_some());
 
-        // Cleanup ADDR_1 too
-        user_db.cleanup_expired_deny_list_entries(&now4).await?;
-        assert!(user_db.get_deny_list_entry(&ADDR_1, &now4).await?.is_none());
+        // clear_deny_list with epoch 3 removes entries with epoch < 3 (i.e. ADDR_1 at epoch 2)
+        user_db.clear_deny_list(3).await?;
+        *epoch_store.write() = (Epoch::from(2i64), EpochSlice::from(0i64));
+        assert!(user_db.get_deny_list_entry(&ADDR_1).await?.is_none());
         assert!(user_db.get_raw_deny_list_entry(&ADDR_1).await?.is_none());
 
         Ok(())
@@ -571,11 +550,9 @@ mod tests {
             tree_depth,
         };
 
-        println!("create db conn...");
         let (_, db_conn) =
-            create_database_connection("user_db_tests_test_deny_list_1", true, config.clone())
+            create_database_connection("user_db_tests_test_nullifier_1", true, config.clone())
                 .await?;
-        println!("create db conn DONE");
 
         let user_db = UserDb2::new(
             db_conn.clone(),
@@ -622,9 +599,12 @@ mod tests {
             tree_depth,
         };
 
-        let (_, db_conn) =
-            create_database_connection("user_db_tests_test_deny_list_1", true, config.clone())
-                .await?;
+        let (_, db_conn) = create_database_connection(
+            "user_db_tests_test_nullifier_cleanup",
+            true,
+            config.clone(),
+        )
+        .await?;
 
         let user_db = UserDb2::new(
             db_conn.clone(),

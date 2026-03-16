@@ -9,6 +9,8 @@
 
 package net.consensys.linea.sequencer.txpoolvalidation;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Optional;
 import java.util.Set;
@@ -40,8 +42,16 @@ import org.hyperledger.besu.plugin.services.txvalidator.PluginTransactionPoolVal
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Represents a factory for creating transaction pool validators. */
-public class LineaTransactionPoolValidatorFactory implements PluginTransactionPoolValidatorFactory {
+/**
+ * Represents a factory for creating transaction pool validators.
+ *
+ * <p>Besu calls {@link #createTransactionValidator()} once per transaction. To avoid leaking gRPC
+ * channels, scheduled executor threads, and JNI resources on every call, this factory builds the
+ * composite validator chain <strong>once</strong> and returns the same cached instance on every
+ * subsequent invocation. All validators are thread-safe.
+ */
+public class LineaTransactionPoolValidatorFactory
+    implements PluginTransactionPoolValidatorFactory, Closeable {
   private static final Logger LOG =
       LoggerFactory.getLogger(LineaTransactionPoolValidatorFactory.class);
 
@@ -61,6 +71,12 @@ public class LineaTransactionPoolValidatorFactory implements PluginTransactionPo
   private final LineaNodeType nodeType;
 
   private final AtomicReference<Set<Address>> deniedAddresses;
+
+  // Singleton validator caching — built once, returned on every createTransactionValidator() call
+  private volatile PluginTransactionPoolValidator cachedValidator;
+  private final Object validatorInitLock = new Object();
+  private RlnVerifierValidator singletonVerifier;
+  private RlnProverForwarderValidator singletonForwarder;
 
   public LineaTransactionPoolValidatorFactory(
       final BesuConfiguration besuConfiguration,
@@ -96,19 +112,38 @@ public class LineaTransactionPoolValidatorFactory implements PluginTransactionPo
   }
 
   /**
-   * Creates a new transaction pool validator, that simply calls in sequence all the actual
-   * validators, in a fail-fast mode.
+   * Returns a cached composite validator that calls all actual validators in sequence (fail-fast).
    *
-   * @return the new transaction pool validator
+   * <p>Besu calls this method once per transaction. The validator chain is built on the first call
+   * and the same instance is returned on every subsequent call, preventing resource leaks from
+   * repeated gRPC channel, thread, and JNI allocations.
+   *
+   * @return the cached transaction pool validator
    */
   @Override
   public PluginTransactionPoolValidator createTransactionValidator() {
+    PluginTransactionPoolValidator result = cachedValidator;
+    if (result != null) {
+      return result;
+    }
+    synchronized (validatorInitLock) {
+      result = cachedValidator;
+      if (result != null) {
+        return result;
+      }
+      result = buildCompositeValidator();
+      cachedValidator = result;
+      return result;
+    }
+  }
+
+  private PluginTransactionPoolValidator buildCompositeValidator() {
     final var validatorsList = new ArrayList<PluginTransactionPoolValidator>();
 
     // Conditionally add RLN Prover Forwarder (enabled via configuration flag)
     // Keep it first so we forward local txs before any other validator rejects them.
     if (rlnProverForwarderEnabled) {
-      validatorsList.add(
+      singletonForwarder =
           new RlnProverForwarderValidator(
               rlnValidatorConf,
               true, // enabled
@@ -117,7 +152,8 @@ public class LineaTransactionPoolValidatorFactory implements PluginTransactionPo
               worldStateService,
               tracerConfiguration,
               l1L2BridgeConfiguration,
-              sharedServiceManager.getGasKillSwitchMonitor()));
+              sharedServiceManager.getGasKillSwitchMonitor());
+      validatorsList.add(singletonForwarder);
     }
 
     validatorsList.add(new TraceLineLimitValidator(invalidTransactionByLineCountCache));
@@ -132,14 +168,15 @@ public class LineaTransactionPoolValidatorFactory implements PluginTransactionPo
     // RPC nodes need RLN enabled for shared services (WorldStateService, etc.) but should NOT
     // reject transactions
     if (rlnValidatorConf.rlnValidationEnabled() && nodeType == LineaNodeType.SEQUENCER) {
-      validatorsList.add(
+      singletonVerifier =
           new RlnVerifierValidator(
               rlnValidatorConf,
               blockchainService,
               sharedServiceManager.getDenyListManager(),
               sharedServiceManager.getKarmaServiceClient(),
               sharedServiceManager.getNullifierTracker(),
-              sharedServiceManager.getGasKillSwitchMonitor()));
+              sharedServiceManager.getGasKillSwitchMonitor());
+      validatorsList.add(singletonVerifier);
     }
 
     validatorsList.add(
@@ -154,6 +191,9 @@ public class LineaTransactionPoolValidatorFactory implements PluginTransactionPo
 
     final PluginTransactionPoolValidator[] validators =
         validatorsList.toArray(new PluginTransactionPoolValidator[0]);
+
+    LOG.info(
+        "Built composite transaction pool validator (singleton, {} validators)", validators.length);
 
     return (transaction, isLocal, hasPriority) -> {
       for (final PluginTransactionPoolValidator validator : validators) {
@@ -178,5 +218,27 @@ public class LineaTransactionPoolValidatorFactory implements PluginTransactionPo
 
   public void setDeniedAddresses(final Set<Address> deniedAddresses) {
     this.deniedAddresses.set(deniedAddresses);
+  }
+
+  /**
+   * Closes RLN validator resources (gRPC channels, scheduled executors, JNI handles). Must be
+   * called before SharedServiceManager.close() since validators reference shared services.
+   */
+  @Override
+  public void close() throws IOException {
+    if (singletonVerifier != null) {
+      try {
+        singletonVerifier.close();
+      } catch (IOException e) {
+        LOG.error("Error closing RlnVerifierValidator: {}", e.getMessage(), e);
+      }
+    }
+    if (singletonForwarder != null) {
+      try {
+        singletonForwarder.close();
+      } catch (IOException e) {
+        LOG.error("Error closing RlnProverForwarderValidator: {}", e.getMessage(), e);
+      }
+    }
   }
 }
