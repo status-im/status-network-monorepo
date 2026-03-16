@@ -64,7 +64,7 @@ The sequencer loads the RLN **Verifier** (validates proofs). It does NOT need th
 | `--plugin-linea-rln-karma-service` | `rln-prover:50051` | Karma service (same as proof service) |
 | `--plugin-linea-rln-timeouts-ms` | `10000` | Service timeout (10s) |
 | `--plugin-linea-rln-proof-wait-timeout-ms` | `10000` | Timeout waiting for proof in local cache during validation |
-| `--plugin-linea-rln-premium-gas-threshold-gwei` | `12` | Txs with gas >= this bypass RLN proof requirement |
+| `--plugin-linea-rln-premium-gas-threshold-gwei` | `100` | Txs with gas >= this bypass RLN proof requirement. Must be <= prover's `--registration-gas-price-gwei` so registration txs pass through. |
 ### Gasless RPC Parameters
 
 | Parameter | Production Value | Notes |
@@ -80,13 +80,6 @@ The sequencer loads the RLN **Verifier** (validates proofs). It does NOT need th
 |-----------|-----------------|-------|
 | `--plugin-linea-gas-kill-switch-file` | `/var/lib/besu/kill-switch/gas-kill-switch` | Emergency gasless disable. Write `true` to file to kill gasless. |
 | `--plugin-linea-gas-kill-switch-poll-seconds` | `5` | Poll interval |
-
-### Gas Estimation
-
-| Parameter | Production Value | Notes |
-|-----------|-----------------|-------|
-| `--plugin-linea-estimate-gas-compatibility-mode-enabled` | `true` | Client compatibility |
-| `--plugin-linea-estimate-gas-compatibility-mode-multiplier` | `1.2` | Gas estimation multiplier |
 
 ### Common Gotchas
 
@@ -108,7 +101,7 @@ The RPC node loads **only** the Forwarder (sends incoming txs to prover for proo
 | `--plugin-linea-rln-proof-service` | `rln-prover:50051` | gRPC endpoint to RLN prover |
 | `--plugin-linea-rln-karma-service` | `rln-prover:50051` | Karma service endpoint |
 | `--plugin-linea-rln-timeouts-ms` | `5000` | Service timeout (can be lower than sequencer) |
-| `--plugin-linea-rln-premium-gas-threshold-gwei` | `12` | Same as sequencer |
+| `--plugin-linea-rln-premium-gas-threshold-gwei` | `100` | Same as sequencer |
 
 ### Gasless RPC Parameters (same as sequencer)
 
@@ -222,7 +215,7 @@ All production secrets must be set. None should be default/test values.
 | RLN Prover mode | `--mock-sc true` | `--ws-rpc-url ws://sequencer:8546` |
 | RLN Prover epoch | `--epoch-duration-secs 60` | `--epoch-duration-secs 86400` |
 | RLN Prover registration gas | (not set, default 0) | `--registration-gas-price-gwei 101` |
-| Sequencer premium gas | `0` Gwei | `12` Gwei |
+| Sequencer premium gas | `12` Gwei | `100` Gwei |
 | Kill switch | disabled | enabled with file path |
 | L1 RPC | local node | paid endpoint (gateway.fm) |
 | Signer keys | Hardhat test keys | Production keys from secrets |
