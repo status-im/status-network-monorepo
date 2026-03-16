@@ -45,6 +45,7 @@ This document lists every configuration parameter required to run the Status Net
 - **`PRIVATE_KEY` wallet missing `REGISTER_ROLE`**: Registration txs revert on-chain.
 - **Wrong contract addresses in `--ksc`/`--rlnsc`/`--tsc`**: Prover subscribes to wrong events, never sees mints.
 - **`BackendGone` errors**: WebSocket connection to sequencer drops. Check network stability between prover and sequencer pods.
+- **Deny list epoch alignment**: Deny list entries are automatically cleared on epoch boundaries. No TTL configuration needed — entries are scoped to the epoch they were created in.
 - **`--spam-limit` too low (default 10,000)**: Proof generation fails with `Message id (N) is not within user_message_limit (10000)` once a user's epoch tx counter exceeds the limit. Set to highest tier's `tx_per_epoch` or desired limit. **Circuit hard limit: 1048575** (custom circuit uses Num2Bits(20)). Values >1048575 generate proofs that fail verification. Existing users need re-registration after changing this (value is baked into Merkle tree leaf).
 
 ---
@@ -64,8 +65,6 @@ The sequencer loads the RLN **Verifier** (validates proofs). It does NOT need th
 | `--plugin-linea-rln-timeouts-ms` | `10000` | Service timeout (10s) |
 | `--plugin-linea-rln-proof-wait-timeout-ms` | `10000` | Timeout waiting for proof in local cache during validation |
 | `--plugin-linea-rln-premium-gas-threshold-gwei` | `12` | Txs with gas >= this bypass RLN proof requirement |
-| `--plugin-linea-rln-verifying-key` | `/etc/linea/rln_verifying_key.bin` | **REQUIRED** - Path to RLN ZK verifying key for proof verification |
-
 ### Gasless RPC Parameters
 
 | Parameter | Production Value | Notes |
@@ -92,7 +91,7 @@ The sequencer loads the RLN **Verifier** (validates proofs). It does NOT need th
 ### Common Gotchas
 
 - **Premium gas threshold**: The `--plugin-linea-rln-premium-gas-threshold-gwei` on the sequencer and the `--registration-gas-price-gwei` on the prover must be aligned. Prover's gas price must be >= sequencer's threshold.
-- **RLN verifying key missing**: If the key file doesn't exist, proof verification fails for all txs.
+- **gRPC reconnect**: If the prover restarts, the sequencer reconnects automatically with max 5s backoff. No manual intervention needed.
 
 ---
 
@@ -121,7 +120,6 @@ The RPC node loads **only** the Forwarder (sends incoming txs to prover for proo
 
 ### What the RPC node does NOT need
 
-- `--plugin-linea-rln-verifying-key` — not used (verifier not loaded)
 - `--plugin-linea-rln-proof-wait-timeout-ms` — not used (verifier not loaded)
 
 ---
@@ -222,7 +220,7 @@ All production secrets must be set. None should be default/test values.
 | Setting | Test | Production |
 |---------|------|------------|
 | RLN Prover mode | `--mock-sc true` | `--ws-rpc-url ws://sequencer:8546` |
-| RLN Prover epoch | `--epoch-duration-secs 30` | `--epoch-duration-secs 86400` |
+| RLN Prover epoch | `--epoch-duration-secs 60` | `--epoch-duration-secs 86400` |
 | RLN Prover registration gas | (not set, default 0) | `--registration-gas-price-gwei 101` |
 | Sequencer premium gas | `0` Gwei | `12` Gwei |
 | Kill switch | disabled | enabled with file path |
