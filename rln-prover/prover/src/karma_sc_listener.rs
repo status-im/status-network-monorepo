@@ -14,7 +14,7 @@ use crate::error::{AppError2, HandleTransferError2};
 // use crate::user_db::UserDb;
 use crate::user_db_2::UserDb2;
 use crate::user_db_error::RegisterError2;
-use smart_contract::{KarmaAmountExt, KarmaRLNSC, KarmaSC, RLNRegister};
+use smart_contract::{KarmaAmountExt, KarmaSC, RLNRegister};
 
 pub(crate) struct KarmaScEventListener {
     karma_sc_address: Address,

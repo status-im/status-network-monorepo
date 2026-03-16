@@ -80,13 +80,6 @@ public class LineaRlnValidatorCliOptions implements LineaCliOptions {
   private long proofWaitTimeoutMs = 1000L; // 1 second (increased from 200ms)
 
   @CommandLine.Option(
-      names = "--plugin-linea-rln-epoch-mode",
-      description =
-          "Epoch mode used to compute the RLN external nullifier (options: BLOCK, TIMESTAMP_1H, TEST, FIXED_FIELD_ELEMENT; default: ${DEFAULT-VALUE})",
-      arity = "1")
-  private String epochMode = LineaRlnValidatorConfiguration.V1_DEFAULT.defaultEpochForQuota();
-
-  @CommandLine.Option(
       names = "--plugin-linea-gas-kill-switch-file",
       description =
           "Path to gas kill switch file. When file contains 'true' or 'enabled', all gasless transactions are disabled. Empty string disables the feature. (default: ${DEFAULT-VALUE})",
@@ -124,18 +117,10 @@ public class LineaRlnValidatorCliOptions implements LineaCliOptions {
         useTls.orElse(
             proofPort == 443 || proofPort == 8443 || karmaPort == 443 || karmaPort == 8443);
 
-    // Create shared gasless config with simplified settings
-    // Note: Deny list is now stored in the RLN prover's PostgreSQL database and accessed via gRPC
-    // Note: For test environments with 30s epochs, 1 min TTL = 2 epochs (can't set to 0.5 min due
-    // to minute granularity)
-    // TODO: For production with 24h epochs, this should be configurable via CLI option
+    // Create shared gasless config
+    // Note: Deny list is epoch-aligned — entries are cleared when a new epoch starts
     LineaSharedGaslessConfiguration sharedConfig =
-        new LineaSharedGaslessConfiguration(
-            60L, // denyListCacheRefreshSeconds - 1 minute (local cache cleanup interval)
-            premiumGasThresholdGWei,
-            1L, // denyListEntryMaxAgeMinutes - 1 minute TTL (minimum due to minute granularity, ~2
-            // epochs for 30s test epochs)
-            nullifierStoragePath);
+        new LineaSharedGaslessConfiguration(premiumGasThresholdGWei, nullifierStoragePath);
 
     return new LineaRlnValidatorConfiguration(
         rlnValidationEnabled,
@@ -145,7 +130,7 @@ public class LineaRlnValidatorCliOptions implements LineaCliOptions {
         shouldUseTls, // rlnProofServiceUseTls
         10000L, // rlnProofCacheMaxSize (good default)
         300L, // rlnProofCacheExpirySeconds (5 min, good default)
-        5, // rlnProofStreamRetries (good default)
+        20, // rlnProofStreamRetries (enough for prover startup delay)
         5000L, // rlnProofStreamRetryIntervalMs (good default)
         proofWaitTimeoutMs, // rlnProofLocalWaitTimeoutMs (configurable via CLI)
         sharedConfig,
@@ -154,8 +139,7 @@ public class LineaRlnValidatorCliOptions implements LineaCliOptions {
         shouldUseTls, // karmaServiceUseTls
         timeoutsMs, // karmaServiceTimeoutMs
         true, // exponentialBackoffEnabled (good default)
-        60000L, // maxBackoffDelayMs (1 min, good default)
-        epochMode, // defaultEpochForQuota (configurable via CLI)
+        5000L, // maxBackoffDelayMs (5s — fast reconnect after prover restart)
         Optional.empty(), // rlnJniLibPath (use system path)
         gasKillSwitchFilePath, // gasKillSwitchFilePath
         gasKillSwitchPollSeconds // gasKillSwitchPollSeconds

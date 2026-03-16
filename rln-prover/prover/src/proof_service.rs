@@ -143,9 +143,11 @@ impl ProofService {
                     // Note: Zerokit can only recover user secret hash with 2 messages with the
                     //       same message_id so here we force to use the previous message_id
                     //       so the Verifier could recover the secret hash
+                    // debug!("m_id: {:?} vs rate_limit: {:?}", m_id, rate_limit);
                     if RateLimit::from(m_id) == rate_limit {
                         m_id -= 1;
                     }
+                    // debug!("final m_id: {:?}", m_id);
                     m_id
                 };
 
@@ -290,7 +292,7 @@ mod tests {
     use tracing::{debug, info};
     // third-party: zerokit
     use rln::{
-        circuit::{Curve, zkey_from_folder},
+        circuit::{Curve, zkey_from_raw},
         protocol::{deserialize_proof_values, verify_proof},
     };
     // internal
@@ -435,8 +437,9 @@ mod tests {
             0,
         );
 
-        // Verification
-        let proving_key = zkey_from_folder();
+        // Verification — use custom circuit with LIMIT_BIT_SIZE=20
+        let arkzkey_bytes = include_bytes!("../../rln_proof/resources/rln_final.arkzkey");
+        let proving_key = zkey_from_raw(arkzkey_bytes).expect("Failed to load custom RLN circuit");
         let verification_key = &proving_key.0.vk;
 
         info!("Starting...");

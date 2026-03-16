@@ -19,7 +19,7 @@ spec:
       targetPort: http
       protocol: TCP
   selector:
-    {{- include "status-network.componentSelectorLabels" (list . "sequencer") | nindent 4 }}
+    {{- include "status-network.componentSelectorLabels" (list . "l2-node-besu") | nindent 4 }}
 {{- end }}
 
 {{- if and .Values.l1.enabled .Values.services.l1RpcLoadBalancer.enabled }}
@@ -44,4 +44,28 @@ spec:
       protocol: TCP
   selector:
     {{- include "status-network.componentSelectorLabels" (list . "l1-el-node") | nindent 4 }}
+{{- end }}
+
+{{- if and .Values.l2.enabled .Values.l2.postgresReplica.enabled .Values.services.postgresReplicaLoadBalancer.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-replica-lb
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "postgres-replica-lb") | nindent 4 }}
+  {{- if .Values.services.postgresReplicaLoadBalancer.annotations }}
+  annotations:
+    {{- toYaml .Values.services.postgresReplicaLoadBalancer.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.services.postgresReplicaLoadBalancer.type }}
+  ports:
+    - name: postgres
+      port: {{ .Values.services.postgresReplicaLoadBalancer.port }}
+      targetPort: postgres
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "postgres-replica") | nindent 4 }}
 {{- end }}

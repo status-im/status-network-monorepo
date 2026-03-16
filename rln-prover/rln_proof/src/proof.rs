@@ -1,22 +1,35 @@
 // std
-// use std::io::Cursor;
+use std::sync::OnceLock;
 // third-party
 use ark_bn254::{Bn254, Fr};
 use ark_groth16::{Proof, ProvingKey};
 use ark_relations::r1cs::ConstraintMatrices;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use prover_pmtree::{Hasher, Value};
 use rln::utils::IdSecret;
 use rln::{
-    circuit::zkey_from_folder,
+    circuit::zkey_from_raw,
     error::ProofError,
     hashers::{hash_to_field_le, poseidon_hash},
-    // poseidon_tree::MerkleProof,
     protocol::{
         RLNProofValues, generate_proof, proof_values_from_witness, rln_witness_from_values,
     },
 };
 use serde::{Deserialize, Serialize};
+
+/// Custom RLN circuit artifacts compiled with LIMIT_BIT_SIZE=20 (supports ~1M message limit).
+/// The default zerokit v0.9.0 ships with LIMIT_BIT_SIZE=16 (max 65,535), which causes
+/// Groth16 verification failure for limits above 65,535.
+const CUSTOM_ARKZKEY_BYTES: &[u8] = include_bytes!("../resources/rln_final.arkzkey");
+
+static CUSTOM_ARKZKEY: OnceLock<(ProvingKey<Bn254>, ConstraintMatrices<Fr>)> = OnceLock::new();
+
+/// Load custom RLN circuit (LIMIT_BIT_SIZE=20) instead of zerokit's built-in (LIMIT_BIT_SIZE=16).
+fn custom_zkey() -> &'static (ProvingKey<Bn254>, ConstraintMatrices<Fr>) {
+    CUSTOM_ARKZKEY.get_or_init(|| {
+        zkey_from_raw(CUSTOM_ARKZKEY_BYTES)
+            .expect("Failed to load custom RLN circuit (LIMIT_BIT_SIZE=20)")
+    })
+}
 // use rln::poseidon_tree::MerkleProof;
 // use zerokit_utils::ZerokitMerkleProof;
 // internal
@@ -73,12 +86,11 @@ pub struct RlnIdentifier {
 
 impl RlnIdentifier {
     pub fn new(identifier: &[u8]) -> Self {
-        // Use zkey_from_folder() to get the proving key and constraints
-        // This uses the built-in circuit data from the rln library
-        let (pk, matrices) = zkey_from_folder();
+        // Use custom circuit with LIMIT_BIT_SIZE=20 (supports ~1M message limit)
+        // instead of zerokit's built-in LIMIT_BIT_SIZE=16 (max 65,535)
+        let (pk, matrices) = custom_zkey();
 
-        // Load the graph.bin file that's compatible with rln 0.9.0
-        // This was copied from rln-0.9.0/resources/tree_depth_20/graph.bin
+        // Load the witness calculation graph compiled for RLN(20, 20)
         let graph_bytes = include_bytes!("../resources/graph.bin");
 
         Self {
@@ -131,32 +143,6 @@ pub fn compute_rln_proof_and_values(
         rln_identifier.graph.as_slice(),
     )?;
     Ok((proof, proof_values))
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct ProverPoseidonHash;
-
-impl Hasher for ProverPoseidonHash {
-    type Fr = Fr;
-
-    fn serialize(value: Self::Fr) -> Value {
-        let mut buffer = vec![];
-        // FIXME: unwrap safe?
-        value.serialize_compressed(&mut buffer).unwrap();
-        buffer
-    }
-
-    fn deserialize(value: Value) -> Self::Fr {
-        // FIXME: unwrap safe?
-        CanonicalDeserialize::deserialize_compressed(value.as_slice()).unwrap()
-    }
-
-    fn default_leaf() -> Self::Fr {
-        Self::Fr::from(0)
-    }
-    fn hash(inputs: &[Self::Fr]) -> Self::Fr {
-        poseidon_hash(inputs)
-    }
 }
 
 #[cfg(test)]

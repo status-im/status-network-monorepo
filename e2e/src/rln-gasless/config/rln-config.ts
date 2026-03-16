@@ -69,13 +69,14 @@ export const RLN_CONFIG = {
   },
 
   // Service URLs
-  // Note: RLN Prover handles both proof generation and karma/deny-list services
+  // Note: RLN Prover is gRPC-only (no REST API). Deny list status is checked
+  // via linea_estimateGas on the RPC node / sequencer.
   services: {
-    rpcUrl: process.env.RPC_URL || "http://localhost:8545",
-    sequencerUrl: process.env.SEQUENCER_URL || "http://localhost:8545",
+    // RPC node (l2-node-besu) has the prover forwarder plugin - user-facing
+    rpcUrl: process.env.RPC_URL || "http://localhost:9045",
+    // Gasless txs go to the RPC node which has the prover forwarder enabled
+    sequencerUrl: process.env.SEQUENCER_URL || "http://localhost:9045",
     rlnProverUrl: process.env.RLN_PROVER_URL || "http://localhost:50051",
-    // karmaServiceUrl points to the same RLN prover (unified service)
-    karmaServiceUrl: process.env.KARMA_SERVICE_URL || "http://localhost:50051",
   },
 
   // Test configuration
@@ -94,10 +95,9 @@ export const RLN_CONFIG = {
   // This is separate from quota tracking - proofs always validate, but quotas reset per epoch.
   test: {
     premiumGasThresholdGwei: 12,
-    premiumGasMultiplier: 1.5,
     // Epoch duration must match prover's --epoch-duration-secs (30s in production test mode)
     // Quotas reset every epoch, enabling epoch boundary tests
-    epochDurationSeconds: getEnvNumber("RLN_EPOCH_DURATION_SECONDS", 30),
+    epochDurationSeconds: getEnvNumber("RLN_EPOCH_DURATION_SECONDS", 60),
     // MEASURED TIMINGS (from benchmarks with fast polling):
     // Timing expectations (2s block time):
     // - Karma mint TX: ~2-4s (submit + mine)
@@ -106,25 +106,25 @@ export const RLN_CONFIG = {
     // - Gasless TX: ~2-4s (proof generation + mining)
     proofTimeoutMs: getEnvNumber("RLN_PROOF_TIMEOUT_MS", 5000),
     // Fixed wait time for prover to register user after karma mint
-    registrationTimeoutMs: getEnvNumber("RLN_REGISTRATION_TIMEOUT_MS", 8000), // 8s fixed wait
+    registrationTimeoutMs: getEnvNumber("RLN_REGISTRATION_TIMEOUT_MS", 30000), // 30s fixed wait for batch registration
     transactionTimeoutMs: getEnvNumber("RLN_TX_TIMEOUT_MS", 40000), // 40s for tx mining (concurrent proof generation can queue up)
     // Wait times for polling operations
     denyListPollIntervalMs: 1000, // 1s between polls
-    // Deny list entries expire via TTL (denyListEntryMaxAgeMinutes=1 = 60s).
+    // Deny list entries are epoch-aligned — cleared when a new epoch starts.
     // Premium gas removes from deny list AND resets epoch counter (quota refresh).
-    // 70s allows for 60s TTL + buffer (still needed for natural TTL expiry tests like GAS_006).
-    maxWaitForDenyListMs: 70000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1), // 70s local, 210s remote (3x)
+    // 65s = epoch duration (60s) + buffer for epoch boundary tests like GAS_006.
+    maxWaitForDenyListMs: 65000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1), // 65s local, 195s remote (3x)
     // Jest test timeouts, scaled by TEST_TIMEOUT_MULTIPLIER for remote testnets
     // Local Docker: TEST_TIMEOUT_MULTIPLIER=1 (default)
     // Remote testnet: TEST_TIMEOUT_MULTIPLIER=3
     timeouts: {
-      singleTx: 15_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
-      multiTx: 45_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
-      denyList: 90_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
-      highVolume: 90_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
-      epoch: 120_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
-      setup: 120_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
-      setupLarge: 180_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      singleTx: 30_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      multiTx: 120_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      denyList: 180_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      highVolume: 180_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      epoch: 240_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      setup: 180_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
+      setupLarge: 480_000 * getEnvNumber("TEST_TIMEOUT_MULTIPLIER", 1),
     },
   },
 

@@ -12,11 +12,10 @@ use rln::utils::IdSecret;
 use tokio::sync::TryAcquireError;
 // internal
 use crate::common::SlashingData;
-use crate::smart_contract::RLN;
 use crate::smart_contract::RLN::RLNInstance;
 
 pub(crate) struct SlashingServiceConfig {
-    pub(crate) rln_sc_address: Address,
+    // pub(crate) rln_sc_address: Address,
     pub(crate) account_to_reward: Address,
     pub(crate) slashing_limit: u64,
 }
@@ -39,9 +38,9 @@ impl SlashingService {
     // #[tracing::instrument(skip(self))]
     pub(crate) async fn serve<P: Provider + Clone + 'static>(
         &mut self,
-        provider: P,
+        rln_sc_: RLNInstance<P>,
     ) -> anyhow::Result<()> {
-        let rln_sc_ = RLN::new(self.config.rln_sc_address, provider);
+        // let rln_sc_ = RLN::new(self.config.rln_sc_address, provider);
 
         loop {
             let res = self.slashing_rx.recv().await;
@@ -71,7 +70,7 @@ impl SlashingService {
                     let _sem_permit = sem_permit;
 
                     if let Err(e) = slash(rln_sc, slashing_data, account_to_reward).await {
-                        error!("e: {}", e);
+                        error!("e: {:#}", e);
                         debug!("account_to_reward: {}", account_to_reward);
                     }
 
@@ -117,6 +116,10 @@ async fn slash<P: Provider>(
 ) -> anyhow::Result<()> {
     let sender = slashing_data.sender;
     let recovered_identity_secret_hash = recover(slashing_data)?;
+    debug!(
+        "recovered secret hash: {:?}",
+        recovered_identity_secret_hash
+    );
     rln_sc
         .slash(sender, recovered_identity_secret_hash, account_to_reward)
         .await
@@ -132,7 +135,7 @@ mod tests {
     use alloy::primitives::address;
     use ark_bn254::Fr;
     use ark_serialize::CanonicalSerialize;
-    use rln::circuit::{Curve, zkey_from_folder};
+    use rln::circuit::{Curve, zkey_from_raw};
     use rln::hashers::{hash_to_field_le, poseidon_hash};
     use rln::poseidon_tree::PoseidonTree;
     use rln::protocol::{
@@ -169,10 +172,9 @@ mod tests {
         let m_proof = tree.proof(0).unwrap();
 
         let (rln_identifier, pk, matrices, graph_bytes) = {
-            // RlnIdentifier::new(b"rln id test");
-            let (pk, matrices) = zkey_from_folder();
-            // Load the graph.bin file that's compatible with rln 0.9.0
-            // This was copied from rln-0.9.0/resources/tree_depth_20/graph.bin
+            // Use custom circuit with LIMIT_BIT_SIZE=20 (supports ~1M message limit)
+            let arkzkey_bytes = include_bytes!("../resources/rln_final.arkzkey");
+            let (pk, matrices) = zkey_from_raw(arkzkey_bytes).expect("Failed to load custom RLN circuit");
             let graph_bytes = include_bytes!("../resources/graph.bin");
 
             (

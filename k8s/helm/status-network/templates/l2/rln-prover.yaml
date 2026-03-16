@@ -54,6 +54,10 @@ spec:
             - "{{ .Values.l2.rlnProver.tiersContract }}"
             - "--registration-min"
             - "{{ .Values.l2.rlnProver.registrationMin | default 1 }}"
+            {{- if .Values.l2.rlnProver.registrationGasPriceGwei }}
+            - "--registration-gas-price-gwei"
+            - "{{ .Values.l2.rlnProver.registrationGasPriceGwei }}"
+            {{- end }}
             {{- else }}
             # Mock mode - use mock smart contract and users
             - "--mock-sc"
@@ -61,12 +65,12 @@ spec:
             - "--mock-user"
             - "/config/mock_users.json"
             {{- end }}
+            - "--spam-limit"
+            - "{{ .Values.l2.rlnProver.spamLimit | default 1000000 }}"
             - "--db"
             - "$(DATABASE_URL)"
             - "--epoch-duration-secs"
             - "{{ .Values.l2.rlnProver.epochDurationSecs }}"
-            - "--epoch-slice-secs"
-            - "{{ .Values.l2.rlnProver.epochSliceSecs }}"
             {{- if .Values.rln.killSwitch.enabled }}
             - "--kill-switch-file"
             - "{{ .Values.rln.killSwitch.filePath }}"

@@ -348,4 +348,24 @@ spec:
       protocol: TCP
   selector:
     {{- include "status-network.componentSelectorLabels" (list . "transaction-exclusion-api") | nindent 4 }}
+
+{{- if .Values.l2.postgresReplica.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-replica
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "postgres-replica") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: {{ .Values.l2.postgresReplica.port }}
+      targetPort: postgres
+      protocol: TCP
+  selector:
+    {{- include "status-network.componentSelectorLabels" (list . "postgres-replica") | nindent 4 }}
+{{- end }}
 {{- end }}

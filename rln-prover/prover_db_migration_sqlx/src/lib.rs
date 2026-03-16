@@ -15,6 +15,7 @@ impl Migrator {
     const UP_0_VERSION: &str = "m20250203_init";
     const UP_1_VERSION: &str = "m20260226_nonce_manager";
     const UP_2_VERSION: &str = "m20260227_quota_bonus";
+    const UP_3_VERSION: &str = "m20260316_deny_list_epoch";
 
     pub async fn up(&self, db: Pool<Postgres>, config: MigrationConfig) -> Result<(), SqlxError> {
         let mut txn = db.begin().await?;
@@ -32,6 +33,10 @@ impl Migrator {
         if !self.migration_exists(&mut *txn, Self::UP_2_VERSION).await? {
             self.up_2(&mut *txn).await?;
             self.migration_add(&mut *txn, Self::UP_2_VERSION).await?;
+        }
+        if !self.migration_exists(&mut *txn, Self::UP_3_VERSION).await? {
+            self.up_3(&mut *txn).await?;
+            self.migration_add(&mut *txn, Self::UP_3_VERSION).await?;
         }
         txn.commit().await?;
         Ok(())
@@ -255,6 +260,20 @@ impl Migrator {
         Ok(())
     }
 
+    async fn up_3(&self, db: &mut PgConnection) -> Result<(), SqlxError> {
+        // Drop expires_at column, add epoch column
+        sqlx::query("ALTER TABLE deny_list DROP COLUMN IF EXISTS expires_at")
+            .execute(&mut *db)
+            .await?;
+        sqlx::query("ALTER TABLE deny_list ADD COLUMN epoch BIGINT NOT NULL DEFAULT 0")
+            .execute(&mut *db)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_deny_list_epoch ON deny_list (epoch)")
+            .execute(&mut *db)
+            .await?;
+        Ok(())
+    }
+
     async fn up_1(&self, db: &mut PgConnection) -> Result<(), SqlxError> {
         sqlx::query(
             r#"
@@ -277,8 +296,8 @@ impl Migrator {
                 user_address BYTEA NOT NULL CHECK (OCTET_LENGTH(user_address) = 20),
                 identity_commitment BYTEA NOT NULL CHECK (OCTET_LENGTH(identity_commitment) = 32),
                 nonce BIGINT NOT NULL,
-                tx_hash BYTEA,
-                status TEXT NOT NULL DEFAULT 'queued',
+                tx_hash BYTEA CHECK (tx_hash IS NULL OR OCTET_LENGTH(tx_hash) = 32),
+                status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'submitted', 'confirmed', 'failed', 'cancelled')),
                 gas_price BIGINT,
                 attempt_count INT NOT NULL DEFAULT 0,
                 max_attempts INT NOT NULL DEFAULT 5,
@@ -312,6 +331,10 @@ impl Migrator {
         self.migrations_init(&mut *txn).await?;
 
         // Down in reverse order
+        if self.migration_exists(&mut *txn, Self::UP_3_VERSION).await? {
+            self.down_3(&mut *txn).await?;
+            self.migration_remove(&mut *txn, Self::UP_3_VERSION).await?;
+        }
         if self.migration_exists(&mut *txn, Self::UP_2_VERSION).await? {
             self.down_2(&mut *txn).await?;
             self.migration_remove(&mut *txn, Self::UP_2_VERSION).await?;
@@ -325,6 +348,19 @@ impl Migrator {
             self.migration_remove(&mut *txn, Self::UP_0_VERSION).await?;
         }
         txn.commit().await?;
+        Ok(())
+    }
+
+    async fn down_3(&self, db: &mut PgConnection) -> Result<(), SqlxError> {
+        sqlx::query("DROP INDEX IF EXISTS idx_deny_list_epoch")
+            .execute(&mut *db)
+            .await?;
+        sqlx::query("ALTER TABLE deny_list DROP COLUMN IF EXISTS epoch")
+            .execute(&mut *db)
+            .await?;
+        sqlx::query("ALTER TABLE deny_list ADD COLUMN expires_at BIGINT")
+            .execute(&mut *db)
+            .await?;
         Ok(())
     }
 

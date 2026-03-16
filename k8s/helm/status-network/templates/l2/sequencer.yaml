@@ -94,12 +94,10 @@ spec:
                 --plugin-linea-rln-karma-service=rln-prover:{{ .Values.l2.rlnProver.ports.grpc }} \
                 --plugin-linea-rln-timeouts-ms={{ .Values.rln.timeoutMs }} \
                 --plugin-linea-rln-proof-wait-timeout-ms={{ .Values.rln.proofWaitTimeoutMs }} \
-                --plugin-linea-rln-epoch-mode={{ .Values.rln.epochMode }} \
                 --plugin-linea-rln-premium-gas-threshold-gwei={{ .Values.rln.premiumGasThresholdGwei }} \
                 --plugin-linea-rpc-gasless-enabled={{ .Values.rln.gasless.enabled }} \
-                --plugin-linea-rpc-rln-prover-forwarder-enabled=true \
+                --plugin-linea-rpc-rln-prover-forwarder-enabled=false \
                 --plugin-linea-rpc-allow-zero-gas-estimation-gasless={{ .Values.rln.gasless.allowZeroGasEstimation }} \
-                --plugin-linea-rpc-premium-gas-multiplier={{ .Values.rln.premiumGasMultiplier }} \
                 {{- if .Values.rln.killSwitch.enabled }}
                 --plugin-linea-gas-kill-switch-file={{ .Values.rln.killSwitch.filePath }} \
                 --plugin-linea-gas-kill-switch-poll-seconds={{ .Values.rln.killSwitch.pollSeconds }} \

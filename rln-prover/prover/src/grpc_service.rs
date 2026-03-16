@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::num::NonZeroU64;
 use std::sync::Arc;
-use std::time::{Duration, Instant, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 // third-party
 use alloy::{primitives::Address, providers::Provider};
 use async_channel::Sender;
@@ -43,7 +43,7 @@ pub mod prover_proto {
 }
 use crate::user_db_2::{UserDb2, UserTierInfo2};
 use crate::user_db_error::UserTierInfoError2;
-use crate::user_db_types::RateLimit;
+use crate::user_db_types::{QuotaBonus, RateLimit};
 use prover_proto::{
     // Deny list messages
     AddToDenyListReply,
@@ -403,7 +403,7 @@ where
             return Err(Status::invalid_argument("No address provided"));
         };
 
-        match self.user_db.is_denied(&address, &now).await {
+        match self.user_db.is_denied(&address).await {
             Ok(is_denied) => Ok(Response::new(IsDeniedReply { is_denied })),
             Err(e) => {
                 error!("Failed to check deny list: {:?}", e);
@@ -430,11 +430,7 @@ where
             return Err(Status::invalid_argument("No address provided"));
         };
 
-        match self
-            .user_db
-            .add_to_deny_list(&address, req.reason, req.ttl_seconds, &now)
-            .await
-        {
+        match self.user_db.add_to_deny_list(&address, req.reason).await {
             Ok(was_new) => {
                 info!(
                     "Address {} {} to deny list",
@@ -483,18 +479,18 @@ where
                 // Resetting the counter would cause nullifier collisions since message_id
                 // is derived from the counter. Instead, we increase the effective quota.
                 if req.reset_epoch_counter.unwrap_or(false) {
-                    let bonus = match self
+                    let bonus: QuotaBonus = match self
                         .user_db
                         .get_user_tier_tx_limit(&address, &self.karma_sc)
                         .await
                     {
-                        Ok(limit) => limit as i64,
+                        Ok(limit) => QuotaBonus::from(limit as i64),
                         Err(e) => {
                             warn!(
                                 "Failed to fetch tier limit for {}: {:?}. Using 0 bonus.",
                                 address, e
                             );
-                            0
+                            QuotaBonus::default()
                         }
                     };
                     if let Err(e) = self.user_db.add_quota_bonus(&address, bonus).await {
@@ -502,7 +498,7 @@ where
                         return Err(Status::internal(format!("Failed to add quota bonus: {e}")));
                     }
                     info!(
-                        "Quota bonus {} added for {} (premium gas payment)",
+                        "Quota bonus {:?} added for {} (premium gas payment)",
                         bonus, address
                     );
                 }
@@ -537,13 +533,13 @@ where
             return Err(Status::invalid_argument("No address provided"));
         };
 
-        match self.user_db.get_deny_list_entry(&address, &now).await {
+        match self.user_db.get_deny_list_entry(&address).await {
             Ok(Some(entry)) => Ok(Response::new(GetDenyListEntryReply {
                 resp: Some(DenyListResp::Entry(DenyListEntry {
                     address: Address::from_slice(entry.address.as_slice()).to_string(),
                     denied_at: entry.denied_at.unwrap_or(0),
-                    expires_at: entry.expires_at,
                     reason: None, // Not stored for performance
+                    epoch: entry.epoch,
                 })),
             })),
             Ok(None) => Ok(Response::new(GetDenyListEntryReply {
@@ -964,10 +960,4 @@ where
             message: value.to_string(),
         }
     }
-}
-
-fn now() -> Duration {
-    std::time::SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Clock may have gone backwards") // assume this will never happen on our servers
 }

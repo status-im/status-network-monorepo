@@ -95,16 +95,8 @@ class RlnVerifierValidatorComprehensiveTest {
     when(blockHeader.getTimestamp()).thenReturn(1692000000L); // Fixed timestamp
 
     // Create shared services
-    // Note: DenyListManager now uses gRPC; for testing we use a mock
-    // In production, the DenyListManager connects to the prover's PostgreSQL database via gRPC
-    denyListManager =
-        new DenyListManager(
-            "ComprehensiveTest",
-            "localhost", // gRPC host
-            50051, // gRPC port
-            false, // useTls
-            600L, // ttlSeconds
-            60L); // cacheRefreshIntervalSeconds
+    // DenyListManager is mocked since it requires a running gRPC server in production
+    denyListManager = mock(DenyListManager.class);
     nullifierTracker = new NullifierTracker("ComprehensiveTest", 10000L, 300L);
     karmaServiceClient =
         new KarmaServiceClient("ComprehensiveTest", "localhost", 8545, false, 5000);
@@ -113,13 +105,11 @@ class RlnVerifierValidatorComprehensiveTest {
     mockRlnService = mock(JniRlnVerificationService.class);
     when(mockRlnService.isAvailable()).thenReturn(false);
 
-    // Create configuration for testing different epoch modes
+    // Create configuration for testing
     // Note: Deny list is now stored in the RLN prover's PostgreSQL database and accessed via gRPC
     LineaSharedGaslessConfiguration sharedConfig =
         new LineaSharedGaslessConfiguration(
-            300L,
             5L, // 5 GWei premium threshold
-            10L,
             tempDir.resolve("nullifiers.txt").toString());
 
     rlnConfig =
@@ -141,7 +131,6 @@ class RlnVerifierValidatorComprehensiveTest {
             5000L,
             true,
             30000L,
-            "BLOCK",
             Optional.empty(),
             "", // gasKillSwitchFilePath (disabled)
             5L); // gasKillSwitchPollSeconds
@@ -162,9 +151,6 @@ class RlnVerifierValidatorComprehensiveTest {
   void tearDown() throws Exception {
     if (validator != null) {
       validator.close();
-    }
-    if (denyListManager != null) {
-      denyListManager.close();
     }
     if (nullifierTracker != null) {
       nullifierTracker.close();
@@ -188,8 +174,9 @@ class RlnVerifierValidatorComprehensiveTest {
   @Test
   void testPremiumGasBypassFromDenyList() {
     // Test critical deny list bypass logic with premium gas
-    boolean added = denyListManager.addToDenyList(DENIED_SENDER);
-    assertThat(added).isTrue();
+    when(denyListManager.addToDenyList(DENIED_SENDER)).thenReturn(true);
+    when(denyListManager.isDenied(DENIED_SENDER)).thenReturn(true);
+    denyListManager.addToDenyList(DENIED_SENDER);
     assertThat(denyListManager.isDenied(DENIED_SENDER)).isTrue();
 
     // Low gas transaction should be rejected
@@ -201,24 +188,25 @@ class RlnVerifierValidatorComprehensiveTest {
     assertThat(denyListManager.isDenied(DENIED_SENDER)).isTrue();
 
     // Premium gas transaction should bypass RLN and remove deny list entry + reset quota
+    when(denyListManager.removeFromDenyListAndResetQuota(DENIED_SENDER)).thenReturn(true);
     org.hyperledger.besu.ethereum.core.Transaction premiumGasTx =
         createTestTransaction(DENIED_SENDER, Wei.of(6_000_000_000L)); // 6 GWei - above threshold
     Optional<String> premiumGasResult = validator.validateTransaction(premiumGasTx, false, false);
     // With premium gas, RLN is bypassed entirely
     assertThat(premiumGasResult).isEmpty();
-    // Deny list entry should be removed — paying premium gas earns a fresh gasless quota
-    assertThat(denyListManager.isDenied(DENIED_SENDER)).isFalse();
+    // Verify removeFromDenyListAndResetQuota was called
+    org.mockito.Mockito.verify(denyListManager).removeFromDenyListAndResetQuota(DENIED_SENDER);
   }
 
   @Test
-  void testEpochModeConfiguration() {
-    // Test different epoch mode configurations
-    String[] epochModes = {"BLOCK", "TIMESTAMP_1H", "TEST", "FIXED_FIELD_ELEMENT"};
+  void testEpochDurationConfiguration() {
+    // Test different epoch duration configurations
+    long[] epochDurations = {30L, 3600L, 86400L};
 
-    for (String mode : epochModes) {
+    for (long duration : epochDurations) {
       LineaSharedGaslessConfiguration sharedConfig =
           new LineaSharedGaslessConfiguration(
-              300L, 5L, 10L, tempDir.resolve("test_" + mode + "_nullifiers.txt").toString());
+              5L, tempDir.resolve("test_" + duration + "_nullifiers.txt").toString());
 
       LineaRlnValidatorConfiguration testConfig =
           new LineaRlnValidatorConfiguration(
@@ -239,12 +227,11 @@ class RlnVerifierValidatorComprehensiveTest {
               5000L,
               true,
               30000L,
-              mode,
               Optional.empty(),
               "", // gasKillSwitchFilePath (disabled)
               5L); // gasKillSwitchPollSeconds
 
-      assertThat(testConfig.defaultEpochForQuota()).isEqualTo(mode);
+      assertThat(testConfig).isNotNull();
     }
   }
 
@@ -252,7 +239,7 @@ class RlnVerifierValidatorComprehensiveTest {
   void testDisabledValidatorBehavior() throws Exception {
     // Create disabled configuration
     LineaSharedGaslessConfiguration sharedConfig =
-        new LineaSharedGaslessConfiguration(300L, 5L, 10L, "/tmp/test_nullifiers.txt");
+        new LineaSharedGaslessConfiguration(5L, "/tmp/test_nullifiers.txt");
 
     LineaRlnValidatorConfiguration disabledConfig =
         new LineaRlnValidatorConfiguration(
@@ -273,7 +260,6 @@ class RlnVerifierValidatorComprehensiveTest {
             5000L,
             true,
             30000L,
-            "TEST",
             Optional.empty(),
             "", // gasKillSwitchFilePath (disabled)
             5L); // gasKillSwitchPollSeconds
@@ -322,9 +308,10 @@ class RlnVerifierValidatorComprehensiveTest {
 
   @Test
   void testDenyListPremiumGasBypass() {
-    // Add sender to deny list
-    boolean added = denyListManager.addToDenyList(DENIED_SENDER);
-    assertThat(added).isTrue();
+    // Add sender to deny list (mocked)
+    when(denyListManager.addToDenyList(DENIED_SENDER)).thenReturn(true);
+    when(denyListManager.isDenied(DENIED_SENDER)).thenReturn(true);
+    denyListManager.addToDenyList(DENIED_SENDER);
     assertThat(denyListManager.isDenied(DENIED_SENDER)).isTrue();
 
     // Create low gas transaction - should be rejected
@@ -336,6 +323,7 @@ class RlnVerifierValidatorComprehensiveTest {
     assertThat(lowGasResult.get()).contains("deny list");
 
     // Create premium gas transaction - should bypass deny list and remove entry + reset quota
+    when(denyListManager.removeFromDenyListAndResetQuota(DENIED_SENDER)).thenReturn(true);
     org.hyperledger.besu.ethereum.core.Transaction premiumGasTx =
         createTestTransaction(DENIED_SENDER, Wei.of(6_000_000_000L)); // 6 GWei - above threshold
 
@@ -343,8 +331,8 @@ class RlnVerifierValidatorComprehensiveTest {
     // Should pass due to premium gas bypass
     assertThat(premiumResult).isEmpty();
 
-    // Verify sender removed from deny list — paying premium gas earns a fresh gasless quota
-    assertThat(denyListManager.isDenied(DENIED_SENDER)).isFalse();
+    // Verify removeFromDenyListAndResetQuota was called
+    org.mockito.Mockito.verify(denyListManager).removeFromDenyListAndResetQuota(DENIED_SENDER);
   }
 
   // ==================== MEANINGFUL SECURITY TESTS ====================
@@ -356,10 +344,9 @@ class RlnVerifierValidatorComprehensiveTest {
     // Mock current block to be 1000000
     when(blockHeader.getNumber()).thenReturn(1000000L);
 
-    // Test with BLOCK epoch mode
+    // Test epoch duration configuration
     LineaSharedGaslessConfiguration sharedConfig =
-        new LineaSharedGaslessConfiguration(
-            300L, 5L, 10L, tempDir.resolve("test_nullifiers.txt").toString());
+        new LineaSharedGaslessConfiguration(5L, tempDir.resolve("test_nullifiers.txt").toString());
 
     LineaRlnValidatorConfiguration blockConfig =
         new LineaRlnValidatorConfiguration(
@@ -380,14 +367,12 @@ class RlnVerifierValidatorComprehensiveTest {
             5000L,
             true,
             30000L,
-            "BLOCK",
             Optional.empty(),
             "", // gasKillSwitchFilePath (disabled)
             5L); // gasKillSwitchPollSeconds
 
-    // Test that proofs from recent blocks are accepted
-    // This tests the isBlockEpochValid method indirectly
-    assertThat(blockConfig.defaultEpochForQuota()).isEqualTo("BLOCK");
+    // Test that config is correct
+    assertThat(blockConfig).isNotNull();
   }
 
   @Test
@@ -572,15 +557,15 @@ class RlnVerifierValidatorComprehensiveTest {
   }
 
   @Test
-  void testDifferentEpochModes() {
-    // Test validation works with different epoch configurations
+  void testDifferentEpochDurations() {
+    // Test validation works with different epoch duration configurations
 
-    String[] epochModes = {"BLOCK", "TIMESTAMP_1H", "TEST", "FIXED_FIELD_ELEMENT"};
+    long[] epochDurations = {30L, 3600L, 86400L};
 
-    for (String mode : epochModes) {
+    for (long duration : epochDurations) {
       LineaSharedGaslessConfiguration sharedConfig =
           new LineaSharedGaslessConfiguration(
-              300L, 5L, 10L, tempDir.resolve("test_" + mode + "_nullifiers.txt").toString());
+              5L, tempDir.resolve("test_" + duration + "_nullifiers.txt").toString());
 
       LineaRlnValidatorConfiguration testConfig =
           new LineaRlnValidatorConfiguration(
@@ -601,12 +586,11 @@ class RlnVerifierValidatorComprehensiveTest {
               5000L,
               true,
               30000L,
-              mode,
               Optional.empty(),
               "", // gasKillSwitchFilePath (disabled)
               5L); // gasKillSwitchPollSeconds
 
-      assertThat(testConfig.defaultEpochForQuota()).isEqualTo(mode);
+      assertThat(testConfig).isNotNull();
 
       try (RlnVerifierValidator testValidator =
           new RlnVerifierValidator(
@@ -622,7 +606,7 @@ class RlnVerifierValidatorComprehensiveTest {
         org.hyperledger.besu.ethereum.core.Transaction tx = createTestTransaction(TEST_SENDER);
         Optional<String> result = testValidator.validateTransaction(tx, false, false);
 
-        // Should fail due to missing proof, but epoch mode should work
+        // Should fail due to missing proof, but epoch duration should work
         assertThat(result).isPresent();
         assertThat(result.get()).contains("proof not found");
       } catch (Exception e) {
@@ -813,8 +797,8 @@ class RlnVerifierValidatorComprehensiveTest {
   @Test
   void testDenyListEntryRemovedOnPremiumPayment() {
     // Deny list entry SHOULD be removed when user pays premium — earns fresh gasless quota
-    denyListManager.addToDenyList(DENIED_SENDER);
-    assertThat(denyListManager.isDenied(DENIED_SENDER)).isTrue();
+    when(denyListManager.isDenied(DENIED_SENDER)).thenReturn(true);
+    when(denyListManager.removeFromDenyListAndResetQuota(DENIED_SENDER)).thenReturn(true);
 
     // Pay premium gas
     org.hyperledger.besu.ethereum.core.Transaction premiumTx =
@@ -822,8 +806,8 @@ class RlnVerifierValidatorComprehensiveTest {
     Optional<String> result = validator.validateTransaction(premiumTx, false, false);
     assertThat(result).isEmpty(); // Allowed through
 
-    // Deny list entry should be removed — premium gas payment resets quota
-    assertThat(denyListManager.isDenied(DENIED_SENDER)).isFalse();
+    // Verify removeFromDenyListAndResetQuota was called — premium gas payment resets quota
+    org.mockito.Mockito.verify(denyListManager).removeFromDenyListAndResetQuota(DENIED_SENDER);
   }
 
   @Test

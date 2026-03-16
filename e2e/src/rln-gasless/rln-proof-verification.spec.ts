@@ -81,12 +81,7 @@ describe("RLN Proof Verification", () => {
     admin = new ethers.Wallet(RLN_CONFIG.accounts.admin, rpcProvider);
     contracts = loadRlnContracts(rpcProvider, admin);
 
-    rlnClient = new RlnTestClient(
-      rpcProvider,
-      sequencerProvider,
-      RLN_CONFIG.services.rpcUrl,
-      RLN_CONFIG.services.karmaServiceUrl,
-    );
+    rlnClient = new RlnTestClient(rpcProvider, sequencerProvider, RLN_CONFIG.services.rpcUrl);
 
     karmaManager = new KarmaTestManager(contracts.karma, contracts.rln, admin, rlnClient);
     logMonitor = new DockerLogMonitor();

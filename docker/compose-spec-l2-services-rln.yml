@@ -35,7 +35,7 @@ services:
   rln-prover:
     hostname: rln-prover
     container_name: rln-prover
-    image: status-network-rln-prover:v1.0.2
+    image: status-network-rln-prover:20260316184033-gasless-fix
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo", "rln" ]
     ports:
       - "50051:50051"
@@ -44,10 +44,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["--no-config", "--ip", "0.0.0.0", "--port", "50051", "--mock-sc", "true", "--mock-user", "/app/mock_users.json", "--db", "postgres://postgres:postgres@postgres:5432/prover_db", "--epoch-duration-secs", "30", "--epoch-slice-secs", "10"]
+    command: ${RLN_PROVER_CMD:---no-config --ip 0.0.0.0 --port 50051 --mock-sc true --mock-user /app/mock_users.json --db postgres://postgres:postgres@postgres:5432/prover_db --epoch-duration-secs 60 --registration-gas-price-gwei 12}
     environment:
       RUST_LOG: "${RUST_LOG:-debug}"
       DATABASE_URL: "postgres://postgres:postgres@postgres:5432/prover_db"
+      PRIVATE_KEY: "${RLN_PROVER_PRIVATE_KEY:-}"
     volumes:
       - local-dev:/app/data
       - ./config/rln-prover/mock_users.json:/app/mock_users.json:ro
@@ -91,7 +92,7 @@ services:
   sequencer:
     hostname: sequencer
     container_name: sequencer
-    image: status-network-besu:20260223024755-v1.0.3
+    image: status-network-besu:20260316184033-gasless-fix
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     ports:
       - "8545:8545"
@@ -132,12 +133,10 @@ services:
           --plugin-linea-rln-karma-service=rln-prover:50051 \
           --plugin-linea-rln-timeouts-ms=10000 \
           --plugin-linea-rln-proof-wait-timeout-ms=10000 \
-          --plugin-linea-rln-epoch-mode=TEST \
           --plugin-linea-rln-premium-gas-threshold-gwei=12 \
           --plugin-linea-rpc-gasless-enabled=true \
-          --plugin-linea-rpc-rln-prover-forwarder-enabled=true \
+          --plugin-linea-rpc-rln-prover-forwarder-enabled=false \
           --plugin-linea-rpc-allow-zero-gas-estimation-gasless=true \
-          --plugin-linea-rpc-premium-gas-multiplier=1.5 \
           --plugin-linea-min-margin=0 \
           --plugin-linea-tx-pool-min-margin=0 \
           --plugin-linea-tx-pool-profitability-check-api-enabled=false \
@@ -201,7 +200,7 @@ services:
   l2-node-besu:
     hostname: l2-node-besu
     container_name: l2-node-besu
-    image: status-network-besu:20260223024755-v1.0.3
+    image: status-network-besu:20260316184033-gasless-fix
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     depends_on:
       sequencer:
@@ -240,13 +239,11 @@ services:
           --plugin-linea-rln-proof-service=rln-prover:50051 \
           --plugin-linea-rln-karma-service=rln-prover:50051 \
           --plugin-linea-rln-timeouts-ms=5000 \
-          --plugin-linea-rln-epoch-mode=TEST \
           --plugin-linea-rln-premium-gas-threshold-gwei=12 \
           --tx-pool-min-gas-price=0 \
           --plugin-linea-rpc-gasless-enabled=true \
           --plugin-linea-rpc-rln-prover-forwarder-enabled=true \
           --plugin-linea-rpc-allow-zero-gas-estimation-gasless=true \
-          --plugin-linea-rpc-premium-gas-multiplier=1.5 \
           --plugin-linea-estimate-gas-compatibility-mode-enabled=true \
           --plugin-linea-estimate-gas-compatibility-mode-multiplier=1.2 \
           --plugin-linea-gas-kill-switch-file=/var/lib/besu/kill-switch/gas-kill-switch
@@ -267,7 +264,7 @@ services:
   l2-node-besu-follower:
     hostname: l2-node-besu-follower
     container_name: l2-node-besu-follower
-    image: status-network-besu:20260222235101-gasless-fix
+    image: status-network-besu:20260316184033-gasless-fix
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     depends_on:
       sequencer:
@@ -306,13 +303,11 @@ services:
           --plugin-linea-rln-proof-service=rln-prover:50051 \
           --plugin-linea-rln-karma-service=rln-prover:50051 \
           --plugin-linea-rln-timeouts-ms=5000 \
-          --plugin-linea-rln-epoch-mode=TEST \
           --plugin-linea-rln-premium-gas-threshold-gwei=12 \
           --tx-pool-min-gas-price=0 \
           --plugin-linea-rpc-gasless-enabled=true \
           --plugin-linea-rpc-rln-prover-forwarder-enabled=true \
           --plugin-linea-rpc-allow-zero-gas-estimation-gasless=true \
-          --plugin-linea-rpc-premium-gas-multiplier=1.5 \
           --plugin-linea-estimate-gas-compatibility-mode-enabled=true \
           --plugin-linea-estimate-gas-compatibility-mode-multiplier=1.2 \
           --plugin-linea-gas-kill-switch-file=/var/lib/besu/kill-switch/gas-kill-switch

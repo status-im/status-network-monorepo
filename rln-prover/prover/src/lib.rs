@@ -72,7 +72,7 @@ use crate::user_db_error::{RegisterError2, UserDb2OpenError};
 use crate::user_db_service::UserDbService;
 use crate::user_db_types::RateLimit;
 use rln_proof::RlnIdentifier;
-use smart_contract::{KarmaRLNSC, KarmaTiers::KarmaTiersInstance, KarmaTiersError, TIER_LIMITS};
+use smart_contract::{KarmaTiers::KarmaTiersInstance, KarmaTiersError, RLN, TIER_LIMITS};
 
 pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
     // Epoch service with configurable epoch and slice duration
@@ -81,16 +81,15 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
     use crate::epoch_service::EpochServiceConfig;
 
     let epoch_duration = Duration::from_secs(app_args.epoch_duration_secs);
-    let epoch_slice_duration = Duration::from_secs(app_args.epoch_slice_secs);
 
     info!(
-        "Starting epoch service: epoch_duration={}s, epoch_slice_duration={}s",
-        app_args.epoch_duration_secs, app_args.epoch_slice_secs
+        "Starting epoch service: epoch_duration={}s",
+        app_args.epoch_duration_secs
     );
 
     let epoch_config = EpochServiceConfig::with_epoch_duration(
         epoch_duration,
-        epoch_slice_duration,
+        Duration::from_secs(10), // default value - unused
         ARGS_DEFAULT_GENESIS,
     );
     let epoch_service =
@@ -205,15 +204,19 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
             );
 
             let user_db = user_db_service.get_user_db();
-            if let Err(e) = user_db.on_new_user(&mock_user.address).await {
-                match e {
+            match user_db.on_new_user(&mock_user.address).await {
+                Ok(id_co) => debug!(
+                    "id_commitment: {} for address: {}",
+                    id_co, mock_user.address
+                ),
+                Err(e) => match e {
                     RegisterError2::AlreadyRegistered(_) => {
                         debug!("User {} already registered", mock_user.address);
                     }
                     _ => {
                         return Err(AppError2::from(e));
                     }
-                }
+                },
             }
             user_db
                 .on_new_tx(&mock_user.address, Some(mock_user.tx_count))
@@ -323,7 +326,7 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
         let pws = provider_with_signer.unwrap();
 
         // Set up nonce manager and managed RLN register
-        let rln_sc_instance = KarmaRLNSC::new(app_args.rlnsc_address.unwrap(), pws.clone());
+        let rln_sc_instance = RLN::new(app_args.rlnsc_address.unwrap(), pws.clone());
 
         let nonce_config = {
             let mut cfg = NonceManagerConfig::default();
@@ -385,9 +388,8 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
         set.spawn(async move { prover_grpc_service.serve_with_mock().await });
     }
 
-    // TODO: Add periodic cleanup task for nullifiers and deny list entries.
-    // Methods cleanup_old_nullifiers() and cleanup_expired_deny_list_entries()
-    // need to be implemented on UserDb2 first.
+    // TODO: Add periodic cleanup task for nullifiers.
+    // Deny list entries are epoch-aligned and cleared via clear_deny_list() on epoch change.
 
     let res = set.join_all().await;
     // Print all errors from services (if any)

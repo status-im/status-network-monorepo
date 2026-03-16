@@ -9,7 +9,7 @@ crate-type = ["cdylib"] # Essential for JNI shared library
 [dependencies]
 jni = "0.21.1"
 hex = "0.4"
-rln = { git = "https://github.com/vacp2p/zerokit.git" }
+rln = { version = "0.9.0", default-features = false, features = ["pmtree-ft"] }
 
 ark-bn254 = { version = "0.5.0", features = ["std"] }
 ark-groth16 = { version = "0.5.0", default-features = false, features = ["parallel"] }

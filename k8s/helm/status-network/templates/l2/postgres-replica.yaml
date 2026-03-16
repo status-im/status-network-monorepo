@@ -1,0 +1,217 @@
+{{- if and .Values.l2.enabled .Values.l2.postgresReplica.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-replica
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "postgres-replica") | nindent 4 }}
+spec:
+  replicas: {{ .Values.l2.postgresReplica.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "status-network.componentSelectorLabels" (list . "postgres-replica") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "status-network.componentSelectorLabels" (list . "postgres-replica") | nindent 8 }}
+    spec:
+      initContainers:
+        - name: wait-for-rln-tables
+          image: {{ .Values.l2.postgresReplica.image }}
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for primary postgres and rln-prover tables..."
+              MAX_RETRIES=120
+              for i in $(seq 1 $MAX_RETRIES); do
+                if pg_isready -h postgres -p {{ .Values.l2.postgres.port }} -U "$POSTGRES_USER" >/dev/null 2>&1; then
+                  if psql -h postgres -p {{ .Values.l2.postgres.port }} -U "$POSTGRES_USER" -d prover_db -c "SELECT 'tx_counter'::regclass;" >/dev/null 2>&1; then
+                    echo "Primary is ready and tx_counter table exists."
+                    exit 0
+                  else
+                    echo "Primary is up but tx_counter table not yet created ($i/$MAX_RETRIES)..."
+                  fi
+                else
+                  echo "Primary postgres not ready ($i/$MAX_RETRIES)..."
+                fi
+                sleep 5
+              done
+              echo "ERROR: Timed out waiting for primary postgres tables."
+              exit 1
+        - name: setup-publication
+          image: {{ .Values.l2.postgresReplica.image }}
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+          command:
+            - sh
+            - -c
+            - |
+              echo "Adding tables to rln_publication on primary..."
+              psql -h postgres -p {{ .Values.l2.postgres.port }} -U "$POSTGRES_USER" -d prover_db -c \
+                "ALTER PUBLICATION rln_publication ADD TABLE tx_counter, deny_list;" 2>/dev/null || \
+                echo "Tables may already be in publication (OK)"
+              echo "Publication setup complete."
+      containers:
+        - name: postgres-replica
+          image: {{ .Values.l2.postgresReplica.image }}
+          args: ["-c", "config_file=/etc/postgresql/postgresql.conf"]
+          ports:
+            - name: postgres
+              containerPort: {{ .Values.l2.postgresReplica.port }}
+              protocol: TCP
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: PGDATA
+              value: /data/pgdata
+          volumeMounts:
+            - name: postgres-replica-data
+              mountPath: /data
+            - name: replica-init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+            - name: replica-config
+              mountPath: /etc/postgresql
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - $(POSTGRES_USER)
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - $(POSTGRES_USER)
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            {{- toYaml .Values.l2.postgresReplica.resources | nindent 12 }}
+      volumes:
+        - name: postgres-replica-data
+          persistentVolumeClaim:
+            claimName: postgres-replica-data
+        - name: replica-init-scripts
+          configMap:
+            name: postgres-replica-init-scripts
+        - name: replica-config
+          configMap:
+            name: postgres-replica-config
+      {{- include "status-network.nodeSelector" . | nindent 6 }}
+      {{- include "status-network.tolerations" . | nindent 6 }}
+      {{- include "status-network.affinity" . | nindent 6 }}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-replica-init-scripts
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "postgres-replica") | nindent 4 }}
+data:
+  init-replica.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "Creating prover_db database on replica..."
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "postgres" <<-EOSQL
+        SELECT 'CREATE DATABASE prover_db'
+        WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'prover_db')\gexec
+    EOSQL
+
+    echo "Creating table schemas in prover_db..."
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "prover_db" <<-EOSQL
+        CREATE TABLE IF NOT EXISTS tx_counter (
+            id BIGSERIAL NOT NULL PRIMARY KEY,
+            address TEXT UNIQUE,
+            epoch BIGINT DEFAULT 0,
+            epoch_counter BIGINT DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS deny_list (
+            address CHAR(42) NOT NULL PRIMARY KEY,
+            denied_at BIGINT,
+            epoch BIGINT NOT NULL DEFAULT 0
+        );
+    EOSQL
+
+    echo "Creating read-only user..."
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "prover_db" <<-EOSQL
+        DO \$\$
+        BEGIN
+            IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '{{ .Values.l2.postgresReplica.readonlyCredentials.username }}') THEN
+                CREATE ROLE {{ .Values.l2.postgresReplica.readonlyCredentials.username }} WITH LOGIN PASSWORD '{{ .Values.l2.postgresReplica.readonlyCredentials.password }}';
+            END IF;
+        END
+        \$\$;
+        GRANT CONNECT ON DATABASE prover_db TO {{ .Values.l2.postgresReplica.readonlyCredentials.username }};
+        GRANT USAGE ON SCHEMA public TO {{ .Values.l2.postgresReplica.readonlyCredentials.username }};
+        GRANT SELECT ON ALL TABLES IN SCHEMA public TO {{ .Values.l2.postgresReplica.readonlyCredentials.username }};
+        ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO {{ .Values.l2.postgresReplica.readonlyCredentials.username }};
+        ALTER ROLE {{ .Values.l2.postgresReplica.readonlyCredentials.username }} SET default_transaction_read_only = on;
+    EOSQL
+
+    echo "Creating subscription to primary..."
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "prover_db" <<-EOSQL
+        CREATE SUBSCRIPTION rln_subscription
+            CONNECTION 'host=postgres port={{ .Values.l2.postgres.port }} user=$POSTGRES_USER password=$POSTGRES_PASSWORD dbname=prover_db'
+            PUBLICATION rln_publication;
+    EOSQL
+
+    echo "Replica initialization complete."
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-replica-config
+  namespace: {{ include "status-network.namespace" . }}
+  labels:
+    {{- include "status-network.componentLabels" (list . "postgres-replica") | nindent 4 }}
+data:
+  postgresql.conf: |
+    # Connection settings
+    listen_addresses = '*'
+    max_connections = 200
+
+    # Memory
+    shared_buffers = 128MB
+    dynamic_shared_memory_type = posix
+{{- end }}

@@ -1,9 +1,11 @@
-use crate::karma_tiers::Tier;
-use crate::{KarmaAmountExt, RLNRegister};
+use std::sync::LazyLock;
+// third-party
 use alloy::primitives::{Address, U256};
 use async_trait::async_trait;
-use log::debug;
-use std::sync::LazyLock;
+use tracing::debug;
+// internal
+use crate::karma_tiers::Tier;
+use crate::{KarmaAmountExt, RLNRegister};
 
 pub struct MockKarmaSc {}
 

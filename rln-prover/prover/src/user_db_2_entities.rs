@@ -7,6 +7,7 @@ use sqlx::{Decode, Encode, Postgres, Type};
 use std::sync::OnceLock;
 // internal
 use crate::tier::TierLimits;
+use crate::user_db_types::QuotaBonus;
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct UserIdSqlx {
@@ -35,7 +36,7 @@ pub struct TxCounterSqlx {
     pub address: Vec<u8>, // unique
     pub epoch: i64,
     pub epoch_counter: i64,
-    pub quota_bonus: i64,
+    pub quota_bonus: QuotaBonus,
 }
 
 #[derive(sqlx::FromRow)]
@@ -49,8 +50,8 @@ pub struct MerkleTreeConfigSqlx {
 #[derive(sqlx::FromRow, Debug)]
 pub struct DenyListSqlx {
     pub address: Vec<u8>, // unique
-    pub expires_at: Option<i64>,
     pub denied_at: Option<i64>,
+    pub epoch: i64,
 }
 
 #[derive(sqlx::FromRow)]

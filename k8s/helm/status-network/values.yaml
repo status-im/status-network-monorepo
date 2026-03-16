@@ -13,7 +13,7 @@ global:
 images:
   besu: hyperledger/besu:25.2.1
   besuPackage: consensys/linea-besu-package:beta-v4.4-rc7-20251202165721-14b8f4c
-  statusBesu: 0xnadeem/status-network-besu:v1.1.0
+  statusBesu: 0xnadeem/status-network-besu:v1.1.1
   teku: consensys/teku:25.11.0-jdk24
   genesisGenerator: ethpandaops/ethereum-genesis-generator:5.1.0
   maru: consensys/maru:v1.0.0-20260108114606-36f5e2f
@@ -22,7 +22,7 @@ images:
   postman: consensys/linea-postman:19735ce
   web3signer: consensys/web3signer:develop
   txExclusionApi: consensys/linea-transaction-exclusion-api:8a0bcc8
-  rlnProver: 0xnadeem/status-network-rln-prover:v1.1.0
+  rlnProver: 0xnadeem/status-network-rln-prover:v1.1.1
   postgres: 0xnadeem/status-network-postgres:v1.0.2
   prover: consensys/linea-prover:56c4809
   busybox: busybox:latest
@@ -61,17 +61,12 @@ rln:
   # Minimum balance required to be a member and send gasless transactions
   # Set to 1 karma (1e18 wei = 1 token). Users need at least 1 karma.
   minMembershipBalance: "1000000000000000000"
-  # Epoch mode: TEST (30s), TIMESTAMP_1H (1 hour)
-  # For production with 24-hour epochs, use TIMESTAMP_1H and configure prover accordingly
-  epochMode: "TEST"
   # RLN prover timeout in milliseconds
   timeoutMs: 10000
   # Proof wait timeout in milliseconds
   proofWaitTimeoutMs: 10000
   # Premium gas threshold in Gwei (transactions above this bypass RLN checks)
   premiumGasThresholdGwei: 12
-  # Premium gas multiplier for users on deny list
-  premiumGasMultiplier: "1.5"
   # Gasless transaction settings
   gasless:
     enabled: true
@@ -192,12 +187,16 @@ l2:
     rlnContract: "0x5C95Bcd50E6D1B4E3CDC478484C9030Ff0a7D493"
     tiersContract: "0x729409FAD88CafdA895E41f9ED00Ef4094F8d130"
     registrationMin: 1
+    # Max message_id allowed in RLN ZK proofs. Circuit constraint: max 1048575 (2^20 - 1).
+    # Custom RLN circuit uses Num2Bits(20) for range checks.
+    spamLimit: 1000000
+    # Gas price in gwei for register() transactions (0 = use default)
+    registrationGasPriceGwei: 0
     # Private key for RLN prover (has REGISTER_ROLE on RLN contract)
     # Only needed in production mode. Provide via values-secrets.yaml.
     privateKey: ""
     # Epoch configuration for testing
     epochDurationSecs: 30
-    epochSliceSecs: 10
 
   sequencer:
     enabled: true
@@ -390,6 +389,25 @@ l2:
         memory: 512Mi
     port: 8082
 
+  # Read-only postgres replica with logical replication from primary
+  postgresReplica:
+    enabled: false
+    replicas: 1
+    image: postgres:16
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    storage:
+      size: 5Gi
+    port: 5432
+    readonlyCredentials:
+      username: readonly_user
+      password: readonly_pass
+
 # Prover configuration (dummy dev-mode prover as coordinator sidecar)
 prover:
   enabled: false
@@ -429,6 +447,15 @@ services:
     enabled: false
     type: LoadBalancer
     port: 8545
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+
+  # Optional: Expose postgres read-only replica for frontend apps
+  postgresReplicaLoadBalancer:
+    enabled: false
+    type: LoadBalancer
+    port: 5432
     annotations:
       service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
       service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"

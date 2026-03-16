@@ -93,6 +93,11 @@ impl PartialOrd<RateLimit> for EpochCounter {
     }
 }
 
+/// Bonus quota added from premium gas payments (wrapper over i64)
+#[derive(Debug, Default, Clone, Copy, PartialEq, From, Into, sqlx::Type)]
+#[sqlx(transparent)]
+pub(crate) struct QuotaBonus(pub(crate) i64);
+
 /// A Tx counter for a user in a given epoch slice
 #[derive(Debug, Default, Clone, Copy, PartialEq, From, Into, Add)]
 pub(crate) struct EpochSliceCounter(u64);

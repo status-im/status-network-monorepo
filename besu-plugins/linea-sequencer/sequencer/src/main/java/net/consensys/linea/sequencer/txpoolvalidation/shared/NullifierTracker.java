@@ -68,6 +68,7 @@ public class NullifierTracker implements Closeable {
   private ManagedChannel channel;
   private RlnProverGrpc.RlnProverBlockingStub blockingStub;
   private final AtomicBoolean grpcAvailable = new AtomicBoolean(false);
+  private final AtomicBoolean reconnectScheduled = new AtomicBoolean(false);
 
   // gRPC configuration
   private final String grpcHost;
@@ -309,7 +310,10 @@ public class NullifierTracker implements Closeable {
   }
 
   private void scheduleGrpcReconnect() {
-    // Simple reconnect after delay
+    // Guard: only allow one reconnect thread at a time
+    if (!reconnectScheduled.compareAndSet(false, true)) {
+      return;
+    }
     Thread reconnectThread =
         new Thread(
             () -> {
@@ -319,6 +323,8 @@ public class NullifierTracker implements Closeable {
                 initializeGrpcClient();
               } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+              } finally {
+                reconnectScheduled.set(false);
               }
             });
     reconnectThread.setDaemon(true);

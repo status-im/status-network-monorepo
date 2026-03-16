@@ -199,6 +199,7 @@ impl RlnAggregator for ProofDeliveryService {
                                 let _elapsed = start.elapsed();
 
                                 // println!("send in {} nanos", elapsed.as_nanos());
+                                debug!("Sent RlnAggProofReply in {} secs", _elapsed.as_secs_f64());
 
                             },
                             Err(RecvError::Lagged(skipped_msg_count)) => {

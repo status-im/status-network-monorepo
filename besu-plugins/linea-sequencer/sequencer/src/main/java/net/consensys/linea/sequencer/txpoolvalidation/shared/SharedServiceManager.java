@@ -100,19 +100,10 @@ public class SharedServiceManager implements Closeable {
       boolean useTls = rlnConfig.rlnProofServiceUseTls();
 
       // Initialize DenyListManager with gRPC backend (connected to RLN prover's database)
+      // Deny list entries are epoch-aligned — no TTL or local caching needed
       if (rlnConfig.sharedGaslessConfig() != null) {
-        // Convert max age from minutes to seconds for TTL
-        long ttlSeconds = rlnConfig.denyListEntryMaxAgeMinutes() * 60;
-        long cacheRefreshSeconds = rlnConfig.sharedGaslessConfig().denyListRefreshSeconds();
-
         this.denyListManager =
-            new DenyListManager(
-                "SharedServiceManager",
-                grpcHost,
-                grpcPort,
-                useTls,
-                ttlSeconds,
-                cacheRefreshSeconds);
+            new DenyListManager("SharedServiceManager", grpcHost, grpcPort, useTls);
         LOG.info(
             "DenyListManager initialized with gRPC backend at {}:{} (TLS: {})",
             grpcHost,
@@ -159,9 +150,6 @@ public class SharedServiceManager implements Closeable {
 
       // Initialize NullifierTracker with gRPC backend (same endpoint as deny list)
       if (rlnConfig.sharedGaslessConfig() != null) {
-        // Cache TTL should match epoch duration for proper cleanup
-        long cacheTtlMinutes = Math.max(60, rlnConfig.denyListEntryMaxAgeMinutes() * 2);
-
         this.nullifierTracker =
             new NullifierTracker(
                 "SharedServiceManager",
@@ -169,12 +157,11 @@ public class SharedServiceManager implements Closeable {
                 grpcPort,
                 useTls,
                 1_000_000L, // 1M cache capacity for 500+ TPS
-                cacheTtlMinutes);
+                60L); // 60 min cache TTL
         LOG.info(
-            "NullifierTracker initialized with gRPC backend at {}:{}, cache TTL: {} min",
+            "NullifierTracker initialized with gRPC backend at {}:{}, cache TTL: 60 min",
             grpcHost,
-            grpcPort,
-            cacheTtlMinutes);
+            grpcPort);
       } else {
         LOG.warn("Cannot initialize NullifierTracker: sharedGaslessConfig is null");
       }

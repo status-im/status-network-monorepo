@@ -73,8 +73,7 @@ class RlnProverForwarderValidatorAuditFixTest {
   @BeforeEach
   void setUp() {
     LineaSharedGaslessConfiguration sharedConfig =
-        new LineaSharedGaslessConfiguration(
-            300L, 100L, 10L, tempDir.resolve("nullifiers.txt").toString());
+        new LineaSharedGaslessConfiguration(100L, tempDir.resolve("nullifiers.txt").toString());
 
     rlnConfig =
         new LineaRlnValidatorConfiguration(
@@ -95,7 +94,6 @@ class RlnProverForwarderValidatorAuditFixTest {
             5000L,
             true,
             30000L,
-            "TEST",
             Optional.empty(),
             "",
             5L);

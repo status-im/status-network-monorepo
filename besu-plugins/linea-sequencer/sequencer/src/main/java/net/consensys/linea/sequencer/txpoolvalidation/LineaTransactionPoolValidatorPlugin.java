@@ -188,6 +188,17 @@ public class LineaTransactionPoolValidatorPlugin extends AbstractLineaRequiredPl
     super.stop();
     rejectedTxJsonRpcManager.ifPresent(JsonRpcManager::shutdown);
 
+    // Close factory first — validators reference shared services, so they must be
+    // closed before SharedServiceManager to avoid use-after-close.
+    lineaTransactionPoolValidatorFactory.ifPresent(
+        factory -> {
+          try {
+            factory.close();
+          } catch (Exception e) {
+            log.error("Error closing transaction pool validator factory: {}", e.getMessage(), e);
+          }
+        });
+
     if (sharedServiceManager != null) {
       try {
         sharedServiceManager.close();

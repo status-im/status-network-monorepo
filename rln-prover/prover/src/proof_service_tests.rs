@@ -11,7 +11,7 @@ mod tests {
     use claims::assert_matches;
     use futures::TryFutureExt;
     use parking_lot::RwLock;
-    use rln::circuit::{Curve, zkey_from_folder};
+    use rln::circuit::{Curve, zkey_from_raw};
     use rln::error::ComputeIdSecretError;
     use rln::protocol::{compute_id_secret, deserialize_proof_values, verify_proof};
     use rln::utils::IdSecret;
@@ -180,8 +180,9 @@ mod tests {
             0,
         );
 
-        // Verification
-        let proving_key = zkey_from_folder();
+        // Verification — use custom circuit with LIMIT_BIT_SIZE=20
+        let arkzkey_bytes = include_bytes!("../../rln_proof/resources/rln_final.arkzkey");
+        let proving_key = zkey_from_raw(arkzkey_bytes).expect("Failed to load custom RLN circuit");
         let verification_key = &proving_key.0.vk;
 
         info!("Starting...");

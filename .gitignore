@@ -153,6 +153,7 @@ __pycache__/
 !/sdk/src/lib/compressor/bin
 
 custom-besu-package
+custom-besu-patched
 lib/forge-std
 lib/openzeppelin-contracts
 lib/openzeppelin-contracts-upgradeable

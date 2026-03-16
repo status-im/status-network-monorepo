@@ -3,7 +3,7 @@ use std::sync::Arc;
 use alloy::primitives::{Address, TxHash, U256};
 use alloy::providers::Provider;
 use async_trait::async_trait;
-use smart_contract::{KarmaRLNSC, RLNRegister};
+use smart_contract::{RLN, RLNRegister};
 use sqlx::{Pool, Postgres};
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tracing::{error, info, warn};
@@ -382,7 +382,7 @@ impl RLNRegister for ManagedRLNRegister {
 pub async fn process_registrations<P: Provider + Clone>(
     mut rx: mpsc::Receiver<RegistrationTask>,
     nm: Arc<NonceManager>,
-    contract: KarmaRLNSC::KarmaRLNSCInstance<P>,
+    contract: RLN::RLNInstance<P>,
 ) {
     while let Some(task) = rx.recv().await {
         let address = task.address;
@@ -396,7 +396,7 @@ pub async fn process_registrations<P: Provider + Clone>(
 
 async fn submit_registration<P: Provider + Clone>(
     nm: &NonceManager,
-    contract: &KarmaRLNSC::KarmaRLNSCInstance<P>,
+    contract: &RLN::RLNInstance<P>,
     address: &Address,
     commitment: &U256,
 ) -> Result<(), NonceManagerError> {
@@ -444,7 +444,7 @@ async fn submit_registration<P: Provider + Clone>(
 /// (failed under max_attempts) transactions, and resubmits them.
 pub async fn monitor_stuck_transactions<P: Provider + Clone>(
     nm: Arc<NonceManager>,
-    contract: KarmaRLNSC::KarmaRLNSCInstance<P>,
+    contract: RLN::RLNInstance<P>,
     provider: P,
 ) {
     let interval = std::time::Duration::from_secs(nm.config.monitor_interval_secs);
@@ -480,7 +480,7 @@ pub async fn monitor_stuck_transactions<P: Provider + Clone>(
 
 async fn handle_stuck_tx<P: Provider + Clone>(
     nm: &NonceManager,
-    contract: &KarmaRLNSC::KarmaRLNSCInstance<P>,
+    contract: &RLN::RLNInstance<P>,
     provider: &P,
     reg: &PendingRegistration,
 ) {
@@ -549,7 +549,7 @@ async fn handle_stuck_tx<P: Provider + Clone>(
 
 async fn retry_registration<P: Provider + Clone>(
     nm: &NonceManager,
-    contract: &KarmaRLNSC::KarmaRLNSCInstance<P>,
+    contract: &RLN::RLNInstance<P>,
     reg: &PendingRegistration,
 ) {
     let nonce = reg.nonce as u64;

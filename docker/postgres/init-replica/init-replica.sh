@@ -41,8 +41,8 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "prover_db" <<-EOSQ
 
     CREATE TABLE IF NOT EXISTS deny_list (
         address CHAR(42) NOT NULL PRIMARY KEY,
-        expires_at BIGINT,
-        denied_at BIGINT
+        denied_at BIGINT,
+        epoch BIGINT NOT NULL DEFAULT 0
     );
 
     CREATE SUBSCRIPTION rln_subscription
