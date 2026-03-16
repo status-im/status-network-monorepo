@@ -14,7 +14,7 @@ mod tests {
     use sqlx::error::Error as SqlxError;
     // internal
     use crate::user_db_error::RegisterError2;
-    use crate::user_db_types::EpochCounter;
+    use crate::user_db_types::{EpochCounter, QuotaBonus};
 
     const ADDR_1: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
     const ADDR_2: Address = address!("0xb20a608c624Ca5003905aA834De7156C68b2E1d0");
@@ -61,45 +61,45 @@ mod tests {
 
         assert_eq!(
             user_db.get_tx_counter(&ADDR_1).await.unwrap(),
-            (EpochCounter::from(0), 0)
+            (EpochCounter::from(0), QuotaBonus::default())
         );
         assert_eq!(
             user_db.get_tx_counter(&ADDR_2).await.unwrap(),
-            (EpochCounter::from(0), 0)
+            (EpochCounter::from(0), QuotaBonus::default())
         );
 
         // Now update user tx counter
         assert_eq!(
             user_db.on_new_tx(&ADDR_1, None).await.unwrap(),
-            (EpochCounter::from(1), 0)
+            (EpochCounter::from(1), QuotaBonus::default())
         );
         assert_eq!(
             user_db.on_new_tx(&ADDR_1, None).await.unwrap(),
-            (EpochCounter::from(2), 0)
+            (EpochCounter::from(2), QuotaBonus::default())
         );
         assert_eq!(
             user_db.on_new_tx(&ADDR_1, Some(2)).await.unwrap(),
-            (EpochCounter::from(4), 0)
+            (EpochCounter::from(4), QuotaBonus::default())
         );
 
         assert_eq!(
             user_db.on_new_tx(&ADDR_2, None).await.unwrap(),
-            (EpochCounter::from(1), 0)
+            (EpochCounter::from(1), QuotaBonus::default())
         );
 
         assert_eq!(
             user_db.on_new_tx(&ADDR_2, None).await.unwrap(),
-            (EpochCounter::from(2), 0)
+            (EpochCounter::from(2), QuotaBonus::default())
         );
 
         assert_eq!(
             user_db.get_tx_counter(&ADDR_1).await.unwrap(),
-            (EpochCounter::from(4), 0)
+            (EpochCounter::from(4), QuotaBonus::default())
         );
 
         assert_eq!(
             user_db.get_tx_counter(&ADDR_2).await.unwrap(),
-            (EpochCounter::from(2), 0)
+            (EpochCounter::from(2), QuotaBonus::default())
         );
     }
 
@@ -151,11 +151,11 @@ mod tests {
 
             assert_eq!(
                 user_db.on_new_tx(&ADDR_1, Some(2)).await.unwrap(),
-                (EpochCounter::from(2), 0)
+                (EpochCounter::from(2), QuotaBonus::default())
             );
             assert_eq!(
                 user_db.on_new_tx(&ADDR_2, Some(1000)).await.unwrap(),
-                (EpochCounter::from(1000), 0)
+                (EpochCounter::from(1000), QuotaBonus::default())
             );
 
             db_conn.close().await;
@@ -188,11 +188,11 @@ mod tests {
             assert!(user_db.has_user(&ADDR_2).await.unwrap());
             assert_eq!(
                 user_db.get_tx_counter(&ADDR_1).await.unwrap(),
-                (EpochCounter::from(2), 0)
+                (EpochCounter::from(2), QuotaBonus::default())
             );
             assert_eq!(
                 user_db.get_tx_counter(&ADDR_2).await.unwrap(),
-                (EpochCounter::from(1000), 0)
+                (EpochCounter::from(1000), QuotaBonus::default())
             );
 
             let user_model = user_db.get_user(&ADDR_1).await.unwrap().unwrap();

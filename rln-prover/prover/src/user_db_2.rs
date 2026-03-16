@@ -884,7 +884,7 @@ mod tests {
         user_db.incr_tx_counter(&addr, Some(42)).await.unwrap();
         assert_eq!(
             user_db.get_tx_counter(&addr).await.unwrap(),
-            (EpochCounter::from(42), 0)
+            (EpochCounter::from(42), QuotaBonus::default())
         );
     }
 
