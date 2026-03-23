@@ -1,3 +1,5 @@
+use std::fmt;
+use std::fmt::Debug;
 // std
 use std::sync::OnceLock;
 // third-party
@@ -8,12 +10,19 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use rln::utils::IdSecret;
 use rln::{
     circuit::zkey_from_raw,
-    error::ProofError,
+    // error::ProofError,
+    error::ProtocolError,
     hashers::{hash_to_field_le, poseidon_hash},
     protocol::{
-        RLNProofValues, generate_proof, proof_values_from_witness, rln_witness_from_values,
+        RLNProofValues,
+        // generate_proof,
+        generate_zk_proof,
+        proof_values_from_witness,
+        // rln_witness_from_values,
     },
 };
+use rln::circuit::{graph_from_raw, Graph};
+use rln::protocol::RLNWitnessInput;
 use serde::{Deserialize, Serialize};
 
 /// Custom RLN circuit artifacts compiled with LIMIT_BIT_SIZE=20 (supports ~1M message limit).
@@ -77,11 +86,11 @@ where
 }
 
 /// RLN info for a channel / group
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RlnIdentifier {
     pub identifier: Fr,
     pub pkey_and_constraints: (ProvingKey<Bn254>, ConstraintMatrices<Fr>),
-    pub graph: Vec<u8>,
+    pub graph: Graph,
 }
 
 impl RlnIdentifier {
@@ -92,12 +101,23 @@ impl RlnIdentifier {
 
         // Load the witness calculation graph compiled for RLN(20, 20)
         let graph_bytes = include_bytes!("../resources/graph.bin");
+        let graph = graph_from_raw(graph_bytes, Some(20)).unwrap();
 
         Self {
-            identifier: hash_to_field_le(identifier),
+            identifier: hash_to_field_le(identifier).unwrap(), // hash_to_field_le return Result but can never fail
             pkey_and_constraints: (pk.clone(), matrices.clone()),
-            graph: graph_bytes.to_vec(),
+            graph,
         }
+    }
+}
+
+impl Debug for RlnIdentifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RLnIndentifier")
+            .field("identifier", &self.identifier)
+            .field("proving key", &self.pkey_and_constraints.0)
+            .field("constraints", &self.pkey_and_constraints.1)
+            .finish()
     }
 }
 
@@ -118,29 +138,31 @@ pub fn compute_rln_proof_and_values(
     // merkle_proof: &MerkleProof,
     path_elements: Vec<Fr>,
     identity_path_index: Vec<u8>,
-) -> Result<(Proof<Bn254>, RLNProofValues), ProofError> {
-    let external_nullifier = poseidon_hash(&[rln_identifier.identifier, epoch]);
+) -> Result<(Proof<Bn254>, RLNProofValues), ProtocolError> {
+
+    // unwrap safe - can only error on empty input & missing round parameters
+    let external_nullifier = poseidon_hash(&[rln_identifier.identifier, epoch]).unwrap();
 
     // let path_elements = merkle_proof.get_path_elements();
     // let identity_path_index = merkle_proof.get_path_index();
 
     // let mut id_s = user_identity.secret_hash;
 
-    let witness = rln_witness_from_values(
+    let witness = RLNWitnessInput::new(
         user_identity.secret_hash.clone(),
+        user_identity.user_limit,
+        rln_data.message_id,
         path_elements,
         identity_path_index,
         rln_data.data,
         external_nullifier,
-        user_identity.user_limit,
-        rln_data.message_id,
     )?;
 
     let proof_values = proof_values_from_witness(&witness)?;
-    let proof = generate_proof(
+    let proof = generate_zk_proof(
         &rln_identifier.pkey_and_constraints,
         &witness,
-        rln_identifier.graph.as_slice(),
+        &rln_identifier.graph,
     )?;
     Ok((proof, proof_values))
 }

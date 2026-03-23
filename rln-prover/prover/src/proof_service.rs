@@ -8,7 +8,7 @@ use metrics::{counter, histogram};
 use parking_lot::RwLock;
 use rln::hashers::hash_to_field_le;
 use rln::poseidon_tree::MerkleProof;
-use rln::protocol::serialize_proof_values;
+use rln::protocol::rln_proof_values_to_bytes_le;
 use tracing::{Instrument, debug, debug_span, error, info, warn};
 // use zerokit_utils::pmtree::tree::MerkleProof;
 // use zerokit_utils::pmtree::tree::MerkleProof;
@@ -153,7 +153,7 @@ impl ProofService {
 
                 let rln_data = RlnData {
                     message_id: Fr::from(message_id),
-                    data: hash_to_field_le(proof_generation_data.tx_hash.as_slice()),
+                    data: hash_to_field_le(proof_generation_data.tx_hash.as_slice()).unwrap(),
                 };
 
                 let epoch_bytes = {
@@ -162,7 +162,7 @@ impl ProofService {
                     #[allow(clippy::let_and_return)]
                     v
                 };
-                let epoch = hash_to_field_le(epoch_bytes.as_slice());
+                let epoch = hash_to_field_le(epoch_bytes.as_slice()).unwrap();
 
                 // let compute_proof_start = std::time::Instant::now();
                 let (proof, proof_values) = match compute_rln_proof_and_values(
@@ -175,7 +175,7 @@ impl ProofService {
                 ) {
                     Ok((proof, proof_values)) => (proof, proof_values),
                     Err(e) => {
-                        let _ = send.send(Err(ProofGenerationError::Proof(e)));
+                        let _ = send.send(Err(ProofGenerationError::Protocol(e)));
                         return;
                     }
                 };
@@ -189,7 +189,8 @@ impl ProofService {
                     let _ = send.send(Err(ProofGenerationError::Serialization(e)));
                     return;
                 }
-                if let Err(e) = output_buffer.write_all(&serialize_proof_values(&proof_values)) {
+
+                if let Err(e) = output_buffer.write_all(&rln_proof_values_to_bytes_le(&proof_values)) {
                     let _ = send.send(Err(ProofGenerationError::SerializationWrite(e)));
                     return;
                 }
