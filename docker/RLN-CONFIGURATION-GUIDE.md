@@ -47,7 +47,6 @@ plugin-linea-estimate-gas-compatibility-mode-multiplier=1.2
 --plugin-linea-rln-proof-service=rln-prover:50051
 --plugin-linea-rln-karma-service=rln-prover:50051
 --plugin-linea-rln-timeouts-ms=5000
---plugin-linea-rln-epoch-mode=TEST
 --plugin-linea-rln-premium-gas-threshold-gwei=0
 ```
 
@@ -70,7 +69,6 @@ plugin-linea-rpc-gasless-enabled=true
 --plugin-linea-rln-proof-service=rln-prover:50051
 --plugin-linea-rln-karma-service=rln-prover:50051
 --plugin-linea-rln-timeouts-ms=5000
---plugin-linea-rln-epoch-mode=TEST
 --plugin-linea-rln-premium-gas-threshold-gwei=0
 ```
 
@@ -146,22 +144,7 @@ plugin-linea-rpc-gasless-enabled=true
 # ... other RLN settings
 ```
 
-### 4. Change Epoch Mode
-
-**What it does:** Determines how quota epochs are calculated
-
-**Where to change:**
-```yaml
-# In compose-spec-l2-services-rln.yml
---plugin-linea-rln-epoch-mode=TEST  # Options: BLOCK, TIMESTAMP_1H, TEST, FIXED_FIELD_ELEMENT
-```
-
-**Options:**
-- `TEST` = 30 second epochs (for testing)
-- `TIMESTAMP_1H` = 1 hour epochs
-- `BLOCK` = per-block epochs
-
-### 5. Adjust RLN Service Timeouts
+### 4. Adjust RLN Service Timeouts
 
 **What it does:** How long to wait for RLN prover/karma service responses
 
@@ -171,7 +154,7 @@ plugin-linea-rpc-gasless-enabled=true
 --plugin-linea-rln-timeouts-ms=5000  # 5 seconds
 ```
 
-### 6. Configure Gasless Transactions
+### 5. Configure Gasless Transactions
 
 **Enable/disable gasless features:**
 ```toml
@@ -193,7 +176,6 @@ plugin-linea-rpc-allow-zero-gas-estimation-gasless=true  # Allow 0 gas estimates
 | `--plugin-linea-rln-proof-service` | Proof service endpoint | `localhost:50051` | Yes |
 | `--plugin-linea-rln-karma-service` | Karma service endpoint | `localhost:50052` | Yes |
 | `--plugin-linea-rln-timeouts-ms` | Service timeout | `5000` | No |
-| `--plugin-linea-rln-epoch-mode` | Epoch calculation mode | `TIMESTAMP_1H` | No |
 | `--plugin-linea-rln-premium-gas-threshold-gwei` | Premium bypass threshold | `12` | No |
 
 ### RPC/Estimate Gas Options
@@ -267,14 +249,12 @@ environment:
 
 ### Test Configuration (Current)
 ```yaml
---plugin-linea-rln-epoch-mode=TEST  # 30 second epochs
 --plugin-linea-rln-premium-gas-threshold-gwei=0  # Always check deny list
 --plugin-linea-rln-timeouts-ms=5000  # 5 second timeout
 ```
 
 ### Production Configuration (Example)
 ```yaml
---plugin-linea-rln-epoch-mode=TIMESTAMP_1H  # 1 hour epochs
 --plugin-linea-rln-premium-gas-threshold-gwei=12  # Bypass at 12 GWei
 --plugin-linea-rln-timeouts-ms=10000  # 10 second timeout
 ```

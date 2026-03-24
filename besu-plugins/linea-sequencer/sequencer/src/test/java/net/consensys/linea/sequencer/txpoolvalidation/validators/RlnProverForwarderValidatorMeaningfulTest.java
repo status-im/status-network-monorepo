@@ -77,8 +77,7 @@ class RlnProverForwarderValidatorMeaningfulTest {
     // Create configuration
     // Note: Deny list is now stored in the RLN prover's PostgreSQL database and accessed via gRPC
     LineaSharedGaslessConfiguration sharedConfig =
-        new LineaSharedGaslessConfiguration(
-            300L, 5L, 10L, tempDir.resolve("nullifiers.txt").toString());
+        new LineaSharedGaslessConfiguration(5L, tempDir.resolve("nullifiers.txt").toString());
 
     rlnConfig =
         new LineaRlnValidatorConfiguration(
@@ -99,10 +98,10 @@ class RlnProverForwarderValidatorMeaningfulTest {
             5000L,
             true,
             30000L,
-            "TEST",
             Optional.empty(),
             "", // gasKillSwitchFilePath (disabled)
-            5L); // gasKillSwitchPollSeconds
+            5L, // gasKillSwitchPollSeconds
+            30_000L); // circuitBreakerRecoveryMs
 
     // Create both enabled (RPC mode) and disabled (sequencer mode) validators
     enabledValidator = new RlnProverForwarderValidator(rlnConfig, true);

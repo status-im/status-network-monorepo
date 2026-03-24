@@ -6,6 +6,7 @@ mod karma_sc_listener;
 mod kill_switch;
 pub mod metrics;
 mod mock;
+mod nonce_manager;
 mod proof_generation;
 mod proof_service;
 // mod rocksdb_operands;
@@ -20,6 +21,7 @@ mod user_db_types;
 // tests
 mod epoch_service_tests;
 mod grpc_e2e;
+mod nonce_manager_tests;
 mod proof_service_tests;
 #[cfg(test)]
 pub mod tests_common;
@@ -31,6 +33,7 @@ mod user_db_2_tests;
 // std
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 // third-party
 use alloy::{
@@ -57,6 +60,10 @@ use crate::karma_sc_listener::KarmaScEventListener;
 use crate::kill_switch::GasKillSwitch;
 pub use crate::mock::MockUser;
 use crate::mock::read_mock_user;
+use crate::nonce_manager::{
+    ManagedRLNRegister, NonceManager, NonceManagerConfig, monitor_stuck_transactions,
+    process_registrations,
+};
 use crate::proof_service::ProofService;
 use crate::tier::TierLimits;
 use crate::tiers_listener::TiersListener;
@@ -65,7 +72,7 @@ use crate::user_db_error::{RegisterError2, UserDb2OpenError};
 use crate::user_db_service::UserDbService;
 use crate::user_db_types::RateLimit;
 use rln_proof::RlnIdentifier;
-use smart_contract::{KarmaTiers::KarmaTiersInstance, KarmaTiersError, TIER_LIMITS};
+use smart_contract::{KarmaTiers::KarmaTiersInstance, KarmaTiersError, RLN, TIER_LIMITS};
 
 pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
     // Epoch service with configurable epoch and slice duration
@@ -98,10 +105,11 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
     };
 
     // Alloy provider + signer
-    let provider_with_signer = if app_args.ws_rpc_url.is_some() {
+    let (provider_with_signer, wallet_address) = if app_args.ws_rpc_url.is_some() {
         let pk: Zeroizing<String> =
             Zeroizing::new(std::env::var("PRIVATE_KEY").expect("Please provide a private key"));
         let pk_signer = PrivateKeySigner::from_str(pk.as_str())?;
+        let wallet_addr = pk_signer.address();
         let wallet = EthereumWallet::from(pk_signer);
 
         let ws = WsConnect::new(app_args.ws_rpc_url.clone().unwrap().as_str());
@@ -110,9 +118,9 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
             .connect_ws(ws)
             .await
             .map_err(KarmaTiersError::RpcTransportError)?;
-        Some(provider)
+        (Some(provider), Some(wallet_addr))
     } else {
-        None
+        (None, None)
     };
 
     //
@@ -174,7 +182,7 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
     info!("Database migrations complete");
 
     let user_db_service = UserDbService::new(
-        db_conn,
+        db_conn.clone(),
         user_db_config,
         epoch_service.epoch_changes.clone(),
         epoch_service.current_epoch.clone(),
@@ -315,11 +323,57 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
 
     if let Some(registry_listener) = registry_listener {
         let p = provider.clone().unwrap();
-        set.spawn(async move {
-            registry_listener
-                .listen(p, provider_with_signer.unwrap())
+        let pws = provider_with_signer.unwrap();
+
+        // Set up nonce manager and managed RLN register
+        let rln_sc_instance = RLN::new(app_args.rlnsc_address.unwrap(), pws.clone());
+
+        let nonce_config = {
+            let mut cfg = NonceManagerConfig::default();
+            if app_args.registration_gas_price_gwei > 0 {
+                cfg.min_gas_price = app_args.registration_gas_price_gwei as u128 * 1_000_000_000;
+                info!(
+                    "Registration gas price set to {} gwei ({} wei)",
+                    app_args.registration_gas_price_gwei, cfg.min_gas_price
+                );
+            }
+            cfg
+        };
+
+        let nonce_manager = Arc::new(
+            NonceManager::new(db_conn.clone(), nonce_config, wallet_address.unwrap(), &pws)
                 .await
+                .map_err(|e| AppError2::MigrationError(format!("Nonce manager init: {}", e)))?,
+        );
+
+        // Recover any pending registrations from a previous run
+        nonce_manager
+            .recover_pending(&pws)
+            .await
+            .map_err(|e| AppError2::MigrationError(format!("Nonce manager recovery: {}", e)))?;
+
+        let (reg_tx, reg_rx) = tokio::sync::mpsc::channel(256);
+        let managed_rln = ManagedRLNRegister::new(reg_tx);
+
+        // Spawn registration processor (sequential nonce-aware tx submission)
+        let nm1 = nonce_manager.clone();
+        let contract1 = rln_sc_instance.clone();
+        set.spawn(async move {
+            process_registrations(reg_rx, nm1, contract1).await;
+            Ok(())
         });
+
+        // Spawn stuck transaction monitor
+        let nm2 = nonce_manager.clone();
+        let contract2 = rln_sc_instance.clone();
+        let pws2 = pws.clone();
+        set.spawn(async move {
+            monitor_stuck_transactions(nm2, contract2, pws2).await;
+            Ok(())
+        });
+
+        // Pass managed_rln (implements RLNRegister) to event listener
+        set.spawn(async move { registry_listener.listen(p, managed_rln).await });
     }
     if let Some(tiers_listener) = tiers_listener {
         let p = provider.clone().unwrap();
@@ -334,9 +388,8 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
         set.spawn(async move { prover_grpc_service.serve_with_mock().await });
     }
 
-    // TODO: Add periodic cleanup task for nullifiers and deny list entries.
-    // Methods cleanup_old_nullifiers() and cleanup_expired_deny_list_entries()
-    // need to be implemented on UserDb2 first.
+    // TODO: Add periodic cleanup task for nullifiers.
+    // Deny list entries are epoch-aligned and cleared via clear_deny_list() on epoch change.
 
     let res = set.join_all().await;
     // Print all errors from services (if any)

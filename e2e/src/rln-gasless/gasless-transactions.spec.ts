@@ -1,7 +1,6 @@
 import { ethers } from "ethers";
 import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
 import { RlnTestClient, createFastProvider } from "./utils/rln-test-client";
-import { DenyListTestManager } from "./utils/deny-list-manager";
 import { KarmaTestManager, resetAdminNonceManager } from "./utils/karma-manager";
 import { createFundedWallet, uniqueTxData, TEST_RECIPIENT } from "./utils/test-helpers";
 import { RLN_CONFIG } from "./config/rln-config";
@@ -40,7 +39,6 @@ describe("RLN Gasless Transactions", () => {
   let rpcProvider: ethers.Provider;
   let sequencerProvider: ethers.Provider;
   let rlnClient: RlnTestClient;
-  let denyListManager: DenyListTestManager;
   let karmaManager: KarmaTestManager;
   let contracts: RlnContracts;
   let admin: ethers.Wallet;
@@ -95,14 +93,8 @@ describe("RLN Gasless Transactions", () => {
     contracts = loadRlnContracts(rpcProvider, admin);
 
     // Setup test clients
-    rlnClient = new RlnTestClient(
-      rpcProvider,
-      sequencerProvider,
-      RLN_CONFIG.services.rpcUrl,
-      RLN_CONFIG.services.karmaServiceUrl,
-    );
+    rlnClient = new RlnTestClient(rpcProvider, sequencerProvider, RLN_CONFIG.services.rpcUrl);
 
-    denyListManager = new DenyListTestManager();
     karmaManager = new KarmaTestManager(contracts.karma, contracts.rln, admin, rlnClient);
 
     // Verify contracts are accessible
@@ -392,13 +384,10 @@ describe("RLN Gasless Transactions", () => {
       const newEpoch = await rlnClient.waitForNextEpoch((epochDuration + 2) * 1000);
       logger.info("New epoch started", { epoch: newEpoch });
 
-      // Wait for deny list entry to expire via TTL (60s).
-      // This tests the natural TTL expiry recovery path (no premium gas involved).
-      // Premium gas would provide instant recovery, but this test validates TTL-based expiry.
-      await denyListManager.waitForNotDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
-
-      // Allow prover to sync state after deny list clearance
-      await rlnClient.sleep(1000);
+      // Deny list entries are cleared on epoch boundary by the prover.
+      // The epoch has already changed above, so the deny list should be cleared.
+      // Allow prover to sync state (epoch change triggers deny list cleanup).
+      await rlnClient.waitForProverSync(3000);
 
       // Should be able to send transactions again in new epoch
       const receipt = await rlnClient.sendGaslessTransaction(user, {

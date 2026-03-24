@@ -326,19 +326,13 @@ sequenceDiagram
         end
     end
 
-    Note over V: 9. Validate Proof Epoch
-    V->>V: Check proof epoch vs current epoch (±tolerance)
-    alt Outside tolerance window
-        V-->>P2P: REJECT "Proof epoch outside acceptable window"
-    end
-
-    Note over V: 10. Check Nullifier
-    V->>NT: checkAndMarkNullifier(nullifier, epoch)
+    Note over V: 9. Check Nullifier
+    V->>NT: checkAndMarkNullifier(nullifier, proof_epoch)
     alt Already used
         V-->>P2P: REJECT "Nullifier already used"
     end
 
-    Note over V: 11. Final Quota Check
+    Note over V: 10. Final Quota Check
     V->>KS: GetUserTierInfo(sender)
     alt epochTxCount > dailyQuota
         V-->>P2P: REJECT "Quota exceeded"
@@ -585,13 +579,7 @@ When a transaction shows up before its proof, the validator creates a `Completab
 
 The validator calls into the Rust `zerokit` library via `JniRlnVerificationService` for proof verification. `parseAndVerifyRlnProof` handles both parsing and cryptographic verification, and only verified proofs get cached.
 
-Different epoch modes allow different staleness:
-
-| Mode | Current Epoch | Tolerance |
-|------|--------------|-----------|
-| `BLOCK` | SHA-256 hash of block number | ±2 blocks |
-| `TIMESTAMP_1H` | SHA-256 hash of hourly timestamp | ±1 hour |
-| `TEST` / `FIXED_FIELD_ELEMENT` | Hardcoded values | Always valid |
+The sequencer does not compute epochs independently. It uses the epoch value embedded in each ZK proof (set by the prover) for nullifier deduplication only. This avoids epoch computation mismatches between prover and sequencer.
 
 The proof stream reconnects with exponential backoff. It starts from the base delay configured in `rlnProofStreamRetryIntervalMs` and doubles on each retry up to `maxBackoffDelayMs`. After `rlnProofStreamRetries` consecutive failures it gives up, and the retry count resets on any successful message.
 
@@ -676,16 +664,9 @@ Quotas aren't just counted by transaction. They're weighted by gas. The `tx_gas_
 
 Without gas-weighting, a user could blow their entire quota on a few heavy contract calls while barely touching block space with simple transfers.
 
-### Epoch Modes
+### Epoch Ownership
 
-| Mode | Epoch Identifier | Use Case |
-|------|-----------------|----------|
-| `BLOCK` | SHA-256 hash of block number + salt | Fine-grained, per-block quotas |
-| `TIMESTAMP_1H` | SHA-256 hash of hourly timestamp + salt | Production default |
-| `TEST` | Hardcoded value | Local development |
-| `FIXED_FIELD_ELEMENT` | Hardcoded field element | Debugging |
-
-Prover and sequencer compute epochs independently, but that's fine. The epoch value is embedded in the ZK proof, and the sequencer validates it against its own calculation with a tolerance window.
+Epoch computation lives entirely in the RLN prover. The prover calculates `current_epoch = (now - genesis).num_days()` and embeds `hash_to_field_le(current_epoch)` in each ZK proof. The sequencer does not compute epochs — it uses the epoch from the proof for nullifier deduplication only. This design avoids the complexity of keeping two independent epoch computations in sync.
 
 ---
 
@@ -702,7 +683,7 @@ The ZK proof includes a Merkle tree root that proves the user is in the RLN grou
 | **Rate limiting** | RLN proof embeds tx counter | Prover (generation) + Sequencer (verification) |
 | **Quota enforcement** | Karma tier to daily limit | Sequencer (KarmaServiceClient check) |
 | **Replay prevention** | Nullifier tracking | Sequencer (NullifierTracker) |
-| **Epoch validation** | Proof epoch vs current epoch | Sequencer (tolerance window) |
+| **Epoch tracking** | Proof epoch used for nullifier dedup | Sequencer (NullifierTracker) |
 | **Premium gas fallback** | Pay to bypass RLN | Both RPC and Sequencer |
 | **Deny list** | Block quota-exceeded users | Sequencer (DenyListManager) |
 | **Kill switch** | Emergency disable | All components (file-based) |
@@ -796,7 +777,6 @@ Different components fail differently:
 | `--plugin-linea-rln-karma-service` | `localhost:50052` | Karma service gRPC endpoint (host:port) |
 | `--plugin-linea-rln-use-tls` | auto | Use TLS for gRPC connections |
 | `--plugin-linea-rln-premium-gas-threshold-gwei` | `12` | Premium gas threshold in GWei |
-| `--plugin-linea-rln-epoch-mode` | `TIMESTAMP_1H` | Epoch strategy (BLOCK, TIMESTAMP_1H, TEST) |
 | `--plugin-linea-rpc-rln-prover-forwarder-enabled` | `false` | Enable RLN prover forwarder on RPC nodes |
 | `--plugin-linea-rpc-gasless-enabled` | `false` | Enable gasless features in linea_estimateGas |
 | `--plugin-linea-rpc-allow-zero-gas-estimation-for-gasless` | `false` | Allow returning 0 gas estimate |
@@ -847,8 +827,7 @@ L2 Network (11.11.11.0/24)
     ├── Sequencer (SEQUENCER mode)
     │   ├── RLN validation: enabled
     │   ├── Prover forwarder: disabled
-    │   ├── Storage: FOREST
-    │   └── Epoch mode: TEST (30s)
+    │   └── Storage: FOREST
     │
     ├── RPC Node (RPC mode)
     │   ├── RLN validation: disabled (no proof verification on RPC)
@@ -874,7 +853,7 @@ L2 Network (11.11.11.0/24)
 
 **Files**: [`k8s/helm/status-network/`](../k8s/helm/status-network/)
 
-The Helm chart deploys everything with production config. The main differences from local dev are that epoch mode is `TIMESTAMP_1H` (24-hour epochs instead of 30-second test epochs), real smart contract addresses are used instead of mock mode, TLS is enabled for gRPC connections, and resource limits and replica counts are higher.
+The Helm chart deploys everything with production config. The main differences from local dev are that real smart contract addresses are used instead of mock mode, TLS is enabled for gRPC connections, and resource limits and replica counts are higher.
 
 ### Configuration by Node Role
 

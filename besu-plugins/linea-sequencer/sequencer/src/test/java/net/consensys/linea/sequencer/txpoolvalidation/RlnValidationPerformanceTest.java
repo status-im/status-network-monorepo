@@ -71,7 +71,7 @@ class RlnValidationPerformanceTest {
   @BeforeEach
   void setUp() throws IOException {
     // Use cache-only managers for testing (no gRPC)
-    denyListManager = DenyListManager.createCacheOnly("PerformanceTest", 600L);
+    denyListManager = DenyListManager.createCacheOnly("PerformanceTest");
     nullifierTracker = new NullifierTracker("PerformanceTest", 100_000L, 1L);
   }
 
@@ -152,73 +152,27 @@ class RlnValidationPerformanceTest {
   }
 
   @Test
-  void testDenyListPerformance() throws InterruptedException {
-    int threadCount = 5;
-    int operationsPerThread = 200;
-    int totalOperations = threadCount * operationsPerThread;
+  void testDenyListNoOpBehavior() {
+    // Without gRPC, DenyListManager is no-op (fail open)
+    Address testAddr = Address.fromHexString("0x1234567890123456789012345678901234567890");
 
-    ExecutorService executor = Executors.newFixedThreadPool(threadCount);
-    CountDownLatch latch = new CountDownLatch(threadCount);
-    AtomicInteger addCount = new AtomicInteger(0);
-    AtomicInteger checkCount = new AtomicInteger(0);
+    // addToDenyList returns false (no gRPC)
+    boolean added = denyListManager.addToDenyList(testAddr);
+    assertThat(added).isFalse();
 
-    Instant startTime = Instant.now();
+    // isDenied returns false (fail open)
+    boolean isDenied = denyListManager.isDenied(testAddr);
+    assertThat(isDenied).isFalse();
 
-    for (int t = 0; t < threadCount; t++) {
-      final int threadId = t;
-      executor.submit(
-          () -> {
-            try {
-              for (int i = 0; i < operationsPerThread; i++) {
-                Address testAddr =
-                    Address.fromHexString(
-                        String.format("0x%040d", threadId * operationsPerThread + i));
-
-                // Add to deny list
-                boolean added = denyListManager.addToDenyList(testAddr);
-                if (added) {
-                  addCount.incrementAndGet();
-                }
-
-                // Check deny list
-                boolean isDenied = denyListManager.isDenied(testAddr);
-                if (isDenied) {
-                  checkCount.incrementAndGet();
-                }
-              }
-            } finally {
-              latch.countDown();
-            }
-          });
-    }
-
-    boolean completed = latch.await(60, TimeUnit.SECONDS);
-    assertThat(completed).isTrue();
-
-    executor.shutdown();
-    executor.awaitTermination(5, TimeUnit.SECONDS);
-
-    Instant endTime = Instant.now();
-    long totalTime = Duration.between(startTime, endTime).toMillis();
-
-    // Verify results
-    assertThat(addCount.get()).isEqualTo(totalOperations);
-    assertThat(checkCount.get()).isEqualTo(totalOperations);
-    assertThat(denyListManager.size()).isEqualTo(totalOperations);
-
-    // Log performance
-    double throughput =
-        (double) (totalOperations * 2) / (totalTime / 1000.0); // 2 operations per iteration
-    System.out.printf(
-        "Deny list performance: %d operations in %d ms (%.2f ops/sec)%n",
-        totalOperations * 2, totalTime, throughput);
+    // removeFromDenyList returns false
+    boolean removed = denyListManager.removeFromDenyList(testAddr);
+    assertThat(removed).isFalse();
   }
 
   @Test
   void testMemoryUsageUnderLoad() throws InterruptedException {
-    // Test memory usage with large number of entries
+    // Test memory usage with large number of nullifier entries
     int nullifierCount = 10_000;
-    int addressCount = 1_000;
 
     // Add many nullifiers
     for (int i = 0; i < nullifierCount; i++) {
@@ -227,26 +181,15 @@ class RlnValidationPerformanceTest {
       nullifierTracker.checkAndMarkNullifier(nullifier, epoch);
     }
 
-    // Add many addresses to deny list
-    for (int i = 0; i < addressCount; i++) {
-      Address addr = Address.fromHexString(String.format("0x%040d", i));
-      denyListManager.addToDenyList(addr);
-    }
-
     // Verify counts
     NullifierStats stats = nullifierTracker.getStats();
     assertThat(stats.totalChecks()).isEqualTo(nullifierCount);
     assertThat(stats.cacheSize()).isEqualTo(nullifierCount);
-    assertThat(denyListManager.size()).isEqualTo(addressCount);
 
     // Test continued operations under load
     String testNullifier = "0x9999999999999999999999999999999999999999999999999999999999999999";
     boolean canStillOperate = nullifierTracker.checkAndMarkNullifier(testNullifier, "test-epoch");
     assertThat(canStillOperate).isTrue();
-
-    Address testAddr = Address.fromHexString("0x9999999999999999999999999999999999999999");
-    boolean canStillAdd = denyListManager.addToDenyList(testAddr);
-    assertThat(canStillAdd).isTrue();
   }
 
   @Test
@@ -277,45 +220,23 @@ class RlnValidationPerformanceTest {
   }
 
   @Test
-  void testDenyListFileIoPerformance() throws InterruptedException {
+  void testDenyListGrpcCallPerformance() throws InterruptedException {
+    // Without gRPC server, all calls return immediately (no-op)
     int operationCount = 100;
-    ExecutorService executor = Executors.newFixedThreadPool(5);
-    CountDownLatch latch = new CountDownLatch(operationCount);
-    AtomicLong totalFileOpTime = new AtomicLong(0);
+    Instant start = Instant.now();
 
     for (int i = 0; i < operationCount; i++) {
-      final int index = i;
-      executor.submit(
-          () -> {
-            try {
-              Instant start = Instant.now();
-
-              Address addr = Address.fromHexString(String.format("0x%040d", index));
-              denyListManager.addToDenyList(addr);
-              boolean isDenied = denyListManager.isDenied(addr);
-              assertThat(isDenied).isTrue();
-
-              Instant end = Instant.now();
-              totalFileOpTime.addAndGet(Duration.between(start, end).toMillis());
-
-            } finally {
-              latch.countDown();
-            }
-          });
+      Address addr = Address.fromHexString(String.format("0x%040d", i));
+      denyListManager.addToDenyList(addr);
+      denyListManager.isDenied(addr);
     }
 
-    boolean completed = latch.await(30, TimeUnit.SECONDS);
-    assertThat(completed).isTrue();
+    Instant end = Instant.now();
+    long totalTime = Duration.between(start, end).toMillis();
 
-    executor.shutdown();
-    executor.awaitTermination(5, TimeUnit.SECONDS);
-
-    // Calculate average file operation time
-    double avgFileOpTime = (double) totalFileOpTime.get() / operationCount;
-    System.out.printf("Average file operation time: %.2f ms%n", avgFileOpTime);
-
-    // File operations should be reasonably fast (under 100ms per operation)
-    assertThat(avgFileOpTime).isLessThan(100.0);
+    // No-op operations should be very fast
+    System.out.printf("No-op deny list operations: %d in %d ms%n", operationCount * 2, totalTime);
+    assertThat(totalTime).isLessThan(5000);
   }
 
   @Test
@@ -428,7 +349,6 @@ class RlnValidationPerformanceTest {
 
     NullifierStats stats = nullifierTracker.getStats();
     assertThat(stats.cacheSize()).isGreaterThan(0);
-    assertThat(denyListManager.size()).isGreaterThan(0);
 
     System.out.printf(
         "Sustained load test: %d operations in %d seconds (%.2f ops/sec)%n",
@@ -436,53 +356,23 @@ class RlnValidationPerformanceTest {
   }
 
   @Test
-  void testDenyListFileGrowthAndCompaction() throws IOException {
-    // Test behavior as deny list file grows large
+  void testDenyListNoOpUnderLoad() {
+    // Without gRPC, all deny list operations are no-ops
     int addressCount = 1000;
 
-    // Add many addresses
     Instant start = Instant.now();
     for (int i = 0; i < addressCount; i++) {
       Address addr = Address.fromHexString(String.format("0x%040d", i));
       denyListManager.addToDenyList(addr);
-    }
-    Instant addEnd = Instant.now();
-
-    // Verify all were added
-    assertThat(denyListManager.size()).isEqualTo(addressCount);
-
-    // Test access performance after growth
-    Instant checkStart = Instant.now();
-    for (int i = 0; i < addressCount; i++) {
-      Address addr = Address.fromHexString(String.format("0x%040d", i));
-      assertThat(denyListManager.isDenied(addr)).isTrue();
-    }
-    Instant checkEnd = Instant.now();
-
-    // Remove half the addresses
-    Instant removeStart = Instant.now();
-    for (int i = 0; i < addressCount / 2; i++) {
-      Address addr = Address.fromHexString(String.format("0x%040d", i));
+      denyListManager.isDenied(addr);
       denyListManager.removeFromDenyList(addr);
     }
-    Instant removeEnd = Instant.now();
+    Instant end = Instant.now();
 
-    // Verify final state
-    assertThat(denyListManager.size()).isEqualTo(addressCount / 2);
-
-    // Log performance metrics
-    long addTime = Duration.between(start, addEnd).toMillis();
-    long checkTime = Duration.between(checkStart, checkEnd).toMillis();
-    long removeTime = Duration.between(removeStart, removeEnd).toMillis();
-
+    long totalTime = Duration.between(start, end).toMillis();
     System.out.printf(
-        "Deny list performance - Add: %d ms, Check: %d ms, Remove: %d ms%n",
-        addTime, checkTime, removeTime);
-
-    // Performance assertions
-    assertThat(addTime).isLessThan(5000); // Should add 1000 entries in under 5 seconds
-    assertThat(checkTime).isLessThan(1000); // Should check 1000 entries in under 1 second
-    assertThat(removeTime).isLessThan(2000); // Should remove 500 entries in under 2 seconds
+        "No-op deny list bulk operations: %d in %d ms%n", addressCount * 3, totalTime);
+    assertThat(totalTime).isLessThan(5000);
   }
 
   @Test

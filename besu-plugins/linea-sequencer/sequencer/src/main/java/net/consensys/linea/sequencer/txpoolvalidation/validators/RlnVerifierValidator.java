@@ -26,8 +26,6 @@ import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -110,14 +108,12 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
   private final RlnVerificationService rlnVerificationService;
   private ScheduledExecutorService proofCacheEvictionScheduler;
 
-  // STATIC maps to share across all validator instances
-  // This is critical because proofs are received on the shared gRPC stream
-  // but validated by different validator instances
-  private static final Map<String, CompletableFuture<CachedProof>> pendingProofs =
+  // Instance maps — there is now only one validator instance (created by the factory singleton)
+  private final Map<String, CompletableFuture<CachedProof>> pendingProofs =
       new ConcurrentHashMap<>();
 
-  private static final AtomicInteger activeProofWaits = new AtomicInteger(0);
-  private static final int MAX_CONCURRENT_PROOF_WAITS = 100; // Configurable limit
+  private final AtomicInteger activeProofWaits = new AtomicInteger(0);
+  private static final int MAX_CONCURRENT_PROOF_WAITS = 100;
 
   /**
    * Represents a cached RLN proof with combined format and extracted public inputs.
@@ -141,10 +137,8 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
       String nullifierHex,
       Instant cachedAt) {}
 
-  // High-performance Caffeine cache for RLN proofs - STATIC to share across all instances
-  // Lazily initialized with configuration on first access
-  private static volatile Cache<String, CachedProof> sharedRlnProofCache = null;
-  private static final Object cacheLock = new Object();
+  // Caffeine cache for RLN proofs — instance-level (one validator instance via factory singleton)
+  private Cache<String, CachedProof> rlnProofCache;
 
   // gRPC client members for proof service
   private ManagedChannel proofServiceChannel;
@@ -161,19 +155,15 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
 
   private ScheduledExecutorService grpcReconnectionScheduler;
 
-  // Exponential backoff state - STATIC to share across all validator instances
-  private static final AtomicInteger proofStreamRetryCount = new AtomicInteger(0);
-  private static volatile long lastProofStreamRetryTime = 0;
+  // Exponential backoff state — instance-level (one validator instance via factory singleton)
+  private final AtomicInteger proofStreamRetryCount = new AtomicInteger(0);
+  private volatile long lastProofStreamRetryTime = 0;
 
-  // Single subscription management - STATIC to ensure only one active stream across ALL instances
-  // This is critical because createTransactionValidator() creates new instances for each validation
-  private static final java.util.concurrent.atomic.AtomicBoolean subscriptionActive =
+  // Subscription management — instance-level (one validator instance via factory singleton)
+  private final java.util.concurrent.atomic.AtomicBoolean subscriptionActive =
       new java.util.concurrent.atomic.AtomicBoolean(false);
-  private static volatile io.grpc.Context.CancellableContext currentStreamContext = null;
-  private static volatile ScheduledExecutorService sharedReconnectionScheduler = null;
-  private static volatile RlnProverGrpc.RlnProverStub sharedAsyncProofStub = null;
-  private static volatile ManagedChannel sharedProofServiceChannel = null;
-  private static final Object subscriptionLock = new Object();
+  private volatile io.grpc.Context.CancellableContext currentStreamContext = null;
+  private final Object subscriptionLock = new Object();
 
   /**
    * Creates a new RLN Verifier Validator with default gRPC channel management.
@@ -242,20 +232,16 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
       this.rlnVerificationService = new JniRlnVerificationService();
     }
 
-    // Initialize shared LRU cache with TTL support (lazy singleton pattern)
-    synchronized (cacheLock) {
-      if (sharedRlnProofCache == null) {
-        sharedRlnProofCache =
-            Caffeine.newBuilder()
-                .expireAfterWrite(rlnConfig.rlnProofCacheExpirySeconds(), TimeUnit.SECONDS)
-                .maximumSize(rlnConfig.rlnProofCacheMaxSize())
-                .build();
-        LOG.info(
-            "Initialized shared RLN proof cache with expiry={}s, maxSize={}",
-            rlnConfig.rlnProofCacheExpirySeconds(),
-            rlnConfig.rlnProofCacheMaxSize());
-      }
-    }
+    // Initialize LRU cache with TTL support
+    this.rlnProofCache =
+        Caffeine.newBuilder()
+            .expireAfterWrite(rlnConfig.rlnProofCacheExpirySeconds(), TimeUnit.SECONDS)
+            .maximumSize(rlnConfig.rlnProofCacheMaxSize())
+            .build();
+    LOG.info(
+        "Initialized RLN proof cache with expiry={}s, maxSize={}",
+        rlnConfig.rlnProofCacheExpirySeconds(),
+        rlnConfig.rlnProofCacheMaxSize());
 
     if (rlnConfig.rlnValidationEnabled()) {
       LOG.info("RLN Validator is ENABLED.");
@@ -269,18 +255,19 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
       try {
         keyBytes = Files.readAllBytes(Paths.get(rlnConfig.verifyingKeyPath()));
         LOG.info("RLN Verifying Key loaded successfully from {}.", rlnConfig.verifyingKeyPath());
-        LOG.info("✅ IMPORTANT: Zerokit RLN uses built-in verifying keys for height 20 trees.");
+        LOG.info(
+            "✅ IMPORTANT: RLN verification uses custom circuit with LIMIT_BIT_SIZE=20 (supports ~1M message limit).");
         LOG.info("   - The loaded external key file is kept for API compatibility");
         LOG.info(
-            "   - Actual verification uses zerokit's internal pre-compiled keys via zkey_from_folder()");
-        LOG.info("   - This ensures correct verification for height 20 RLN proofs");
+            "   - Actual verification uses custom circuit bundled in rln_bridge (rln_final.arkzkey)");
+        LOG.info(
+            "   - This ensures correct verification for RLN proofs with limits up to 1,048,575");
       } catch (IOException e) {
         LOG.warn(
             "Failed to load external RLN verifying key from {}: {}. This is acceptable when using zerokit's built-in keys.",
             rlnConfig.verifyingKeyPath(),
             e.getMessage());
-        LOG.info(
-            "✅ Using zerokit's built-in verifying keys for height 20 trees (no external key file needed).");
+        LOG.info("✅ Using custom RLN circuit bundled in rln_bridge (no external key file needed).");
         keyBytes = new byte[0]; // Empty placeholder - zerokit ignores this
       } catch (UnsatisfiedLinkError | RuntimeException e) {
         LOG.error("Failed to initialize RLN JNI RlnBridge: {}", e.getMessage(), e);
@@ -334,6 +321,13 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
       } else {
         channelBuilder.usePlaintext();
       }
+
+      // HTTP/2 keepalive: detect dead connections and trigger automatic reconnection
+      channelBuilder
+          .keepAliveTime(30, TimeUnit.SECONDS)
+          .keepAliveTimeout(10, TimeUnit.SECONDS)
+          .keepAliveWithoutCalls(true);
+
       this.proofServiceChannel = channelBuilder.build();
     }
 
@@ -355,29 +349,18 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
    * <p>Establishes a persistent streaming connection to receive proofs asynchronously as they are
    * generated by the proof service. Implements automatic reconnection with exponential backoff on
    * failures.
-   *
-   * <p><strong>Single Subscription Guarantee:</strong> This method uses STATIC fields to ensure
-   * only one active subscription exists across ALL validator instances. This is critical because
-   * createTransactionValidator() creates new instances for each validation request.
    */
   private void startProofStreamSubscription() {
     synchronized (subscriptionLock) {
-      // Initialize shared channel and stub if not already done
-      if (sharedProofServiceChannel == null || sharedProofServiceChannel.isShutdown()) {
-        sharedProofServiceChannel = this.proofServiceChannel;
-        sharedAsyncProofStub = this.asyncProofStub;
-        LOG.info("Initialized shared gRPC channel for proof stream subscription");
-      }
-
-      if (sharedAsyncProofStub == null) {
-        LOG.error("Cannot start RLN proof stream: shared gRPC stub not initialized.");
+      if (this.asyncProofStub == null) {
+        LOG.error("Cannot start RLN proof stream: gRPC stub not initialized.");
         return;
       }
 
-      // Ensure only one subscription is active at a time across ALL instances
+      // Ensure only one subscription is active at a time
       if (!subscriptionActive.compareAndSet(false, true)) {
         LOG.debug(
-            "RLN proof stream subscription already active (static check), skipping duplicate subscription attempt.");
+            "RLN proof stream subscription already active, skipping duplicate subscription attempt.");
         return;
       }
 
@@ -387,7 +370,7 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
         currentStreamContext = null;
       }
 
-      LOG.info("Starting RLN proof stream subscription (single shared subscription)...");
+      LOG.info("Starting RLN proof stream subscription...");
     }
 
     RlnProofFilter request =
@@ -400,7 +383,7 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
     // Run the subscription within the cancellable context
     streamContext.run(
         () -> {
-          sharedAsyncProofStub.getProofs(
+          asyncProofStub.getProofs(
               request,
               new StreamObserver<>() {
                 @Override
@@ -412,18 +395,14 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
                     LOG.debug("Received proof from gRPC stream for txHash: {}", txHashHex);
 
                     // Parse the combined proof and extract public inputs using verification service
-                    String currentEpochId = getCurrentEpochIdentifier();
-                    LOG.debug(
-                        "Processing proof for txHash: {}, using current epoch: {}",
-                        txHashHex,
-                        currentEpochId);
-
+                    // Note: epoch is extracted from the proof's public inputs by the native code;
+                    // the sequencer does not need to compute its own epoch.
                     try {
                       RlnVerificationService.RlnProofData proofData =
                           rlnVerificationService.parseAndVerifyRlnProof(
                               rlnVerifyingKeyBytes,
                               rlnProofMessage.getProof().toByteArray(),
-                              currentEpochId);
+                              "" /* unused — native code uses epoch from proof */);
 
                       if (proofData != null && proofData.isValid()) {
                         LOG.debug(
@@ -446,11 +425,11 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
                                 proofData.nullifier(), // nullifier
                                 Instant.now());
 
-                        sharedRlnProofCache.put(txHashHex, cachedProof);
+                        rlnProofCache.put(txHashHex, cachedProof);
                         LOG.info(
                             "Proof cached for txHash: {}, cache size: {}, proof epoch: {}",
                             txHashHex,
-                            sharedRlnProofCache.estimatedSize(),
+                            rlnProofCache.estimatedSize(),
                             proofData.epoch());
 
                         // Complete the future for any waiting threads
@@ -531,11 +510,9 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
    */
   private void scheduleProofStreamReconnection() {
     synchronized (subscriptionLock) {
-      // Use shared static scheduler to ensure only one reconnection loop
-      if (sharedReconnectionScheduler == null || sharedReconnectionScheduler.isShutdown()) {
-        sharedReconnectionScheduler =
-            Executors.newSingleThreadScheduledExecutor(
-                r -> new Thread(r, "RlnGrpcReconnect-Shared"));
+      if (grpcReconnectionScheduler == null || grpcReconnectionScheduler.isShutdown()) {
+        grpcReconnectionScheduler =
+            Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "RlnGrpcReconnect"));
       }
 
       long delay;
@@ -567,7 +544,7 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
       }
 
       lastProofStreamRetryTime = System.currentTimeMillis();
-      sharedReconnectionScheduler.schedule(
+      grpcReconnectionScheduler.schedule(
           this::startProofStreamSubscription, delay, TimeUnit.MILLISECONDS);
     }
   }
@@ -602,12 +579,10 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
    * manual cleanup triggers.
    */
   private void evictExpiredProofs() {
+    LOG.debug("Running RLN proof cache cleanup. Current size: {}", rlnProofCache.estimatedSize());
+    rlnProofCache.cleanUp(); // Manual cleanup trigger
     LOG.debug(
-        "Running RLN proof cache cleanup. Current size: {}", sharedRlnProofCache.estimatedSize());
-    sharedRlnProofCache.cleanUp(); // Manual cleanup trigger
-    LOG.debug(
-        "RLN proof cache cleanup finished. Size after cleanup: {}",
-        sharedRlnProofCache.estimatedSize());
+        "RLN proof cache cleanup finished. Size after cleanup: {}", rlnProofCache.estimatedSize());
   }
 
   /**
@@ -621,7 +596,7 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
    */
   private CachedProof waitForProofInCache(String txHashString) {
     // First check if proof is already available
-    CachedProof proof = sharedRlnProofCache.getIfPresent(txHashString);
+    CachedProof proof = rlnProofCache.getIfPresent(txHashString);
     if (proof != null) {
       return proof;
     }
@@ -672,216 +647,6 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
    */
   boolean removeFromDenyList(final Address address) {
     return denyListManager.removeFromDenyList(address);
-  }
-
-  /**
-   * Generates the current epoch identifier based on configuration.
-   *
-   * <p>Supports different epoch strategies:
-   *
-   * <ul>
-   *   <li>"BLOCK" - Uses current block number as field element
-   *   <li>"TIMESTAMP_1H" - Uses hourly timestamp buckets as field element
-   *   <li>"TEST" - Uses hardcoded test epoch for testing
-   * </ul>
-   *
-   * @return The current epoch identifier as hex string (field element compatible)
-   */
-  private String getCurrentEpochIdentifier() {
-    var currentHeader = blockchainService.getChainHeadHeader();
-    long timestamp = currentHeader.getTimestamp();
-    long blockNumber = currentHeader.getNumber();
-
-    return switch (rlnConfig.defaultEpochForQuota().toUpperCase()) {
-      case "BLOCK" -> {
-        // Secure block-based epoch generation with entropy mixing
-        String blockStr = "BLOCK:" + blockNumber + ":SALT:" + getSecureEpochSalt();
-        yield hashToFieldElementHex(blockStr);
-      }
-      case "TIMESTAMP_1H" -> {
-        // Secure timestamp-based epoch generation with entropy mixing
-        String timestampStr =
-            "TIME:"
-                + Instant.ofEpochSecond(timestamp)
-                    .atZone(ZoneOffset.UTC)
-                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH"))
-                + ":SALT:"
-                + getSecureEpochSalt();
-        yield hashToFieldElementHex(timestampStr);
-      }
-      case "TEST" -> {
-        LOG.warn("Using TEST epoch mode - this should only be used in testing!");
-        yield "0x09a6ed7f807775ba43e63fbba747a7f0122aa3fac4a05b3392aea03eecdd1128";
-      }
-      case "FIXED_FIELD_ELEMENT" -> {
-        // For development/testing: use a fixed field element that matches the RLN prover
-        // This should match the external_nullifier from your RLN proof logs
-        yield "0x1c61ef0b2ebc0235d85fe8537b4455549356e3895005ba7a03fbd4efc9ba3692";
-      }
-      default -> {
-        LOG.warn(
-            "Unknown defaultEpochForQuota: '{}'. Defaulting to block number hash.",
-            rlnConfig.defaultEpochForQuota());
-        String blockStr = "BLOCK:" + blockNumber;
-        yield hashToFieldElementHex(blockStr);
-      }
-    };
-  }
-
-  /**
-   * Generates a secure salt for epoch generation to prevent predictable epoch values. Uses
-   * blockchain state entropy for security while maintaining determinism.
-   *
-   * @return Secure salt string based on recent blockchain state
-   */
-  private String getSecureEpochSalt() {
-    try {
-      var currentHeader = blockchainService.getChainHeadHeader();
-      long blockNumber = currentHeader.getNumber();
-      long timestamp = currentHeader.getTimestamp();
-
-      // Use recent block data for entropy while maintaining determinism within epoch windows
-      // Mix block hash with timestamp for additional entropy
-      String entropySource =
-          "ENTROPY:" + (blockNumber / 100) * 100 + ":" + (timestamp / 3600) * 3600;
-
-      // Hash to create compact, secure salt
-      java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
-      byte[] hash = digest.digest(entropySource.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-
-      // Use first 8 bytes for compact salt
-      StringBuilder salt = new StringBuilder();
-      for (int i = 0; i < 8; i++) {
-        salt.append(String.format("%02x", hash[i]));
-      }
-      return salt.toString();
-
-    } catch (Exception e) {
-      LOG.error("Error generating secure epoch salt: {}", e.getMessage());
-      // Fallback to basic timestamp for determinism
-      return String.valueOf(System.currentTimeMillis() / 3600000); // Hour-based fallback
-    }
-  }
-
-  /**
-   * Converts a string to a field element compatible hex representation. Uses SHA-256 hash to ensure
-   * deterministic field element generation.
-   *
-   * @param input The input string to hash
-   * @return Hex string representation suitable for field element conversion
-   */
-  private String hashToFieldElementHex(String input) {
-    try {
-      java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
-      byte[] hash = digest.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-
-      // Convert to hex string with 0x prefix
-      StringBuilder hexString = new StringBuilder("0x");
-      for (byte b : hash) {
-        hexString.append(String.format("%02x", b));
-      }
-
-      return hexString.toString();
-    } catch (java.security.NoSuchAlgorithmException e) {
-      LOG.error("SHA-256 algorithm not available: {}", e.getMessage(), e);
-      // Fallback to a simple conversion if SHA-256 is not available
-      return "0x" + Integer.toHexString(input.hashCode()).toLowerCase();
-    }
-  }
-
-  /**
-   * Validates if a proof epoch is acceptable compared to the current epoch. Implements flexible
-   * epoch validation to prevent race conditions while maintaining security.
-   *
-   * @param proofEpochId The epoch from the RLN proof
-   * @param currentEpochId The current system epoch
-   * @return true if the proof epoch is valid, false if outside acceptable window
-   */
-  private boolean isEpochValid(String proofEpochId, String currentEpochId) {
-    // Exact match is always valid
-    if (currentEpochId.equals(proofEpochId)) {
-      return true;
-    }
-
-    // For different epoch modes, implement appropriate tolerance windows
-    String epochMode = rlnConfig.defaultEpochForQuota().toUpperCase();
-
-    switch (epochMode) {
-      case "BLOCK":
-        // Allow proofs from previous 2 blocks to handle block timing races
-        return isBlockEpochValid(proofEpochId, currentEpochId, 2);
-
-      case "TIMESTAMP_1H":
-        // Allow proofs from current hour and previous hour for timing tolerance
-        return isTimestampEpochValid(proofEpochId, currentEpochId, 1);
-
-      case "TEST":
-      case "FIXED_FIELD_ELEMENT":
-        // In test mode, be more permissive for testing scenarios
-        return true;
-
-      default:
-        // For unknown modes, default to strict validation for security
-        LOG.warn("Unknown epoch mode '{}', using strict validation", epochMode);
-        return false;
-    }
-  }
-
-  /** Validates block-based epochs within tolerance window. */
-  private boolean isBlockEpochValid(String proofEpoch, String currentEpoch, int blockTolerance) {
-    try {
-      // Extract block numbers from epoch hashes (simplified approach)
-      // In production, you'd want more sophisticated epoch comparison
-      var currentHeader = blockchainService.getChainHeadHeader();
-      long currentBlock = currentHeader.getNumber();
-
-      // For each potential recent block, generate its epoch (with salt) and compare
-      for (int i = 0; i <= blockTolerance; i++) {
-        String testBlockStr = "BLOCK:" + (currentBlock - i) + ":SALT:" + getSecureEpochSalt();
-        String testEpoch = hashToFieldElementHex(testBlockStr);
-        if (testEpoch.equals(proofEpoch)) {
-          if (i > 0) {
-            LOG.debug("Accepting proof from {} blocks ago (tolerance: {})", i, blockTolerance);
-          }
-          return true;
-        }
-      }
-      return false;
-    } catch (Exception e) {
-      LOG.error("Error validating block epoch: {}", e.getMessage());
-      return false; // Fail secure
-    }
-  }
-
-  /** Validates timestamp-based epochs within tolerance window. */
-  private boolean isTimestampEpochValid(String proofEpoch, String currentEpoch, int hourTolerance) {
-    try {
-      var currentHeader = blockchainService.getChainHeadHeader();
-      long currentTimestamp = currentHeader.getTimestamp();
-
-      // Check current hour and previous hours within tolerance (with salt)
-      for (int i = 0; i <= hourTolerance; i++) {
-        long testTimestamp = currentTimestamp - (i * 3600); // Subtract hours
-        String testTimeStr =
-            "TIME:"
-                + Instant.ofEpochSecond(testTimestamp)
-                    .atZone(ZoneOffset.UTC)
-                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH"))
-                + ":SALT:"
-                + getSecureEpochSalt();
-        String testEpoch = hashToFieldElementHex(testTimeStr);
-        if (testEpoch.equals(proofEpoch)) {
-          if (i > 0) {
-            LOG.debug("Accepting proof from {} hours ago (tolerance: {})", i, hourTolerance);
-          }
-          return true;
-        }
-      }
-      return false;
-    } catch (Exception e) {
-      LOG.error("Error validating timestamp epoch: {}", e.getMessage());
-      return false; // Fail secure
-    }
   }
 
   /**
@@ -1059,6 +824,14 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
           transaction.getMaxFeePerGas().map(Object::toString).orElse("-"),
           transaction.getMaxPriorityFeePerGas().map(Object::toString).orElse("-"));
 
+      // On-demand reconnection: if the proof stream is not active, try to reconnect
+      // This handles the case where the prover started after the sequencer exhausted retries
+      if (!subscriptionActive.get()) {
+        LOG.info("Proof stream is not active, triggering on-demand reconnection...");
+        proofStreamRetryCount.set(0); // Reset retry counter for fresh attempt
+        scheduleProofStreamReconnection();
+      }
+
       return Optional.of("RLN proof not found in cache after timeout.");
     }
     LOG.debug("RLN proof found in cache for txHash: {}", txHashString);
@@ -1085,49 +858,26 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
       return Optional.of("RLN validation failed: Invalid proof epoch format");
     }
 
-    String currentEpochId = getCurrentEpochIdentifier();
+    // Nullifier dedup: use the proof's epoch (computed by the prover, not the sequencer)
     String proofEpochId = proof.epochHex();
-    LOG.debug("Proof epoch: {}, Current epoch: {}", proofEpochId, currentEpochId);
-
-    // CRITICAL SECURITY FIX: Use the proof's epoch for nullifier tracking, not current epoch
-    // This prevents nullifier reuse across different epochs
     if (nullifierTracker != null) {
       boolean isNullifierNew =
           nullifierTracker.checkAndMarkNullifier(proof.nullifierHex(), proofEpochId);
       if (!isNullifierNew) {
         LOG.error(
-            "CRITICAL SECURITY VIOLATION: Nullifier reuse detected for tx {}. Nullifier: {}, Proof Epoch: {}",
+            "Nullifier reuse detected for tx {}. Nullifier: {}, Proof Epoch: {}",
             txHashString,
             proof.nullifierHex(),
             proofEpochId);
         return Optional.of(
-            "RLN validation failed: Nullifier already used in epoch "
-                + proofEpochId
-                + " (potential double-spend attack)");
+            "RLN validation failed: Nullifier already used in epoch " + proofEpochId);
       }
       LOG.debug(
           "Nullifier {} verified as unique for proof epoch {}", proof.nullifierHex(), proofEpochId);
     } else {
-      LOG.error("NullifierTracker not available - SECURITY RISK: Cannot prevent nullifier reuse!");
+      LOG.error("NullifierTracker not available - cannot prevent nullifier reuse");
       return Optional.of("RLN validation failed: Nullifier tracking unavailable");
     }
-
-    // Flexible epoch validation: allow proofs from recent epochs to prevent race conditions
-    // while still maintaining security against replay attacks
-    if (!isEpochValid(proofEpochId, currentEpochId)) {
-      LOG.warn(
-          "SECURITY WARNING: Epoch validation failed for tx {}. Proof epoch: {}, Current epoch: {}. Outside acceptable window.",
-          txHashString,
-          proofEpochId,
-          currentEpochId);
-      return Optional.of(
-          "RLN validation failed: Proof epoch "
-              + proofEpochId
-              + " outside acceptable window from current epoch "
-              + currentEpochId);
-    }
-
-    LOG.debug("Epoch validation passed for tx {}: {}", txHashString, currentEpochId);
 
     // Since the proof was already verified and public inputs extracted during caching,
     // we can skip the verification step here as the proof is already validated.
@@ -1268,25 +1018,8 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
         currentStreamContext = null;
       }
 
-      // Shutdown shared gRPC channel
-      if (sharedProofServiceChannel != null && !sharedProofServiceChannel.isShutdown()) {
-        sharedProofServiceChannel.shutdown();
-        try {
-          if (!sharedProofServiceChannel.awaitTermination(5, TimeUnit.SECONDS)) {
-            sharedProofServiceChannel.shutdownNow();
-          }
-        } catch (InterruptedException e) {
-          sharedProofServiceChannel.shutdownNow();
-          Thread.currentThread().interrupt();
-        }
-        sharedProofServiceChannel = null;
-        sharedAsyncProofStub = null;
-      }
-
-      // Also shutdown instance channel if different
-      if (proofServiceChannel != null
-          && proofServiceChannel != sharedProofServiceChannel
-          && !proofServiceChannel.isShutdown()) {
+      // Shutdown gRPC channel
+      if (proofServiceChannel != null && !proofServiceChannel.isShutdown()) {
         proofServiceChannel.shutdown();
         try {
           if (!proofServiceChannel.awaitTermination(5, TimeUnit.SECONDS)) {
@@ -1298,10 +1031,9 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
         }
       }
 
-      // Shutdown shared reconnection scheduler
-      if (sharedReconnectionScheduler != null && !sharedReconnectionScheduler.isShutdown()) {
-        sharedReconnectionScheduler.shutdownNow();
-        sharedReconnectionScheduler = null;
+      // Shutdown reconnection scheduler
+      if (grpcReconnectionScheduler != null && !grpcReconnectionScheduler.isShutdown()) {
+        grpcReconnectionScheduler.shutdownNow();
       }
     }
 
@@ -1313,13 +1045,14 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
       }
     }
 
-    // Shutdown instance-level schedulers
+    // Shutdown cache eviction scheduler
     if (proofCacheEvictionScheduler != null && !proofCacheEvictionScheduler.isShutdown()) {
       proofCacheEvictionScheduler.shutdownNow();
     }
-    if (grpcReconnectionScheduler != null && !grpcReconnectionScheduler.isShutdown()) {
-      grpcReconnectionScheduler.shutdownNow();
-    }
+
+    // Clear pending proof futures
+    pendingProofs.values().forEach(f -> f.cancel(false));
+    pendingProofs.clear();
 
     LOG.info("RlnVerifierValidator resources closed.");
   }
@@ -1338,11 +1071,11 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
 
   @VisibleForTesting
   Optional<CachedProof> getProofFromCacheForTest(String txHash) {
-    return Optional.ofNullable(sharedRlnProofCache.getIfPresent(txHash));
+    return Optional.ofNullable(rlnProofCache.getIfPresent(txHash));
   }
 
   @VisibleForTesting
   void addProofToCacheForTest(String txHash, CachedProof proof) {
-    sharedRlnProofCache.put(txHash, proof);
+    rlnProofCache.put(txHash, proof);
   }
 }

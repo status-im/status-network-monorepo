@@ -251,8 +251,9 @@ message AddToDenyListRequest {
   Address address = 1;
   // Optional reason for denial
   optional string reason = 2;
-  // Optional TTL in seconds (if not set, entry never expires)
-  optional int64 ttl_seconds = 3;
+  // DEPRECATED: optional int64 ttl_seconds = 3;
+  // Epoch during which the address was denied
+  int64 denied_epoch = 4;
 }
 
 message AddToDenyListReply {
@@ -288,10 +289,11 @@ message DenyListEntry {
   string address = 1;
   // Unix timestamp (seconds) when the address was denied
   int64 denied_at = 2;
-  // Optional Unix timestamp (seconds) when this entry expires
-  optional int64 expires_at = 3;
+  // DEPRECATED: optional int64 expires_at = 3;
   // Optional reason for denial
   optional string reason = 4;
+  // Epoch during which the address was denied
+  int64 epoch = 5;
 }
 
 message DenyListError {

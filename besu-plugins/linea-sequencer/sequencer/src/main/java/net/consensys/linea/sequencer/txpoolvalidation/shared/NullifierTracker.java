@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import net.vac.prover.CheckAndRecordNullifierReply;
 import net.vac.prover.CheckAndRecordNullifierRequest;
@@ -68,6 +69,12 @@ public class NullifierTracker implements Closeable {
   private ManagedChannel channel;
   private RlnProverGrpc.RlnProverBlockingStub blockingStub;
   private final AtomicBoolean grpcAvailable = new AtomicBoolean(false);
+
+  // Circuit breaker with recovery: prevents hammering dead connections while allowing auto-recovery
+  private static final int CIRCUIT_BREAKER_THRESHOLD = 5;
+  private static final long CIRCUIT_BREAKER_RECOVERY_MS = 30_000; // 30 seconds
+  private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
+  private final AtomicLong lastFailureTimestamp = new AtomicLong(0);
 
   // gRPC configuration
   private final String grpcHost;
@@ -173,6 +180,12 @@ public class NullifierTracker implements Closeable {
         channelBuilder.usePlaintext();
       }
 
+      // HTTP/2 keepalive: detect dead connections and trigger automatic reconnection
+      channelBuilder
+          .keepAliveTime(30, TimeUnit.SECONDS)
+          .keepAliveTimeout(10, TimeUnit.SECONDS)
+          .keepAliveWithoutCalls(true);
+
       this.channel = channelBuilder.build();
       this.blockingStub = RlnProverGrpc.newBlockingStub(channel);
       this.grpcAvailable.set(true);
@@ -225,7 +238,7 @@ public class NullifierTracker implements Closeable {
     }
 
     // Cold path: Check and record in database via gRPC
-    if (grpcAvailable.get() && blockingStub != null) {
+    if (blockingStub != null && !isCircuitBreakerOpen()) {
       try {
         byte[] nullifierBytes = Bytes.fromHexString(normalizedNullifier).toArrayUnsafe();
         long epoch = parseEpoch(normalizedEpoch);
@@ -237,6 +250,7 @@ public class NullifierTracker implements Closeable {
                 .build();
 
         CheckAndRecordNullifierReply reply = blockingStub.checkAndRecordNullifier(request);
+        recordGrpcSuccess();
 
         if (reply.getIsValid()) {
           // New nullifier - add to local cache
@@ -253,8 +267,7 @@ public class NullifierTracker implements Closeable {
       } catch (StatusRuntimeException e) {
         grpcFailures.incrementAndGet();
         LOG.error("{}: gRPC call failed: {}. Using cache-only mode.", serviceName, e.getStatus());
-        grpcAvailable.set(false);
-        scheduleGrpcReconnect();
+        recordGrpcFailure();
         // Fall through to cache-only behavior
       } catch (IllegalArgumentException e) {
         LOG.error("{}: Invalid nullifier format: {}", serviceName, e.getMessage());
@@ -308,22 +321,39 @@ public class NullifierTracker implements Closeable {
     }
   }
 
-  private void scheduleGrpcReconnect() {
-    // Simple reconnect after delay
-    Thread reconnectThread =
-        new Thread(
-            () -> {
-              try {
-                Thread.sleep(30000); // 30 second delay
-                LOG.info("{}: Attempting gRPC reconnection...", serviceName);
-                initializeGrpcClient();
-              } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-              }
-            });
-    reconnectThread.setDaemon(true);
-    reconnectThread.setName(serviceName + "-NullifierGrpcReconnect");
-    reconnectThread.start();
+  private boolean isCircuitBreakerOpen() {
+    int failures = consecutiveFailures.get();
+    if (failures < CIRCUIT_BREAKER_THRESHOLD) {
+      return false;
+    }
+    long elapsed = System.currentTimeMillis() - lastFailureTimestamp.get();
+    if (elapsed > CIRCUIT_BREAKER_RECOVERY_MS) {
+      LOG.info(
+          "{}: Circuit breaker recovery window passed ({} ms), allowing retry",
+          serviceName,
+          elapsed);
+      consecutiveFailures.set(0);
+      return false;
+    }
+    return true;
+  }
+
+  private void recordGrpcSuccess() {
+    consecutiveFailures.set(0);
+    grpcAvailable.set(true);
+  }
+
+  private void recordGrpcFailure() {
+    int failures = consecutiveFailures.incrementAndGet();
+    lastFailureTimestamp.set(System.currentTimeMillis());
+    grpcAvailable.set(false);
+    if (failures == CIRCUIT_BREAKER_THRESHOLD) {
+      LOG.warn(
+          "{}: Circuit breaker opened after {} consecutive failures. Will auto-recover after {} ms.",
+          serviceName,
+          failures,
+          CIRCUIT_BREAKER_RECOVERY_MS);
+    }
   }
 
   /**

@@ -135,7 +135,7 @@ mod tests {
     use alloy::primitives::address;
     use ark_bn254::Fr;
     use ark_serialize::CanonicalSerialize;
-    use rln::circuit::{Curve, zkey_from_folder};
+    use rln::circuit::{Curve, zkey_from_raw};
     use rln::hashers::{hash_to_field_le, poseidon_hash};
     use rln::poseidon_tree::PoseidonTree;
     use rln::protocol::{
@@ -172,10 +172,9 @@ mod tests {
         let m_proof = tree.proof(0).unwrap();
 
         let (rln_identifier, pk, matrices, graph_bytes) = {
-            // RlnIdentifier::new(b"rln id test");
-            let (pk, matrices) = zkey_from_folder();
-            // Load the graph.bin file that's compatible with rln 0.9.0
-            // This was copied from rln-0.9.0/resources/tree_depth_20/graph.bin
+            // Use custom circuit with LIMIT_BIT_SIZE=20 (supports ~1M message limit)
+            let arkzkey_bytes = include_bytes!("../resources/rln_final.arkzkey");
+            let (pk, matrices) = zkey_from_raw(arkzkey_bytes).expect("Failed to load custom RLN circuit");
             let graph_bytes = include_bytes!("../resources/graph.bin");
 
             (

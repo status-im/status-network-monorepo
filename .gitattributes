@@ -26,6 +26,12 @@ prover/prover-assets/kzgsrs/* binary
 prover/zkevm/arithmetization/*.bin binary
 
 rln-prover/rln_proof/resources/*.bin binary
+rln-prover/rln_proof/resources/*.arkzkey binary
+rln-aggregator/slasher/resources/*.bin binary
+rln-aggregator/slasher/resources/*.arkzkey binary
+besu-plugins/linea-sequencer/sequencer/src/main/rust/rln_bridge/resources/*.arkzkey binary
+*.arkzkey binary
+*.zkey binary
 
 *.woff2 binary
 

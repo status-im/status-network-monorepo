@@ -61,9 +61,6 @@ rln:
   # Minimum balance required to be a member and send gasless transactions
   # Set to 1 karma (1e18 wei = 1 token). Users need at least 1 karma.
   minMembershipBalance: "1000000000000000000"
-  # Epoch mode: TEST (30s), TIMESTAMP_1H (1 hour)
-  # For production with 24-hour epochs, use TIMESTAMP_1H and configure prover accordingly
-  epochMode: "TEST"
   # RLN prover timeout in milliseconds
   timeoutMs: 10000
   # Proof wait timeout in milliseconds
@@ -190,6 +187,9 @@ l2:
     rlnContract: "0x5C95Bcd50E6D1B4E3CDC478484C9030Ff0a7D493"
     tiersContract: "0x729409FAD88CafdA895E41f9ED00Ef4094F8d130"
     registrationMin: 1
+    # Max message_id allowed in RLN ZK proofs. Circuit constraint: max 1048575 (2^20 - 1).
+    # Custom RLN circuit uses Num2Bits(20) for range checks.
+    spamLimit: 1000000
     # Gas price in gwei for register() transactions (0 = use default)
     registrationGasPriceGwei: 0
     # Private key for RLN prover (has REGISTER_ROLE on RLN contract)

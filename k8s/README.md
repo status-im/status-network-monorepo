@@ -453,7 +453,6 @@ network:
 rln:
   enabled: true
   contractAddress: "0x..."     # RLN contract on L2
-  epochMode: "TEST"            # TEST (30s) or TIMESTAMP_1H (1 hour)
   premiumGasThresholdGwei: 12  # TX above this bypass RLN
   gasless:
     enabled: true
@@ -597,7 +596,6 @@ The RLN (Rate Limiting Nullifier) system enables gasless transactions on the L2.
 
 | Parameter | Description | Testnet Value |
 |-----------|-------------|---------------|
-| `rln.epochMode` | Epoch duration mode | `TEST` (30s) |
 | `rln.premiumGasThresholdGwei` | Gas price threshold for premium TX | 12 |
 | `l2.rlnProver.epochDurationSecs` | Epoch length for prover | 300 (5 min) |
 

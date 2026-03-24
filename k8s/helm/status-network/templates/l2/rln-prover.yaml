@@ -65,6 +65,8 @@ spec:
             - "--mock-user"
             - "/config/mock_users.json"
             {{- end }}
+            - "--spam-limit"
+            - "{{ .Values.l2.rlnProver.spamLimit | default 1000000 }}"
             - "--db"
             - "$(DATABASE_URL)"
             - "--epoch-duration-secs"

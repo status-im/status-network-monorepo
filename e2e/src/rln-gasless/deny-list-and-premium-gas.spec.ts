@@ -92,12 +92,7 @@ describe("RLN Deny List and Premium Gas", () => {
     admin = new ethers.Wallet(RLN_CONFIG.accounts.admin, rpcProvider);
     contracts = loadRlnContracts(rpcProvider, admin);
 
-    rlnClient = new RlnTestClient(
-      rpcProvider,
-      sequencerProvider,
-      RLN_CONFIG.services.rpcUrl,
-      RLN_CONFIG.services.karmaServiceUrl,
-    );
+    rlnClient = new RlnTestClient(rpcProvider, sequencerProvider, RLN_CONFIG.services.rpcUrl);
 
     denyListManager = new DenyListTestManager();
     karmaManager = new KarmaTestManager(contracts.karma, contracts.rln, admin, rlnClient);
@@ -157,10 +152,8 @@ describe("RLN Deny List and Premium Gas", () => {
       });
 
       // Ensure enough epoch time remains for quota TXs + expected failure (prevents epoch boundary resets)
-      await rlnClient.ensureEpochWindow(20000);
-
-      // Ensure enough epoch time remains for quota TXs + verification (prevents epoch boundary resets)
-      await rlnClient.ensureEpochWindow(20000);
+      // Need ~4s per tx * (quota + 1 failure) + buffer. With entry tier quota=2, that's ~15s.
+      await rlnClient.ensureEpochWindow(25000);
 
       // Send quota transactions (user is added to deny list on the last one)
       for (let i = 0; i < quota; i++) {
@@ -729,8 +722,19 @@ describe("RLN Deny List and Premium Gas", () => {
         });
       }
 
-      // Wait for deny list to propagate, then check gas estimate.
-      await denyListManager.waitForDenied(user.address, RLN_CONFIG.test.maxWaitForDenyListMs);
+      // Verify user is denied by attempting another gasless TX (should be rejected)
+      // This is more reliable than polling isDenied which can miss the deny window
+      await rlnClient.waitForProverSync(2000);
+      const denyError = await rlnClient.sendGaslessTransactionExpectFailure(
+        user,
+        {
+          to: TEST_RECIPIENT,
+          value: 0n,
+          data: uniqueTxData("prem006-verify-denied"),
+        },
+        10000,
+      );
+      expect(denyError).toMatch(/quota|deny|denied|timeout|exceeded|resource/i);
 
       // Get estimate while denied
       const deniedEstimate = await rlnClient.lineaEstimateGas({

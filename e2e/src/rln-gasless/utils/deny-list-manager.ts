@@ -7,7 +7,7 @@ const logger = createTestLogger();
 export interface DenyListEntry {
   address: string;
   deniedAt: Date;
-  expiresAt?: Date | undefined;
+  epoch: number;
   reason?: string | undefined;
 }
 
@@ -147,7 +147,9 @@ export class DenyListTestManager {
         data: "0x",
       };
 
-      await wallet.sendTransaction(tx);
+      // Send through RPC node which has the prover forwarder
+      const gaslessWallet = wallet.connect(this.sequencerProvider);
+      await gaslessWallet.sendTransaction(tx);
       // If transaction succeeds or is pending, user is not denied
       return false;
     } catch (error) {
@@ -245,7 +247,7 @@ export class DenyListTestManager {
           return {
             address: data.entry.address,
             deniedAt: new Date(data.entry.deniedAt * 1000),
-            expiresAt: data.entry.expiresAt ? new Date(data.entry.expiresAt * 1000) : undefined,
+            epoch: data.entry.epoch ?? 0,
             reason: data.entry.reason,
           };
         }

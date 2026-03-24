@@ -167,8 +167,8 @@ data:
 
         CREATE TABLE IF NOT EXISTS deny_list (
             address CHAR(42) NOT NULL PRIMARY KEY,
-            expires_at BIGINT,
-            denied_at BIGINT
+            denied_at BIGINT,
+            epoch BIGINT NOT NULL DEFAULT 0
         );
     EOSQL
 

@@ -87,9 +87,7 @@ class RlnValidatorBasicTest {
     // Note: Deny list is now stored in the RLN prover's PostgreSQL database and accessed via gRPC
     LineaSharedGaslessConfiguration sharedConfig =
         new LineaSharedGaslessConfiguration(
-            300L, // denyListCacheRefreshSeconds
             1L, // premiumGasPriceThresholdGWei
-            10L, // denyListEntryMaxAgeMinutes
             "/tmp/test_nullifiers.txt" // nullifierStoragePath
             );
 
@@ -112,10 +110,10 @@ class RlnValidatorBasicTest {
             5000L, // karmaServiceTimeoutMs
             true, // exponentialBackoffEnabled
             30000L, // maxBackoffDelayMs
-            "TEST", // defaultEpochForQuota
             Optional.empty(), // rlnJniLibPath
             "", // gasKillSwitchFilePath (disabled)
-            5L // gasKillSwitchPollSeconds
+            5L, // gasKillSwitchPollSeconds
+            30_000L // circuitBreakerRecoveryMs
             );
 
     // Create test transaction
@@ -143,7 +141,7 @@ class RlnValidatorBasicTest {
   @Test
   void testValidatorCreationWithDisabledConfig() {
     LineaSharedGaslessConfiguration disabledSharedConfig =
-        new LineaSharedGaslessConfiguration(300L, 1L, 10L, "/tmp/test_nullifiers.txt");
+        new LineaSharedGaslessConfiguration(1L, "/tmp/test_nullifiers.txt");
 
     LineaRlnValidatorConfiguration disabledConfig =
         new LineaRlnValidatorConfiguration(
@@ -164,10 +162,10 @@ class RlnValidatorBasicTest {
             5000L,
             true,
             30000L,
-            "TEST",
             Optional.empty(),
             "", // gasKillSwitchFilePath (disabled)
-            5L); // gasKillSwitchPollSeconds
+            5L, // gasKillSwitchPollSeconds
+            30_000L); // circuitBreakerRecoveryMs
 
     RlnVerifierValidator validator =
         new RlnVerifierValidator(
@@ -213,9 +211,7 @@ class RlnValidatorBasicTest {
   @Test
   void testSharedServicesConfiguration() {
     // Test that shared services are properly configured
-    // Note: Deny list is now stored in prover's PostgreSQL database, accessed via gRPC
-    assertThat(rlnConfig.denyListRefreshSeconds()).isEqualTo(300L);
-    assertThat(rlnConfig.denyListEntryMaxAgeMinutes()).isEqualTo(10L);
+    // Note: Deny list is epoch-aligned, no TTL or cache refresh needed
     assertThat(rlnConfig.premiumGasPriceThresholdWei()).isEqualTo(1_000_000_000L); // 1 GWei in Wei
     assertThat(rlnConfig.sharedGaslessConfig().nullifierStoragePath()).contains("nullifiers.txt");
 

@@ -24,8 +24,8 @@ import org.junit.jupiter.api.Test;
 /**
  * Tests for DenyListManager functionality.
  *
- * <p>Tests the local cache behavior when gRPC is unavailable. In production, the DenyListManager
- * connects to the RLN prover's PostgreSQL database via gRPC.
+ * <p>Tests the no-op behavior when gRPC is unavailable. In production, the DenyListManager connects
+ * to the RLN prover's PostgreSQL database via gRPC.
  */
 class DenyListManagerTest {
 
@@ -33,15 +33,13 @@ class DenyListManagerTest {
       Address.fromHexString("0x1234567890123456789012345678901234567890");
   private static final Address TEST_ADDRESS_2 =
       Address.fromHexString("0x9876543210987654321098765432109876543210");
-  private static final Address TEST_ADDRESS_3 =
-      Address.fromHexString("0xabcdefabcdefabcdefabcdefabcdefabcdefabcd");
 
   private DenyListManager denyListManager;
 
   @BeforeEach
   void setUp() {
-    // Create cache-only manager for testing (no gRPC)
-    denyListManager = DenyListManager.createCacheOnly("Test", 600L);
+    // Create cache-only (no-op) manager for testing (no gRPC)
+    denyListManager = DenyListManager.createCacheOnly("Test");
   }
 
   @AfterEach
@@ -52,90 +50,37 @@ class DenyListManagerTest {
   }
 
   @Test
-  void testBasicDenyListOperations() {
-    // Initially empty
-    assertThat(denyListManager.size()).isEqualTo(0);
+  void testCacheOnlyIsDeniedAlwaysFalse() {
+    // Without gRPC, isDenied always returns false (fail open)
     assertThat(denyListManager.isDenied(TEST_ADDRESS_1)).isFalse();
+  }
 
-    // Add address
+  @Test
+  void testCacheOnlyAddReturnsFalse() {
+    // Without gRPC, addToDenyList returns false
     boolean added = denyListManager.addToDenyList(TEST_ADDRESS_1);
-    assertThat(added).isTrue();
-    assertThat(denyListManager.size()).isEqualTo(1);
-    assertThat(denyListManager.isDenied(TEST_ADDRESS_1)).isTrue();
-
-    // Try adding same address again
-    boolean addedAgain = denyListManager.addToDenyList(TEST_ADDRESS_1);
-    // May return true due to cache-only mode
-    assertThat(denyListManager.isDenied(TEST_ADDRESS_1)).isTrue();
-
-    // Remove address
-    boolean removed = denyListManager.removeFromDenyList(TEST_ADDRESS_1);
-    assertThat(removed).isTrue();
-    assertThat(denyListManager.size()).isEqualTo(0);
+    assertThat(added).isFalse();
+    // Still not denied (no local cache)
     assertThat(denyListManager.isDenied(TEST_ADDRESS_1)).isFalse();
   }
 
   @Test
-  void testMultipleAddresses() {
-    // Add multiple addresses
-    denyListManager.addToDenyList(TEST_ADDRESS_1);
-    denyListManager.addToDenyList(TEST_ADDRESS_2);
-    denyListManager.addToDenyList(TEST_ADDRESS_3);
-
-    assertThat(denyListManager.size()).isEqualTo(3);
-    assertThat(denyListManager.isDenied(TEST_ADDRESS_1)).isTrue();
-    assertThat(denyListManager.isDenied(TEST_ADDRESS_2)).isTrue();
-    assertThat(denyListManager.isDenied(TEST_ADDRESS_3)).isTrue();
-
-    // Remove one
-    denyListManager.removeFromDenyList(TEST_ADDRESS_2);
-    assertThat(denyListManager.size()).isEqualTo(2);
-    assertThat(denyListManager.isDenied(TEST_ADDRESS_2)).isFalse();
-  }
-
-  @Test
-  void testRemoveNonExistentAddress() {
-    // Remove address that doesn't exist
+  void testCacheOnlyRemoveReturnsFalse() {
+    // Without gRPC, removeFromDenyList returns false
     boolean removed = denyListManager.removeFromDenyList(TEST_ADDRESS_1);
     assertThat(removed).isFalse();
   }
 
   @Test
   void testAddWithReason() {
-    // Add with reason
+    // Add with reason — returns false without gRPC
     boolean added = denyListManager.addToDenyList(TEST_ADDRESS_1, "Spam detected");
-    assertThat(added).isTrue();
-    assertThat(denyListManager.isDenied(TEST_ADDRESS_1)).isTrue();
+    assertThat(added).isFalse();
   }
 
   @Test
-  void testConcurrentOperations() throws InterruptedException {
-    // Test concurrent operations
-    Thread[] threads = new Thread[10];
-    for (int i = 0; i < threads.length; i++) {
-      final int index = i;
-      threads[i] =
-          new Thread(
-              () -> {
-                Address addr =
-                    Address.fromHexString(
-                        String.format("0x%040d", index)); // Each thread uses unique address
-                denyListManager.addToDenyList(addr);
-                assertThat(denyListManager.isDenied(addr)).isTrue();
-              });
-    }
-
-    // Start all threads
-    for (Thread thread : threads) {
-      thread.start();
-    }
-
-    // Wait for all threads
-    for (Thread thread : threads) {
-      thread.join();
-    }
-
-    // All addresses should be denied
-    assertThat(denyListManager.size()).isEqualTo(10);
+  void testGrpcNotAvailable() {
+    // Cache-only mode should report gRPC as unavailable
+    assertThat(denyListManager.isGrpcAvailable()).isFalse();
   }
 }

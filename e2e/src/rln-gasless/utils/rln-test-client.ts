@@ -3,6 +3,7 @@ import { Logger } from "winston";
 import { createTestLogger } from "../../config/logger";
 import { RLN_CONFIG } from "../config/rln-config";
 import { txBenchmarker } from "./tx-benchmarker";
+import { DenyListTestManager } from "./deny-list-manager";
 
 const logger = createTestLogger();
 
@@ -21,15 +22,6 @@ export function createFastProvider(url: string): ethers.JsonRpcProvider {
   const provider = new ethers.JsonRpcProvider(url);
   provider.pollingInterval = FAST_POLLING_INTERVAL_MS;
   return provider;
-}
-
-export interface UserTierInfo {
-  currentEpoch: number;
-  epochTxCount: number;
-  dailyQuota: number;
-  tier: string;
-  karmaBalance: string;
-  isDenied: boolean;
 }
 
 export interface GaslessTransactionOptions {
@@ -64,18 +56,18 @@ export interface ProofStatus {
  */
 export class RlnTestClient {
   private logger: Logger;
+  private denyListManager: DenyListTestManager;
 
   constructor(
     private readonly _rpcProvider: ethers.Provider,
     private sequencerProvider: ethers.Provider,
     private rpcUrl: string,
-    private karmaServiceUrl?: string,
   ) {
     this.logger = logger;
+    this.denyListManager = new DenyListTestManager();
     this.logger.info("RLN test client initialized", {
       rpcUrl: this.rpcUrl,
       sequencerProvider: this.sequencerProvider ? "configured" : "missing",
-      karmaServiceUrl: this.karmaServiceUrl ?? "missing",
     });
   }
 
@@ -105,7 +97,9 @@ export class RlnTestClient {
       rpcUrl: this.rpcUrl,
     });
 
-    const tx = await signer.sendTransaction({
+    // Send through RPC node provider which has the prover forwarder enabled
+    const gaslessSigner = (signer as ethers.Wallet).connect(this.sequencerProvider);
+    const tx = await gaslessSigner.sendTransaction({
       to: options.to,
       value: options.value ?? 0n,
       data: options.data ?? "0x",
@@ -232,7 +226,9 @@ export class RlnTestClient {
         setTimeout(() => reject(new Error("Transaction timeout - no RLN proof generated")), timeoutMs);
       });
 
-      const txPromise = signer.sendTransaction({
+      // Send through RPC node provider which has the prover forwarder enabled
+      const gaslessSigner = (signer as ethers.Wallet).connect(this.sequencerProvider);
+      const txPromise = gaslessSigner.sendTransaction({
         to: options.to,
         value: options.value ?? 0n,
         data: options.data ?? "0x",
@@ -354,69 +350,6 @@ export class RlnTestClient {
     });
 
     return receipt;
-  }
-
-  /**
-   * Get user tier info from Karma Service via gRPC HTTP gateway
-   */
-  async getUserTierInfo(address: string): Promise<UserTierInfo> {
-    if (!this.karmaServiceUrl) {
-      throw new Error("Karma service URL not configured");
-    }
-
-    try {
-      const response = await fetch(`${this.karmaServiceUrl}/v1/karma/${address}`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`Karma service returned ${response.status}: ${text}`);
-      }
-
-      const data = await response.json();
-      return {
-        currentEpoch: data.epoch_id ?? Math.floor(Date.now() / 1000 / RLN_CONFIG.test.epochDurationSeconds),
-        epochTxCount: data.epoch_tx_count ?? 0,
-        dailyQuota: data.daily_quota ?? 0,
-        tier: data.tier ?? "none",
-        karmaBalance: data.karma_balance ?? "0",
-        isDenied: data.is_denied ?? false,
-      };
-    } catch (error: unknown) {
-      this.logger.error("Failed to get user tier info from Karma service", {
-        address,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Check if user is on deny list via Karma Service
-   */
-  async isUserDenied(address: string): Promise<boolean> {
-    try {
-      const tierInfo = await this.getUserTierInfo(address);
-      return tierInfo.isDenied;
-    } catch (error) {
-      this.logger.warn("Failed to check deny status, assuming not denied", {
-        address,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return false;
-    }
-  }
-
-  /**
-   * Get user's remaining quota for current epoch
-   */
-  async getRemainingQuota(address: string): Promise<number> {
-    const tierInfo = await this.getUserTierInfo(address);
-    return Math.max(0, tierInfo.dailyQuota - tierInfo.epochTxCount);
   }
 
   /**
@@ -550,45 +483,19 @@ export class RlnTestClient {
   }
 
   /**
-   * Wait for user to appear on deny list
+   * Wait for user to appear on deny list.
+   * Uses DenyListTestManager which checks via linea_estimateGas (gas estimate method).
    */
   async waitForDenyList(address: string, timeout: number = RLN_CONFIG.test.maxWaitForDenyListMs): Promise<void> {
-    this.logger.debug("Waiting for user to be denied", { address, timeout });
-
-    const startTime = Date.now();
-    const pollInterval = RLN_CONFIG.test.denyListPollIntervalMs;
-
-    while (Date.now() - startTime < timeout) {
-      if (await this.isUserDenied(address)) {
-        this.logger.debug("User is now denied", { address });
-        return;
-      }
-
-      await this.sleep(pollInterval);
-    }
-
-    throw new Error(`User ${address} not added to deny list after ${timeout}ms`);
+    await this.denyListManager.waitForDenied(address, timeout);
   }
 
   /**
-   * Wait for user to be removed from deny list
+   * Wait for user to be removed from deny list.
+   * Uses DenyListTestManager which checks via linea_estimateGas (gas estimate method).
    */
   async waitForDenyListRemoval(address: string, timeout: number = RLN_CONFIG.test.maxWaitForDenyListMs): Promise<void> {
-    this.logger.debug("Waiting for user to be removed from deny list", { address, timeout });
-
-    const startTime = Date.now();
-    const pollInterval = RLN_CONFIG.test.denyListPollIntervalMs;
-
-    while (Date.now() - startTime < timeout) {
-      if (!(await this.isUserDenied(address))) {
-        this.logger.debug("User is no longer denied", { address });
-        return;
-      }
-
-      await this.sleep(pollInterval);
-    }
-
-    throw new Error(`User ${address} still on deny list after ${timeout}ms`);
+    await this.denyListManager.waitForNotDenied(address, timeout);
   }
 
   /**
@@ -629,18 +536,20 @@ export class RlnTestClient {
    */
   async ensureEpochWindow(requiredMs: number): Promise<void> {
     const epochDurationMs = RLN_CONFIG.test.epochDurationSeconds * 1000;
-    const nowMs = Date.now();
-    const epochStartMs = Math.floor(nowMs / epochDurationMs) * epochDurationMs;
-    const remainingMs = epochStartMs + epochDurationMs - nowMs;
 
-    if (remainingMs >= requiredMs) {
-      this.logger.debug("Epoch window sufficient", { remainingMs, requiredMs });
-      return;
-    }
-
-    // Wait for the next epoch to start, then we have a full epoch
-    const waitMs = remainingMs + 1000; // +1s buffer after epoch start
-    this.logger.info(`Waiting ${waitMs}ms for fresh epoch (need ${requiredMs}ms window)`);
+    // The prover's epoch clock starts from boot time, not Unix epoch — we
+    // can't predict boundaries from the client.
+    //
+    // Without querying the prover, we cannot guarantee a window. But we can
+    // maximize our chances: wait for one full epoch (guarantees a boundary
+    // passes), then immediately proceed. In the worst case we're at the very
+    // start of a new epoch with a full epochDuration remaining. In the best
+    // case we're somewhere in the middle. Tests that need guaranteed single-
+    // epoch semantics should use sendGaslessTransactionExpectRejection()
+    // (checks denial via gas estimate) instead of sendGaslessTransactionExpectFailure()
+    // (tries to send a tx and hopes it fails).
+    const waitMs = epochDurationMs + 1000; // +1s buffer
+    this.logger.info(`Waiting ${waitMs}ms for epoch boundary (need ${requiredMs}ms, epoch=${epochDurationMs}ms)`);
     await this.sleep(waitMs);
   }
 

@@ -1,17 +1,15 @@
 // std
 use parking_lot::RwLock;
-// use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 // third-party
 use tokio::sync::Notify;
-use tracing::debug;
+use tracing::{debug, info, warn};
 // sqlx
 use sqlx::{Postgres, pool::Pool};
 // internal
 use crate::epoch_service::{Epoch, EpochSlice};
 use crate::error::AppError2;
 use crate::tier::TierLimits;
-// use crate::user_db::{UserDb, UserDbConfig};
 use crate::user_db_2::{UserDb2, UserDb2Config};
 use crate::user_db_error::UserDb2OpenError;
 use crate::user_db_types::RateLimit;
@@ -58,25 +56,35 @@ impl UserDbService {
                 new_epoch,
                 &mut current_epoch_slice,
                 new_epoch_slice,
-            );
+            )
+            .await;
         }
     }
 
     /// Internal - used by listen_for_epoch_changes
-    fn update_on_epoch_changes(
+    async fn update_on_epoch_changes(
         &self,
         current_epoch: &mut Epoch,
         new_epoch: Epoch,
         current_epoch_slice: &mut EpochSlice,
         new_epoch_slice: EpochSlice,
     ) {
-        /*
         if new_epoch > *current_epoch {
-            self.user_db.on_new_epoch()
-        } else if new_epoch_slice > *current_epoch_slice {
-            self.user_db.on_new_epoch_slice()
+            info!(
+                "Epoch changed from {:?} to {:?}, clearing deny list",
+                current_epoch, new_epoch
+            );
+            match self.user_db.clear_deny_list(i64::from(new_epoch)).await {
+                Ok(removed) => {
+                    if removed > 0 {
+                        info!("Cleared {} deny list entries on epoch boundary", removed);
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to clear deny list on epoch change: {}", e);
+                }
+            }
         }
-        */
 
         *current_epoch = new_epoch;
         *current_epoch_slice = new_epoch_slice;

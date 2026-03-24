@@ -26,6 +26,7 @@ import java.math.BigInteger;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import net.consensys.linea.config.GasKillSwitchMonitor;
 import net.consensys.linea.config.LineaRlnValidatorConfiguration;
 import net.consensys.linea.config.LineaTracerConfiguration;
@@ -85,6 +86,8 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
 
   // Circuit breaker threshold: reject after this many consecutive gRPC failures
   private static final int CIRCUIT_BREAKER_THRESHOLD = 5;
+  // Circuit breaker recovery: allow a probe request after this many ms since last failure
+  private final long circuitBreakerRecoveryMs;
 
   // Statistics tracking
   private final AtomicInteger validationCallCount = new AtomicInteger(0);
@@ -93,6 +96,7 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
   private final AtomicInteger grpcSuccessCount = new AtomicInteger(0);
   private final AtomicInteger grpcFailureCount = new AtomicInteger(0);
   private final AtomicInteger consecutiveGrpcFailures = new AtomicInteger(0);
+  private final AtomicLong lastGrpcFailureTime = new AtomicLong(0);
 
   // gRPC client components
   private final ManagedChannel channel;
@@ -170,6 +174,8 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
     this.rlnConfig = rlnConfig;
     this.enabled = enabled;
     this.gasKillSwitchMonitor = gasKillSwitchMonitor;
+    this.circuitBreakerRecoveryMs =
+        rlnConfig != null ? rlnConfig.circuitBreakerRecoveryMs() : 30_000L;
     this.transactionSimulationService = transactionSimulationService;
     this.blockchainService = blockchainService;
     this.worldStateService = worldStateService;
@@ -211,6 +217,12 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
     } else {
       channelBuilder.usePlaintext();
     }
+
+    // HTTP/2 keepalive: detect dead connections and trigger automatic reconnection
+    channelBuilder
+        .keepAliveTime(30, TimeUnit.SECONDS)
+        .keepAliveTimeout(10, TimeUnit.SECONDS)
+        .keepAliveWithoutCalls(true);
 
     return channelBuilder.build();
   }
@@ -339,12 +351,23 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
 
     // Circuit breaker: if too many consecutive gRPC failures, reject instead of fail-open
     if (consecutiveGrpcFailures.get() >= CIRCUIT_BREAKER_THRESHOLD) {
-      LOG.error(
-          "Circuit breaker OPEN: {} consecutive gRPC failures. Rejecting tx {} to prevent fail-open.",
-          consecutiveGrpcFailures.get(),
-          transaction.getHash().toHexString());
-      return Optional.of(
-          "RLN prover service unavailable (circuit breaker open). Please try again later.");
+      long timeSinceLastFailure = System.currentTimeMillis() - lastGrpcFailureTime.get();
+      if (timeSinceLastFailure > circuitBreakerRecoveryMs) {
+        LOG.info(
+            "Circuit breaker recovery window passed ({} ms since last failure), resetting and allowing probe request for tx {}",
+            timeSinceLastFailure,
+            transaction.getHash().toHexString());
+        consecutiveGrpcFailures.set(0);
+        // Fall through to attempt the gRPC call as a probe
+      } else {
+        LOG.error(
+            "Circuit breaker OPEN: {} consecutive gRPC failures (last failure {} ms ago). Rejecting tx {} to prevent fail-open.",
+            consecutiveGrpcFailures.get(),
+            timeSinceLastFailure,
+            transaction.getHash().toHexString());
+        return Optional.of(
+            "RLN prover service unavailable (circuit breaker open). Please try again later.");
+      }
     }
 
     // Forward to RLN prover
@@ -420,8 +443,10 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
       if (code == Status.Code.RESOURCE_EXHAUSTED
           || code == Status.Code.NOT_FOUND
           || code == Status.Code.INVALID_ARGUMENT
-          || code == Status.Code.PERMISSION_DENIED) {
-        // Intentional rejection by the prover (quota exceeded, unregistered user, bad input)
+          || code == Status.Code.PERMISSION_DENIED
+          || code == Status.Code.ALREADY_EXISTS) {
+        // Intentional rejection by the prover (quota exceeded, unregistered user, bad input,
+        // duplicate tx)
         consecutiveGrpcFailures.set(0); // Not a failure, reset circuit breaker
         LOG.warn(
             "RLN prover rejected transaction {} ({}): {}",
@@ -434,6 +459,7 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
       // Transient gRPC error (UNAVAILABLE, DEADLINE_EXCEEDED, etc.)
       grpcFailureCount.incrementAndGet();
       int failures = consecutiveGrpcFailures.incrementAndGet();
+      lastGrpcFailureTime.set(System.currentTimeMillis());
       LOG.warn(
           "gRPC forwarding failed for transaction {} (consecutive failures: {}, status: {}): {}",
           transaction.getHash(),
@@ -442,8 +468,9 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
           sre.getMessage());
       if (failures >= CIRCUIT_BREAKER_THRESHOLD) {
         LOG.error(
-            "Circuit breaker OPENING after {} consecutive gRPC failures. Subsequent transactions will be rejected.",
-            failures);
+            "Circuit breaker OPENING after {} consecutive gRPC failures. Will auto-recover after {} ms.",
+            failures,
+            circuitBreakerRecoveryMs);
         return Optional.of("RLN prover service unavailable. Please try again later.");
       }
       // Below threshold: graceful fallback - accept the transaction
@@ -452,6 +479,7 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
       // Non-gRPC exceptions (unexpected errors)
       grpcFailureCount.incrementAndGet();
       int failures = consecutiveGrpcFailures.incrementAndGet();
+      lastGrpcFailureTime.set(System.currentTimeMillis());
       LOG.warn(
           "gRPC forwarding failed for transaction {} (consecutive failures: {}): {}",
           transaction.getHash(),
@@ -459,8 +487,9 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
           e.getMessage());
       if (failures >= CIRCUIT_BREAKER_THRESHOLD) {
         LOG.error(
-            "Circuit breaker OPENING after {} consecutive gRPC failures. Subsequent transactions will be rejected.",
-            failures);
+            "Circuit breaker OPENING after {} consecutive gRPC failures. Will auto-recover after {} ms.",
+            failures,
+            circuitBreakerRecoveryMs);
         return Optional.of("RLN prover service unavailable. Please try again later.");
       }
       // Below threshold: graceful fallback - accept the transaction

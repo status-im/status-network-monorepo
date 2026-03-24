@@ -1,0 +1,22 @@
+FROM rust:1.85-bookworm
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    clang \
+    llvm \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy source
+COPY Cargo.toml Cargo.lock* ./
+COPY src ./src
+COPY resources ./resources
+
+# Build native
+RUN cargo build --release
+
+# Verify output
+RUN ls -la target/release/librln_bridge.so

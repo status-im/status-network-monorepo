@@ -35,7 +35,7 @@ services:
   rln-prover:
     hostname: rln-prover
     container_name: rln-prover
-    image: 0xnadeem/status-network-rln-prover:v1.1.1
+    image: 0xnadeem/status-network-rln-prover:v1.2.0
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo", "rln" ]
     ports:
       - "50051:50051"
@@ -44,10 +44,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["--no-config", "--ip", "0.0.0.0", "--port", "50051", "--mock-sc", "true", "--mock-user", "/app/mock_users.json", "--db", "postgres://postgres:postgres@postgres:5432/prover_db", "--epoch-duration-secs", "30", "--registration-gas-price-gwei", "12"]
+    command: ${RLN_PROVER_CMD:---no-config --ip 0.0.0.0 --port 50051 --mock-sc true --mock-user /app/mock_users.json --db postgres://postgres:postgres@postgres:5432/prover_db --epoch-duration-secs 60 --registration-gas-price-gwei 12}
     environment:
       RUST_LOG: "${RUST_LOG:-debug}"
       DATABASE_URL: "postgres://postgres:postgres@postgres:5432/prover_db"
+      PRIVATE_KEY: "${RLN_PROVER_PRIVATE_KEY:-}"
     volumes:
       - local-dev:/app/data
       - ./config/rln-prover/mock_users.json:/app/mock_users.json:ro
@@ -91,7 +92,7 @@ services:
   sequencer:
     hostname: sequencer
     container_name: sequencer
-    image: 0xnadeem/status-network-besu:v1.1.1
+    image: 0xnadeem/status-network-besu:v1.2.0
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     ports:
       - "8545:8545"
@@ -132,7 +133,6 @@ services:
           --plugin-linea-rln-karma-service=rln-prover:50051 \
           --plugin-linea-rln-timeouts-ms=10000 \
           --plugin-linea-rln-proof-wait-timeout-ms=10000 \
-          --plugin-linea-rln-epoch-mode=TEST \
           --plugin-linea-rln-premium-gas-threshold-gwei=12 \
           --plugin-linea-rpc-gasless-enabled=true \
           --plugin-linea-rpc-rln-prover-forwarder-enabled=false \
@@ -200,7 +200,7 @@ services:
   l2-node-besu:
     hostname: l2-node-besu
     container_name: l2-node-besu
-    image: 0xnadeem/status-network-besu:v1.1.1
+    image: 0xnadeem/status-network-besu:v1.2.0
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     depends_on:
       sequencer:
@@ -239,7 +239,6 @@ services:
           --plugin-linea-rln-proof-service=rln-prover:50051 \
           --plugin-linea-rln-karma-service=rln-prover:50051 \
           --plugin-linea-rln-timeouts-ms=5000 \
-          --plugin-linea-rln-epoch-mode=TEST \
           --plugin-linea-rln-premium-gas-threshold-gwei=12 \
           --tx-pool-min-gas-price=0 \
           --plugin-linea-rpc-gasless-enabled=true \
@@ -265,7 +264,7 @@ services:
   l2-node-besu-follower:
     hostname: l2-node-besu-follower
     container_name: l2-node-besu-follower
-    image: 0xnadeem/status-network-besu:v1.1.1
+    image: 0xnadeem/status-network-besu:v1.2.0
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     depends_on:
       sequencer:
@@ -304,7 +303,6 @@ services:
           --plugin-linea-rln-proof-service=rln-prover:50051 \
           --plugin-linea-rln-karma-service=rln-prover:50051 \
           --plugin-linea-rln-timeouts-ms=5000 \
-          --plugin-linea-rln-epoch-mode=TEST \
           --plugin-linea-rln-premium-gas-threshold-gwei=12 \
           --tx-pool-min-gas-price=0 \
           --plugin-linea-rpc-gasless-enabled=true \

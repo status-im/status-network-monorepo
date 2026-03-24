@@ -32,7 +32,6 @@ rln:
   enabled: true
   contractAddress: "0xc407C7Bc2b3C109b8bCDE7C681d84a6a4B600eA5"
   minMembershipBalance: "1000000000000000000"
-  epochMode: "TEST"
   timeoutMs: 10000
   proofWaitTimeoutMs: 10000
   # Transactions above 12 gwei bypass RLN proof generation (premium transactions)

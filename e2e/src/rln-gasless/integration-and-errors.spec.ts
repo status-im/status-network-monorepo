@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
 import { RlnTestClient, createFastProvider } from "./utils/rln-test-client";
+import { DenyListTestManager } from "./utils/deny-list-manager";
 import { KarmaTestManager, resetAdminNonceManager } from "./utils/karma-manager";
 import { createFundedWallet, uniqueTxData, TEST_RECIPIENT, PREMIUM_GAS_PRICE } from "./utils/test-helpers";
 import { RLN_CONFIG } from "./config/rln-config";
@@ -98,12 +99,7 @@ describe("RLN Integration and Error Handling", () => {
     admin = new ethers.Wallet(RLN_CONFIG.accounts.admin, rpcProvider);
     contracts = loadRlnContracts(rpcProvider, admin);
 
-    rlnClient = new RlnTestClient(
-      rpcProvider,
-      sequencerProvider,
-      RLN_CONFIG.services.rpcUrl,
-      RLN_CONFIG.services.karmaServiceUrl,
-    );
+    rlnClient = new RlnTestClient(rpcProvider, sequencerProvider, RLN_CONFIG.services.rpcUrl);
 
     karmaManager = new KarmaTestManager(contracts.karma, contracts.rln, admin, rlnClient);
 
@@ -432,28 +428,18 @@ describe("RLN Integration and Error Handling", () => {
   it(
     formatScenario(ERR_001),
     async () => {
-      logger.info(`${ERR_001.id}: Testing karma service error handling`);
-
-      // Create a client with invalid karma service URL
-      const badClient = new RlnTestClient(
-        rpcProvider,
-        sequencerProvider,
-        RLN_CONFIG.services.rpcUrl,
-        "http://localhost:99999", // Invalid URL
-      );
+      logger.info(`${ERR_001.id}: Testing deny list manager with unavailable prover`);
 
       const user = getEntryUser();
 
-      // Try to get tier info with bad client - should fail gracefully
-      try {
-        await badClient.getUserTierInfo(user.address);
-        logger.info(`${ERR_001.id}: Client handled unavailable service gracefully`);
-      } catch (error: unknown) {
-        const err = error instanceof Error ? error : new Error(String(error));
-        // Expected to fail with connection error
-        expect(err.message).toMatch(/failed|unavailable|ECONNREFUSED|fetch|connect/i);
-        logger.info(`${ERR_001.id}: Error handled correctly`, { error: err.message });
-      }
+      // DenyListTestManager with invalid prover URL should handle errors gracefully
+      // (isDenied returns false on connection error, does not throw)
+      const badDenyListManager = new DenyListTestManager(
+        "http://localhost:99999", // Invalid prover URL
+      );
+      const isDenied = await badDenyListManager.isDeniedViaProver(user.address);
+      expect(isDenied).toBe(false);
+      logger.info(`${ERR_001.id}: Deny list manager handled unavailable prover gracefully`);
 
       // Verify the user can still send gasless transactions via the working client
       const receipt = await rlnClient.sendGaslessTransaction(user, {

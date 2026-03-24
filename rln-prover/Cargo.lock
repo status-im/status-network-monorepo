@@ -3170,6 +3170,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "migrate_spam_limit"
+version = "0.1.0"
+dependencies = [
+ "ark-bn254",
+ "ark-ff 0.5.0",
+ "ark-serialize 0.5.0",
+ "clap",
+ "rln",
+ "rln_proof",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
