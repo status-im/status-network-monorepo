@@ -213,8 +213,10 @@ mod tests {
     #[tokio::test]
     #[function_name::named]
     async fn test_stuck_detection() {
-        let mut config = NonceManagerConfig::default();
-        config.stuck_timeout_secs = 0; // Everything is "stuck" immediately for testing
+        let mut config = NonceManagerConfig {
+            stuck_timeout_secs: 0, // Everything is "stuck" immediately for testing
+            ..Default::default()
+        };
 
         let db_config = test_config();
         let (_, db) = create_database_connection(function_name!(), true, db_config)
