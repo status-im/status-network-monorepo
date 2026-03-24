@@ -112,7 +112,8 @@ class RlnValidatorBasicTest {
             30000L, // maxBackoffDelayMs
             Optional.empty(), // rlnJniLibPath
             "", // gasKillSwitchFilePath (disabled)
-            5L // gasKillSwitchPollSeconds
+            5L, // gasKillSwitchPollSeconds
+            30_000L // circuitBreakerRecoveryMs
             );
 
     // Create test transaction
@@ -163,7 +164,8 @@ class RlnValidatorBasicTest {
             30000L,
             Optional.empty(),
             "", // gasKillSwitchFilePath (disabled)
-            5L); // gasKillSwitchPollSeconds
+            5L, // gasKillSwitchPollSeconds
+            30_000L); // circuitBreakerRecoveryMs
 
     RlnVerifierValidator validator =
         new RlnVerifierValidator(

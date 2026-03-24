@@ -133,7 +133,8 @@ class RlnVerifierValidatorComprehensiveTest {
             30000L,
             Optional.empty(),
             "", // gasKillSwitchFilePath (disabled)
-            5L); // gasKillSwitchPollSeconds
+            5L, // gasKillSwitchPollSeconds
+            30_000L); // circuitBreakerRecoveryMs
 
     validator =
         new RlnVerifierValidator(
@@ -229,7 +230,8 @@ class RlnVerifierValidatorComprehensiveTest {
               30000L,
               Optional.empty(),
               "", // gasKillSwitchFilePath (disabled)
-              5L); // gasKillSwitchPollSeconds
+              5L, // gasKillSwitchPollSeconds
+              30_000L); // circuitBreakerRecoveryMs
 
       assertThat(testConfig).isNotNull();
     }
@@ -262,7 +264,8 @@ class RlnVerifierValidatorComprehensiveTest {
             30000L,
             Optional.empty(),
             "", // gasKillSwitchFilePath (disabled)
-            5L); // gasKillSwitchPollSeconds
+            5L, // gasKillSwitchPollSeconds
+            30_000L); // circuitBreakerRecoveryMs
 
     RlnVerifierValidator disabledValidator =
         new RlnVerifierValidator(
@@ -369,7 +372,8 @@ class RlnVerifierValidatorComprehensiveTest {
             30000L,
             Optional.empty(),
             "", // gasKillSwitchFilePath (disabled)
-            5L); // gasKillSwitchPollSeconds
+            5L, // gasKillSwitchPollSeconds
+            30_000L); // circuitBreakerRecoveryMs
 
     // Test that config is correct
     assertThat(blockConfig).isNotNull();
@@ -588,7 +592,8 @@ class RlnVerifierValidatorComprehensiveTest {
               30000L,
               Optional.empty(),
               "", // gasKillSwitchFilePath (disabled)
-              5L); // gasKillSwitchPollSeconds
+              5L, // gasKillSwitchPollSeconds
+              30_000L); // circuitBreakerRecoveryMs
 
       assertThat(testConfig).isNotNull();
 

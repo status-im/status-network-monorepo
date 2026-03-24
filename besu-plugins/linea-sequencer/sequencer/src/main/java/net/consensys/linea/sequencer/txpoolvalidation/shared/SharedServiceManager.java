@@ -122,6 +122,11 @@ public class SharedServiceManager implements Closeable {
       } else {
         karmaChannelBuilder.usePlaintext();
       }
+      // HTTP/2 keepalive: detect dead connections and trigger automatic reconnection
+      karmaChannelBuilder
+          .keepAliveTime(30, TimeUnit.SECONDS)
+          .keepAliveTimeout(10, TimeUnit.SECONDS)
+          .keepAliveWithoutCalls(true);
       this.sharedKarmaChannel = karmaChannelBuilder.build();
 
       // Initialize KarmaServiceClient with shared channel

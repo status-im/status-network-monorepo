@@ -22,6 +22,8 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import net.vac.prover.AddToDenyListReply;
 import net.vac.prover.AddToDenyListRequest;
 import net.vac.prover.Address;
@@ -56,6 +58,12 @@ public class DenyListManager implements Closeable {
 
   // Track if gRPC is available
   private final AtomicBoolean grpcAvailable = new AtomicBoolean(false);
+
+  // Circuit breaker with recovery: prevents hammering dead connections while allowing auto-recovery
+  private static final int CIRCUIT_BREAKER_THRESHOLD = 5;
+  private static final long CIRCUIT_BREAKER_RECOVERY_MS = 30_000; // 30 seconds
+  private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
+  private final AtomicLong lastFailureTime = new AtomicLong(0);
 
   /**
    * Creates a new DenyListManager with gRPC backend.
@@ -117,6 +125,12 @@ public class DenyListManager implements Closeable {
         channelBuilder.usePlaintext();
       }
 
+      // HTTP/2 keepalive: detect dead connections and trigger automatic reconnection
+      channelBuilder
+          .keepAliveTime(30, TimeUnit.SECONDS)
+          .keepAliveTimeout(10, TimeUnit.SECONDS)
+          .keepAliveWithoutCalls(true);
+
       this.channel = channelBuilder.build();
       this.blockingStub = RlnProverGrpc.newBlockingStub(channel);
       this.grpcAvailable.set(true);
@@ -137,25 +151,25 @@ public class DenyListManager implements Closeable {
    * @return true if the address is denied, false otherwise
    */
   public boolean isDenied(org.hyperledger.besu.datatypes.Address address) {
-    if (blockingStub != null) {
+    if (blockingStub != null && !isCircuitBreakerOpen()) {
       try {
         IsDeniedRequest request =
             IsDeniedRequest.newBuilder().setAddress(toProtoAddress(address)).build();
 
         IsDeniedReply reply = blockingStub.isDenied(request);
-        grpcAvailable.set(true); // Mark available on success
+        recordSuccess();
         return reply.getIsDenied();
       } catch (StatusRuntimeException e) {
         LOG.warn(
-            "{}: gRPC isDenied call failed for {}: {}. Failing open (will retry next call).",
+            "{}: gRPC isDenied call failed for {}: {}. Failing open.",
             serviceName,
             address.toHexString(),
             e.getStatus());
-        grpcAvailable.set(false);
+        recordFailure();
       }
     }
 
-    // Fail open when gRPC unavailable
+    // Fail open when gRPC unavailable or circuit breaker open
     return false;
   }
 
@@ -177,7 +191,7 @@ public class DenyListManager implements Closeable {
    * @return true if the address was newly added, false if gRPC unavailable or already present
    */
   public boolean addToDenyList(org.hyperledger.besu.datatypes.Address address, String reason) {
-    if (blockingStub != null) {
+    if (blockingStub != null && !isCircuitBreakerOpen()) {
       try {
         AddToDenyListRequest.Builder requestBuilder =
             AddToDenyListRequest.newBuilder().setAddress(toProtoAddress(address));
@@ -187,7 +201,7 @@ public class DenyListManager implements Closeable {
         }
 
         AddToDenyListReply reply = blockingStub.addToDenyList(requestBuilder.build());
-        grpcAvailable.set(true);
+        recordSuccess();
 
         LOG.info(
             "{}: Address {} {} deny list via gRPC (reason: {})",
@@ -203,7 +217,7 @@ public class DenyListManager implements Closeable {
             serviceName,
             address.toHexString(),
             e.getStatus());
-        grpcAvailable.set(false);
+        recordFailure();
       }
     }
 
@@ -217,13 +231,13 @@ public class DenyListManager implements Closeable {
    * @return true if the address was removed, false if it wasn't on the list
    */
   public boolean removeFromDenyList(org.hyperledger.besu.datatypes.Address address) {
-    if (blockingStub != null) {
+    if (blockingStub != null && !isCircuitBreakerOpen()) {
       try {
         RemoveFromDenyListRequest request =
             RemoveFromDenyListRequest.newBuilder().setAddress(toProtoAddress(address)).build();
 
         RemoveFromDenyListReply reply = blockingStub.removeFromDenyList(request);
-        grpcAvailable.set(true);
+        recordSuccess();
 
         LOG.info(
             "{}: Address {} {} from deny list via gRPC",
@@ -238,7 +252,7 @@ public class DenyListManager implements Closeable {
             serviceName,
             address.toHexString(),
             e.getStatus());
-        grpcAvailable.set(false);
+        recordFailure();
       }
     }
 
@@ -255,7 +269,7 @@ public class DenyListManager implements Closeable {
    * @return true if the address was removed, false if it wasn't on the list
    */
   public boolean removeFromDenyListAndResetQuota(org.hyperledger.besu.datatypes.Address address) {
-    if (blockingStub != null) {
+    if (blockingStub != null && !isCircuitBreakerOpen()) {
       try {
         RemoveFromDenyListRequest request =
             RemoveFromDenyListRequest.newBuilder()
@@ -264,7 +278,7 @@ public class DenyListManager implements Closeable {
                 .build();
 
         RemoveFromDenyListReply reply = blockingStub.removeFromDenyList(request);
-        grpcAvailable.set(true);
+        recordSuccess();
 
         LOG.info(
             "{}: Address {} {} from deny list via gRPC (with epoch counter reset)",
@@ -279,7 +293,7 @@ public class DenyListManager implements Closeable {
             serviceName,
             address.toHexString(),
             e.getStatus());
-        grpcAvailable.set(false);
+        recordFailure();
       }
     }
 
@@ -293,6 +307,41 @@ public class DenyListManager implements Closeable {
    */
   public boolean isGrpcAvailable() {
     return grpcAvailable.get();
+  }
+
+  private boolean isCircuitBreakerOpen() {
+    int failures = consecutiveFailures.get();
+    if (failures < CIRCUIT_BREAKER_THRESHOLD) {
+      return false;
+    }
+    long elapsed = System.currentTimeMillis() - lastFailureTime.get();
+    if (elapsed > CIRCUIT_BREAKER_RECOVERY_MS) {
+      LOG.info(
+          "{}: Circuit breaker recovery window passed ({} ms), allowing retry",
+          serviceName,
+          elapsed);
+      consecutiveFailures.set(0);
+      return false;
+    }
+    return true;
+  }
+
+  private void recordSuccess() {
+    consecutiveFailures.set(0);
+    grpcAvailable.set(true);
+  }
+
+  private void recordFailure() {
+    int failures = consecutiveFailures.incrementAndGet();
+    lastFailureTime.set(System.currentTimeMillis());
+    grpcAvailable.set(false);
+    if (failures == CIRCUIT_BREAKER_THRESHOLD) {
+      LOG.warn(
+          "{}: Circuit breaker opened after {} consecutive failures. Will auto-recover after {} ms.",
+          serviceName,
+          failures,
+          CIRCUIT_BREAKER_RECOVERY_MS);
+    }
   }
 
   /**

@@ -100,7 +100,8 @@ class RlnProverForwarderValidatorMeaningfulTest {
             30000L,
             Optional.empty(),
             "", // gasKillSwitchFilePath (disabled)
-            5L); // gasKillSwitchPollSeconds
+            5L, // gasKillSwitchPollSeconds
+            30_000L); // circuitBreakerRecoveryMs
 
     // Create both enabled (RPC mode) and disabled (sequencer mode) validators
     enabledValidator = new RlnProverForwarderValidator(rlnConfig, true);

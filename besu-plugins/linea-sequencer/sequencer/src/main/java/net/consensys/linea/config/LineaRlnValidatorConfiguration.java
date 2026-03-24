@@ -56,7 +56,8 @@ public record LineaRlnValidatorConfiguration(
     long maxBackoffDelayMs,
     Optional<String> rlnJniLibPath,
     String gasKillSwitchFilePath,
-    long gasKillSwitchPollSeconds)
+    long gasKillSwitchPollSeconds,
+    long circuitBreakerRecoveryMs)
     implements LineaOptionsConfiguration {
 
   public static LineaRlnValidatorConfiguration V1_DEFAULT =
@@ -80,7 +81,8 @@ public record LineaRlnValidatorConfiguration(
           5000L, // maxBackoffDelayMs (5 seconds — fast reconnect after prover restart)
           Optional.empty(), // rlnJniLibPath
           "", // gasKillSwitchFilePath (empty = disabled)
-          5L // gasKillSwitchPollSeconds
+          5L, // gasKillSwitchPollSeconds
+          30_000L // circuitBreakerRecoveryMs (30 seconds)
           );
 
   // Accessor for premium gas price threshold in Wei for convenience (converting from GWei)
