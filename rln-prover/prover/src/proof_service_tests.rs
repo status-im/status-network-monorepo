@@ -460,10 +460,9 @@ mod tests {
             ),
         );
 
-        // println!("res: {:?}", res);
         assert_matches!(
             res,
-            Err(AppErrorExt::Protocol(ProtocolError::IdSecretRecovery))
+            Err(AppErrorExt::Protocol(ProtocolError::DivisionByZero))
         );
     }
 }

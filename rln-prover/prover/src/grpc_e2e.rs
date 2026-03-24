@@ -203,8 +203,6 @@ mod tests {
             port,
             ws_rpc_url: None,
             db_url: Some(db_url),
-            // db_path: temp_folder.path().to_path_buf(),
-            // merkle_tree_folder: temp_folder_tree.path().to_path_buf(),
             merkle_tree_count: 1,
             merkle_tree_max_count: 1,
             ksc_address: None,
@@ -243,7 +241,10 @@ mod tests {
         assert_eq!(res.len(), addresses.len());
 
         info!("Sending tx and collecting proofs...");
-        let proof_count = 10;
+        // Note: with mock, the user karma balance is always set to 10,
+        //       but the tier limit is set to 6 Tx (with balance from 10 to 49 Karma)
+        //       see mock.rs: static TIER_LIMITS
+        let proof_count = 6;
         let mut set = JoinSet::new();
         set.spawn(
             proof_sender(port, addresses.clone(), proof_count, Default::default()).map(|_| vec![]), // JoinSet require having the same return type
@@ -287,7 +288,7 @@ mod tests {
                 sender: Some(addr.clone()),
                 chain_id: Some(chain_id.clone()),
                 transaction_hash: tx_hash,
-                estimated_gas_used: 1_000,
+                estimated_gas_used: 10,
             };
 
             let request = tonic::Request::new(request_0);
@@ -494,7 +495,10 @@ mod tests {
         // Note: if unit test is failing - maybe add an optional notification when service is ready
         tokio::time::sleep(Duration::from_secs(5)).await;
 
-        let quota_mult = 11;
+        // Note: with mock, the user karma balance is always set to 10,
+        //       but the tier limit is set to 6 Tx (with balance from 10 to 49 Karma)
+        //       see mock.rs: static TIER_LIMITS
+        let quota_mult = 6;
         let tx_data = TxData {
             estimated_gas_used: Some(tx_gas_quota.get() * quota_mult),
             ..Default::default()
