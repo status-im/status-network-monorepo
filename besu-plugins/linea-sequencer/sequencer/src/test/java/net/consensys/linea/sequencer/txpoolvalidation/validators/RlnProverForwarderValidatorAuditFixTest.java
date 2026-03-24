@@ -96,7 +96,8 @@ class RlnProverForwarderValidatorAuditFixTest {
             30000L,
             Optional.empty(),
             "",
-            5L);
+            5L,
+            30_000L);
 
     validator = new RlnProverForwarderValidator(rlnConfig, true);
   }

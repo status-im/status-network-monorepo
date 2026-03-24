@@ -321,6 +321,13 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
       } else {
         channelBuilder.usePlaintext();
       }
+
+      // HTTP/2 keepalive: detect dead connections and trigger automatic reconnection
+      channelBuilder
+          .keepAliveTime(30, TimeUnit.SECONDS)
+          .keepAliveTimeout(10, TimeUnit.SECONDS)
+          .keepAliveWithoutCalls(true);
+
       this.proofServiceChannel = channelBuilder.build();
     }
 

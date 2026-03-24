@@ -95,6 +95,14 @@ public class LineaRlnValidatorCliOptions implements LineaCliOptions {
   private long gasKillSwitchPollSeconds =
       LineaRlnValidatorConfiguration.V1_DEFAULT.gasKillSwitchPollSeconds();
 
+  @CommandLine.Option(
+      names = "--plugin-linea-rln-circuit-breaker-recovery-ms",
+      description =
+          "Time in ms before circuit breaker allows retry after consecutive gRPC failures (default: ${DEFAULT-VALUE})",
+      arity = "1")
+  private long circuitBreakerRecoveryMs =
+      LineaRlnValidatorConfiguration.V1_DEFAULT.circuitBreakerRecoveryMs();
+
   private LineaRlnValidatorCliOptions() {}
 
   public static LineaRlnValidatorCliOptions create() {
@@ -142,7 +150,8 @@ public class LineaRlnValidatorCliOptions implements LineaCliOptions {
         5000L, // maxBackoffDelayMs (5s — fast reconnect after prover restart)
         Optional.empty(), // rlnJniLibPath (use system path)
         gasKillSwitchFilePath, // gasKillSwitchFilePath
-        gasKillSwitchPollSeconds // gasKillSwitchPollSeconds
+        gasKillSwitchPollSeconds, // gasKillSwitchPollSeconds
+        circuitBreakerRecoveryMs // circuitBreakerRecoveryMs
         );
   }
 }
