@@ -3,7 +3,7 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 // third-party
 use tokio::sync::Notify;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 // sqlx
 use sqlx::{Postgres, pool::Pool};
 // internal
@@ -42,20 +42,17 @@ impl UserDbService {
     }
 
     pub async fn listen_for_epoch_changes(&self) -> Result<(), AppError2> {
-        let (mut current_epoch, mut current_epoch_slice) = *self.user_db.epoch_store.read();
+        let (mut current_epoch, _) = *self.user_db.epoch_store.read();
 
         loop {
             self.epoch_changes.notified().await;
-            let (new_epoch, new_epoch_slice) = *self.user_db.epoch_store.read();
-            debug!(
-                "new epoch: {:?}, new epoch slice: {:?}",
-                new_epoch, new_epoch_slice
-            );
+            let (new_epoch, _) = *self.user_db.epoch_store.read();
+            debug!("new epoch: {:?}", new_epoch);
             self.update_on_epoch_changes(
                 &mut current_epoch,
                 new_epoch,
-                &mut current_epoch_slice,
-                new_epoch_slice,
+                // &mut current_epoch_slice,
+                // new_epoch_slice,
             )
             .await;
         }
@@ -66,8 +63,8 @@ impl UserDbService {
         &self,
         current_epoch: &mut Epoch,
         new_epoch: Epoch,
-        current_epoch_slice: &mut EpochSlice,
-        new_epoch_slice: EpochSlice,
+        // current_epoch_slice: &mut EpochSlice,
+        // new_epoch_slice: EpochSlice,
     ) {
         if new_epoch > *current_epoch {
             info!(
@@ -86,7 +83,19 @@ impl UserDbService {
             }
         }
 
+        let result = self.user_db.on_new_epoch().await;
+        match result {
+            Ok(result) => {
+                if result > 0 {
+                    info!("Updated current tier limits");
+                }
+            }
+            Err(err) => {
+                error!("Error calling on_new_epoch after epoch changes: {:#}", err);
+            }
+        }
+
         *current_epoch = new_epoch;
-        *current_epoch_slice = new_epoch_slice;
+        // *current_epoch_slice = new_epoch_slice;
     }
 }

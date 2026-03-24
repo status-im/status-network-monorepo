@@ -23,7 +23,7 @@ pub struct UserSqlx {
     pub index_in_merkle_tree: i64,
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(sqlx::FromRow, Debug)]
 pub struct TierLimitsSqlx {
     pub id: i64,      // primary key
     pub name: String, // unique
