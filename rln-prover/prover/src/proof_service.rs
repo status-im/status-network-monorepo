@@ -292,10 +292,10 @@ mod tests {
     use tokio::sync::broadcast;
     use tracing::{debug, info};
     // third-party: zerokit
-    use rln::{
-        circuit::{Curve, zkey_from_raw},
-        protocol::{deserialize_proof_values, verify_proof},
-    };
+    use rln::circuit::{Curve, zkey_from_raw};
+    use rln::error::ProtocolError;
+    use rln::prelude::bytes_le_to_rln_proof_values;
+    use rln::protocol::verify_zk_proof;
     // internal
     use crate::tests_common::create_database_connection;
     use crate::user_db_2::{MERKLE_TREE_HEIGHT, UserDb2Config};
@@ -317,6 +317,8 @@ mod tests {
         ProofGeneration(#[from] ProofGenerationStringError),
         #[error("Proof verification failed")]
         ProofVerification,
+        #[error(transparent)]
+        Protocol(#[from] ProtocolError),
         #[error("Exiting...")]
         Exit,
     }
@@ -374,11 +376,11 @@ mod tests {
         let proof = ArkProof::deserialize_compressed(&mut proof_cursor).unwrap();
         let position = proof_cursor.position() as usize;
         let proof_cursor_2 = &proof_cursor.get_ref().as_slice()[position..];
-        let (proof_values, _) = deserialize_proof_values(proof_cursor_2);
+        let (proof_values, _) = bytes_le_to_rln_proof_values(proof_cursor_2)?;
         debug!("[proof verifier] proof: {:?}", proof);
         debug!("[proof verifier] proof_values: {:?}", proof_values);
 
-        let verified = verify_proof(verifying_key, &proof, &proof_values)
+        let verified = verify_zk_proof(verifying_key, &proof, &proof_values)
             .map_err(|_e| AppErrorExt::ProofVerification)?;
 
         debug!("verified: {:?}", verified);
