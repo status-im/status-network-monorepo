@@ -7,6 +7,8 @@ use ark_bn254::{Bn254, Fr};
 use ark_groth16::{Proof, ProvingKey};
 use ark_relations::r1cs::ConstraintMatrices;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use rln::circuit::{Graph, graph_from_raw};
+use rln::protocol::RLNWitnessInput;
 use rln::utils::IdSecret;
 use rln::{
     circuit::zkey_from_raw,
@@ -21,8 +23,6 @@ use rln::{
         // rln_witness_from_values,
     },
 };
-use rln::circuit::{graph_from_raw, Graph};
-use rln::protocol::RLNWitnessInput;
 use serde::{Deserialize, Serialize};
 
 /// Custom RLN circuit artifacts compiled with LIMIT_BIT_SIZE=20 (supports ~1M message limit).
@@ -139,7 +139,6 @@ pub fn compute_rln_proof_and_values(
     path_elements: Vec<Fr>,
     identity_path_index: Vec<u8>,
 ) -> Result<(Proof<Bn254>, RLNProofValues), ProtocolError> {
-
     // unwrap safe - can only error on empty input & missing round parameters
     let external_nullifier = poseidon_hash(&[rln_identifier.identifier, epoch]).unwrap();
 

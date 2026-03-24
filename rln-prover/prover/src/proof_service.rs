@@ -190,7 +190,9 @@ impl ProofService {
                     return;
                 }
 
-                if let Err(e) = output_buffer.write_all(&rln_proof_values_to_bytes_le(&proof_values)) {
+                if let Err(e) =
+                    output_buffer.write_all(&rln_proof_values_to_bytes_le(&proof_values))
+                {
                     let _ = send.send(Err(ProofGenerationError::SerializationWrite(e)));
                     return;
                 }

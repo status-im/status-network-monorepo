@@ -11,13 +11,13 @@ mod tests {
     use claims::assert_matches;
     use futures::TryFutureExt;
     use parking_lot::RwLock;
-    use rln::{
-        circuit::{Curve, zkey_from_raw},
-        protocol::{compute_id_secret, bytes_le_to_rln_proof_values},
-        utils::IdSecret
-    };
     use rln::error::ProtocolError;
     use rln::prelude::verify_zk_proof;
+    use rln::{
+        circuit::{Curve, zkey_from_raw},
+        protocol::{bytes_le_to_rln_proof_values, compute_id_secret},
+        utils::IdSecret,
+    };
     use tokio::sync::broadcast;
     use tracing::{debug, info};
     // internal
@@ -112,7 +112,7 @@ mod tests {
         let proof = ArkProof::deserialize_compressed(&mut proof_cursor).unwrap();
         let position = proof_cursor.position() as usize;
         let proof_cursor_2 = &proof_cursor.get_ref().as_slice()[position..];
-        let proof_values= bytes_le_to_rln_proof_values(proof_cursor_2)?.0;
+        let proof_values = bytes_le_to_rln_proof_values(proof_cursor_2)?.0;
         debug!("[proof verifier] proof: {:?}", proof);
         debug!("[proof verifier] proof_values: {:?}", proof_values);
 
@@ -246,8 +246,7 @@ mod tests {
         let share2 = (*proof_values_1.x(), *proof_values_1.y());
 
         // Note: if not in test, should check for external nullifier
-        let recovered_identity_secret_hash =
-            compute_id_secret(share1, share2)?;
+        let recovered_identity_secret_hash = compute_id_secret(share1, share2)?;
 
         debug!(
             "recovered_identity_secret_hash: {:?}",
@@ -462,6 +461,9 @@ mod tests {
         );
 
         // println!("res: {:?}", res);
-        assert_matches!(res, Err(AppErrorExt::Protocol(ProtocolError::IdSecretRecovery)));
+        assert_matches!(
+            res,
+            Err(AppErrorExt::Protocol(ProtocolError::IdSecretRecovery))
+        );
     }
 }

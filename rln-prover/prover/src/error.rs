@@ -7,10 +7,7 @@ use smart_contract::{KarmaScError, KarmaTiersError, RlnScError};
 use crate::epoch_service::WaitUntilError;
 use crate::tier::ValidateTierLimitsError;
 use crate::user_db_error::{
-    GetMerkleTreeProofError2,
-    RegisterError2,
-    TxCounterError2,
-    UserDb2OpenError,
+    GetMerkleTreeProofError2, RegisterError2, TxCounterError2, UserDb2OpenError,
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -111,7 +108,9 @@ pub enum ProofGenerationStringError {
 impl From<ProofGenerationError> for ProofGenerationStringError {
     fn from(value: ProofGenerationError) -> Self {
         match value {
-            ProofGenerationError::Protocol(e) => ProofGenerationStringError::Protocol(e.to_string()),
+            ProofGenerationError::Protocol(e) => {
+                ProofGenerationStringError::Protocol(e.to_string())
+            }
             ProofGenerationError::Serialization(e) => Self::Serialization(e.to_string()),
             ProofGenerationError::SerializationWrite(e) => Self::SerializationWrite(e.to_string()),
             ProofGenerationError::MerkleProofError(e) => Self::MerkleProofError(e.to_string()),
