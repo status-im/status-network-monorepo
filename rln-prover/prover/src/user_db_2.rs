@@ -353,8 +353,7 @@ impl UserDb2 {
             return Err(RegisterError2::AlreadyRegistered(address));
         }
 
-        let rate_commit =
-            poseidon_hash(&[id_commitment, Fr::from(u64::from(self.rate_limit))]);
+        let rate_commit = poseidon_hash(&[id_commitment, Fr::from(u64::from(self.rate_limit))]);
 
         let mut txn = self.db.begin().await?;
 

@@ -9,7 +9,7 @@ use ark_serialize::CanonicalSerialize;
 use rln::{
     hashers::{hash_to_field_le, poseidon_hash},
     poseidon_tree::PoseidonTree,
-    protocol::{keygen, rln_proof_values_to_bytes_le}
+    protocol::{keygen, rln_proof_values_to_bytes_le},
 };
 use zerokit_utils::merkle_tree::ZerokitMerkleProof;
 // internal
@@ -49,7 +49,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             rln_data.clone(),
             epoch,
             merkle_proof.get_path_elements(),
-            merkle_proof.get_path_index()
+            merkle_proof.get_path_index(),
         )
         .unwrap();
 
@@ -106,7 +106,9 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                     .serialize_compressed(black_box(&mut output_buffer))
                     .unwrap();
                 output_buffer
-                    .write_all(black_box(&rln_proof_values_to_bytes_le(black_box(&proof_values))))
+                    .write_all(black_box(&rln_proof_values_to_bytes_le(black_box(
+                        &proof_values,
+                    ))))
                     .unwrap();
             },
             criterion::BatchSize::SmallInput,

@@ -7,11 +7,8 @@ use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, warn};
 // RLN
-use rln::{
-    protocol::compute_id_secret,
-    utils::IdSecret
-};
 use rln::protocol::bytes_le_to_rln_proof_values;
+use rln::{protocol::compute_id_secret, utils::IdSecret};
 use tokio::sync::TryAcquireError;
 // internal
 use crate::common::SlashingData;
@@ -138,6 +135,9 @@ mod tests {
     use alloy::primitives::address;
     use ark_bn254::Fr;
     use ark_serialize::CanonicalSerialize;
+    use rln::circuit::graph_from_raw;
+    use rln::prelude::rln_proof_values_to_bytes_le;
+    use rln::protocol::RLNWitnessInput;
     use rln::{
         circuit::{Curve, zkey_from_raw},
         hashers::{hash_to_field_le, poseidon_hash},
@@ -150,12 +150,9 @@ mod tests {
             // rln_witness_from_values,
             // serialize_proof_values,
         },
-        utils::IdSecret
+        utils::IdSecret,
     };
     use std::io::{Cursor, Write};
-    use rln::circuit::graph_from_raw;
-    use rln::prelude::rln_proof_values_to_bytes_le;
-    use rln::protocol::RLNWitnessInput;
     use zerokit_utils::merkle_tree::{ZerokitMerkleProof, ZerokitMerkleTree};
 
     const ADDR_ALICE: Address = address!("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
