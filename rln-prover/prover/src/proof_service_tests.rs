@@ -11,7 +11,7 @@ mod tests {
     use claims::assert_matches;
     use futures::TryFutureExt;
     use parking_lot::RwLock;
-    use rln::error::ProtocolError;
+    use rln::error::{ProtocolError, RecoverSecretError};
     use rln::prelude::verify_zk_proof;
     use rln::{
         circuit::{Curve, zkey_from_raw},
@@ -19,6 +19,7 @@ mod tests {
         utils::IdSecret,
     };
     use tokio::sync::broadcast;
+    use tonic::service::RecoverError;
     use tracing::{debug, info};
     // internal
     use crate::epoch_service::{Epoch, EpochSlice};
@@ -48,6 +49,8 @@ mod tests {
         Elapsed,
         #[error(transparent)]
         Protocol(#[from] ProtocolError),
+        #[error(transparent)]
+        Recover(#[from] RecoverSecretError),
         #[error("Proof generation failed: {0}")]
         ProofGeneration(#[from] ProofGenerationStringError),
         #[error("Proof verification failed")]
@@ -462,7 +465,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(AppErrorExt::Protocol(ProtocolError::DivisionByZero))
+            Err(AppErrorExt::Recover(RecoverSecretError::DivisionByZero))
         );
     }
 }

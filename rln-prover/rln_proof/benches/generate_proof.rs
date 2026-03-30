@@ -18,7 +18,7 @@ use rln_proof::{
 };
 
 pub fn criterion_benchmark(c: &mut Criterion) {
-    let (identity_secret_hash, id_commitment) = keygen().unwrap();
+    let (identity_secret_hash, id_commitment) = keygen();
     let user_limit = 100;
     let rln_identity = RlnUserIdentity {
         commitment: id_commitment,
@@ -28,18 +28,18 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let rln_identifier = RlnIdentifier::new(b"test-test");
     let rln_data = RlnData {
         message_id: Fr::from(user_limit - 2),
-        data: hash_to_field_le(b"data-from-message").unwrap(),
+        data: hash_to_field_le(b"data-from-message"),
     };
 
     // Merkle tree
     let tree_height = 20;
     let mut tree = PoseidonTree::new(tree_height, Fr::from(0), Default::default()).unwrap();
-    let rate_commit = poseidon_hash(&[rln_identity.commitment, rln_identity.user_limit]).unwrap();
+    let rate_commit = poseidon_hash(&[rln_identity.commitment, rln_identity.user_limit]);
     tree.set(0, rate_commit).unwrap();
     let merkle_proof = tree.proof(0).unwrap();
 
     // Epoch
-    let epoch = hash_to_field_le(b"Today at noon, this year").unwrap();
+    let epoch = hash_to_field_le(b"Today at noon, this year");
 
     {
         // Not a benchmark but print the proof size (serialized)

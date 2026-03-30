@@ -104,7 +104,7 @@ impl RlnIdentifier {
         let graph = graph_from_raw(graph_bytes, Some(20)).unwrap();
 
         Self {
-            identifier: hash_to_field_le(identifier).unwrap(), // hash_to_field_le return Result but can never fail
+            identifier: hash_to_field_le(identifier), // hash_to_field_le return Result but can never fail
             pkey_and_constraints: (pk.clone(), matrices.clone()),
             graph,
         }
@@ -140,7 +140,7 @@ pub fn compute_rln_proof_and_values(
     identity_path_index: Vec<u8>,
 ) -> Result<(Proof<Bn254>, RLNProofValues), ProtocolError> {
     // unwrap safe - can only error on empty input & missing round parameters
-    let external_nullifier = poseidon_hash(&[rln_identifier.identifier, epoch]).unwrap();
+    let external_nullifier = poseidon_hash(&[rln_identifier.identifier, epoch]);
 
     // let path_elements = merkle_proof.get_path_elements();
     // let identity_path_index = merkle_proof.get_path_index();
@@ -157,7 +157,7 @@ pub fn compute_rln_proof_and_values(
         external_nullifier,
     )?;
 
-    let proof_values = proof_values_from_witness(&witness)?;
+    let proof_values = proof_values_from_witness(&witness);
     let proof = generate_zk_proof(
         &rln_identifier.pkey_and_constraints,
         &witness,

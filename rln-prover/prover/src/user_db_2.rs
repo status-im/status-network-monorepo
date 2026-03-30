@@ -341,7 +341,7 @@ impl UserDb2 {
 
     pub(crate) async fn register_user(&self, address: Address) -> Result<Fr, RegisterError2> {
         // Generate RLN identity
-        let (identity_secret_hash, id_commitment) = keygen().unwrap();
+        let (identity_secret_hash, id_commitment) = keygen();
 
         let rln_identity = RlnUserIdentity::from((
             id_commitment,
@@ -354,7 +354,7 @@ impl UserDb2 {
         }
 
         let rate_commit =
-            poseidon_hash(&[id_commitment, Fr::from(u64::from(self.rate_limit))]).unwrap();
+            poseidon_hash(&[id_commitment, Fr::from(u64::from(self.rate_limit))]);
 
         let mut txn = self.db.begin().await?;
 

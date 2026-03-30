@@ -11,10 +11,10 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-rln = { version = "2.0.0", default-features = false, features = ["pmtree-ft"] }
-zerokit_utils = { version = "1.1.0", default-features = false, features = ["pmtree-ft"] }
-# rln = { git = "https://github.com/vacp2p/zerokit/", default-features = false, features = ["pmtree-ft"] }
-# zerokit_utils = { git = "https://github.com/vacp2p/zerokit/", default-features = false, features = ["pmtree-ft"] }
+# rln = { version = "2.0.0", default-features = false, features = ["pmtree-ft"] }
+# zerokit_utils = { version = "1.1.0", default-features = false, features = ["pmtree-ft"] }
+rln = { git = "https://github.com/vacp2p/zerokit/", default-features = false, features = ["pmtree-ft"], rev = "4ef0d419914c113ec1a46e067a8dfa5ba1420a4b" }
+zerokit_utils = { git = "https://github.com/vacp2p/zerokit/", default-features = false, features = ["pmtree-ft"], rev = "4ef0d419914c113ec1a46e067a8dfa5ba1420a4b" }
 
 ark-bn254 = { version = "0.5.0", default-features = false, features = ["std"] }
 ark-relations = { version = "0.5.1", default-features = false, features = ["std"] }

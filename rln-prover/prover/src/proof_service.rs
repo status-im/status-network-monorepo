@@ -153,7 +153,7 @@ impl ProofService {
 
                 let rln_data = RlnData {
                     message_id: Fr::from(message_id),
-                    data: hash_to_field_le(proof_generation_data.tx_hash.as_slice()).unwrap(),
+                    data: hash_to_field_le(proof_generation_data.tx_hash.as_slice()),
                 };
 
                 let epoch_bytes = {
@@ -162,7 +162,7 @@ impl ProofService {
                     #[allow(clippy::let_and_return)]
                     v
                 };
-                let epoch = hash_to_field_le(epoch_bytes.as_slice()).unwrap();
+                let epoch = hash_to_field_le(epoch_bytes.as_slice());
 
                 // let compute_proof_start = std::time::Instant::now();
                 let (proof, proof_values) = match compute_rln_proof_and_values(

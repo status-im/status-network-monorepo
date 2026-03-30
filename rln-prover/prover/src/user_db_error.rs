@@ -3,7 +3,7 @@ use std::num::TryFromIntError;
 use alloy::primitives::Address;
 // use prover_pmtree::PmtreeErrorKind;
 // use sea_orm::DbErr;
-use zerokit_utils::error::{FromConfigError, ZerokitMerkleTreeError};
+// use zerokit_utils::error::{FromConfigError, ZerokitMerkleTreeError};
 // internal
 use crate::tier::ValidateTierLimitsError;
 // TODO: define MerkleTreeError here?
@@ -121,8 +121,8 @@ pub enum RegisterError2 {
     // TreeError(MerkleTreeError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error(transparent)]
-    FromConfig(#[from] FromConfigError),
+    // #[error(transparent)]
+    // FromConfig(#[from] FromConfigError),
 }
 
 #[derive(thiserror::Error, Debug)]

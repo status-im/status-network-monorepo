@@ -115,7 +115,7 @@ async fn run_migration(pool: &PgPool, args: &Args) -> Result<(), Box<dyn std::er
             RlnUserIdentity::from((identity.commitment, identity.secret_hash, new_limit_fr));
 
         // Compute new rate_commit = poseidon_hash([commitment, new_user_limit])
-        let new_rate_commit = poseidon_hash(&[identity.commitment, new_limit_fr])?;
+        let new_rate_commit = poseidon_hash(&[identity.commitment, new_limit_fr]);
 
         // Serialize rate_commit to 32-byte compressed form for pgfr
         let mut rate_commit_bytes = Vec::with_capacity(32);
