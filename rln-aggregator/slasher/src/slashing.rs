@@ -192,7 +192,7 @@ mod tests {
             let graph = graph_from_raw(graph_bytes, Some(20)).unwrap();
 
             (
-                hash_to_field_le(b"rln id test").unwrap(),
+                hash_to_field_le(b"rln id test"),
                 pk.clone(),
                 matrices.clone(),
                 graph,
@@ -202,19 +202,19 @@ mod tests {
         let message_id = Fr::from(1);
 
         let (proof_0, proof_values_0) = {
-            let external_nullifier = poseidon_hash(&[rln_identifier, epoch]).unwrap();
+            let external_nullifier = poseidon_hash(&[rln_identifier, epoch]);
             let witness = RLNWitnessInput::new(
                 user_secret.clone(),
                 spam_limit,
                 message_id,
                 m_proof.get_path_elements(),
                 m_proof.get_path_index(),
-                hash_to_field_le(b"sig").unwrap(),
+                hash_to_field_le(b"sig"),
                 external_nullifier,
             )
             .unwrap();
 
-            let proof_values = proof_values_from_witness(&witness).unwrap();
+            let proof_values = proof_values_from_witness(&witness);
             let proof =
                 generate_zk_proof(&(pk.clone(), matrices.clone()), &witness, &graph).unwrap();
 
@@ -222,19 +222,19 @@ mod tests {
         };
 
         let (proof_1, proof_values_1) = {
-            let external_nullifier = poseidon_hash(&[rln_identifier, epoch]).unwrap();
+            let external_nullifier = poseidon_hash(&[rln_identifier, epoch]);
             let witness = RLNWitnessInput::new(
                 user_secret.clone(),
                 spam_limit,
                 message_id,
                 m_proof.get_path_elements(),
                 m_proof.get_path_index(),
-                hash_to_field_le(b"sig 2").unwrap(),
+                hash_to_field_le(b"sig 2"),
                 external_nullifier,
             )
             .unwrap();
 
-            let proof_values = proof_values_from_witness(&witness).unwrap();
+            let proof_values = proof_values_from_witness(&witness);
             let proof = generate_zk_proof(&(pk, matrices), &witness, &graph).unwrap();
 
             (proof, proof_values)
