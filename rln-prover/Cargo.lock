@@ -4367,6 +4367,7 @@ dependencies = [
  "ark-groth16",
  "ark-relations",
  "ark-serialize 0.5.0",
+ "criterion",
  "rln",
  "serde",
  "zerokit_utils",
