@@ -168,7 +168,7 @@ export class KarmaTestManager {
     const connectedContract = this.karmaContract.connect(this.admin) as ethers.Contract;
     const tx = await connectedContract.getFunction("mint")(userAddress, amount, {
       gasLimit: 200000,
-      gasPrice: ethers.parseUnits("15", "gwei"), // Premium gas to bypass RLN
+      gasPrice: ethers.parseUnits(String(RLN_CONFIG.test.premiumGasThresholdGwei + 3), "gwei"), // Premium gas to bypass RLN
       nonce: nonce,
     });
     logger.debug("Mint TX sent", { hash: tx.hash, elapsed: Date.now() - t1 });
@@ -488,7 +488,7 @@ export class KarmaTestManager {
       to: wallet.address,
       value: fundAmount,
       gasLimit: 21000,
-      gasPrice: ethers.parseUnits("15", "gwei"), // Premium gas - admin op
+      gasPrice: ethers.parseUnits(String(RLN_CONFIG.test.premiumGasThresholdGwei + 3), "gwei"), // Premium gas - admin op
       nonce: fundNonce,
     });
     logger.debug("TX sent", { hash: fundTx.hash, elapsed: Date.now() - t1 });

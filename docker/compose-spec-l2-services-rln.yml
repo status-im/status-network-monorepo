@@ -92,7 +92,7 @@ services:
   sequencer:
     hostname: sequencer
     container_name: sequencer
-    image: 0xnadeem/status-network-besu:v1.2.0
+    image: docker.io/0xnadeem/status-network-besu:v1.2.3
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     ports:
       - "8545:8545"
@@ -200,7 +200,7 @@ services:
   l2-node-besu:
     hostname: l2-node-besu
     container_name: l2-node-besu
-    image: 0xnadeem/status-network-besu:v1.2.0
+    image: docker.io/0xnadeem/status-network-besu:v1.2.3
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     depends_on:
       sequencer:
@@ -264,7 +264,7 @@ services:
   l2-node-besu-follower:
     hostname: l2-node-besu-follower
     container_name: l2-node-besu-follower
-    image: 0xnadeem/status-network-besu:v1.2.0
+    image: docker.io/0xnadeem/status-network-besu:v1.2.3
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo" ]
     depends_on:
       sequencer:
