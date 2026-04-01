@@ -199,7 +199,7 @@ export async function createFundedWallet(
     to: wallet.address,
     value: fundAmount,
     gasLimit: 21000,
-    gasPrice: ethers.parseUnits("15", "gwei"),
+    gasPrice: PREMIUM_GAS_PRICE,
     nonce,
   });
 
@@ -266,19 +266,22 @@ export function testId(category: string, number: number, description: string): s
 }
 
 /**
- * Premium gas price (above threshold) for bypassing RLN
+ * Premium gas price (above threshold) for bypassing RLN.
+ * Derived from config so tests stay in sync with the sequencer's
+ * --plugin-linea-rln-premium-gas-threshold-gwei setting.
  */
-export const PREMIUM_GAS_PRICE = parseGwei("15");
+const thresholdGwei = RLN_CONFIG.test.premiumGasThresholdGwei;
+export const PREMIUM_GAS_PRICE = parseGwei(String(thresholdGwei + 3));
 
 /**
  * Sub-threshold gas price (requires RLN)
  */
-export const SUB_THRESHOLD_GAS_PRICE = parseGwei("9");
+export const SUB_THRESHOLD_GAS_PRICE = parseGwei(String(thresholdGwei - 3));
 
 /**
  * Exactly at threshold gas price
  */
-export const THRESHOLD_GAS_PRICE = parseGwei("12");
+export const THRESHOLD_GAS_PRICE = parseGwei(String(thresholdGwei));
 
 /**
  * Recipient address for test transactions

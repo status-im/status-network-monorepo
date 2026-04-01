@@ -135,8 +135,7 @@ public abstract class AbstractLineaSharedPrivateOptionsPlugin
     // the CLI-parsed premium gas threshold is used instead of the hardcoded default.
     final var rlnConfig = rlnValidatorConfiguration();
     final var rpcCliOptions =
-        (LineaRpcCliOptions)
-            getConfigurationByKey(LineaRpcCliOptions.CONFIG_KEY).cliOptions();
+        (LineaRpcCliOptions) getConfigurationByKey(LineaRpcCliOptions.CONFIG_KEY).cliOptions();
     return rpcCliOptions.toDomainObject(rlnConfig.sharedGaslessConfig());
   }
 

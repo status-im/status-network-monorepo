@@ -129,11 +129,11 @@ export const DENY_009 = scenario("DENY_009", "Concurrent deny list additions are
 // PREMIUM GAS SCENARIOS (PREM_001 - PREM_006)
 // ============================================================================
 
-export const PREM_001 = scenario("PREM_001", "Transaction with gasPrice >= 12 Gwei bypasses RLN", "PREMIUM_GAS");
+export const PREM_001 = scenario("PREM_001", "Transaction with gasPrice >= threshold bypasses RLN", "PREMIUM_GAS");
 
-export const PREM_002 = scenario("PREM_002", "Transaction with gasPrice < 12 Gwei requires RLN", "PREMIUM_GAS");
+export const PREM_002 = scenario("PREM_002", "Transaction with gasPrice < threshold requires RLN", "PREMIUM_GAS");
 
-export const PREM_003 = scenario("PREM_003", "Exactly threshold (12 Gwei) bypasses RLN", "PREMIUM_GAS");
+export const PREM_003 = scenario("PREM_003", "Exactly at threshold gasPrice bypasses RLN", "PREMIUM_GAS");
 
 export const PREM_004 = scenario("PREM_004", "Premium gas works even without Karma registration", "PREMIUM_GAS");
 

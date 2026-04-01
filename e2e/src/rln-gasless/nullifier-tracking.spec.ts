@@ -4,7 +4,7 @@ import { RlnTestClient, createFastProvider } from "./utils/rln-test-client";
 import { DenyListTestManager } from "./utils/deny-list-manager";
 import { KarmaTestManager, resetAdminNonceManager } from "./utils/karma-manager";
 import { DockerLogMonitor } from "./utils/log-monitor";
-import { uniqueTxData, TEST_RECIPIENT } from "./utils/test-helpers";
+import { uniqueTxData, TEST_RECIPIENT, PREMIUM_GAS_PRICE } from "./utils/test-helpers";
 import { RLN_CONFIG } from "./config/rln-config";
 import { loadRlnContracts, RlnContracts } from "./config/contract-loader";
 import { createTestLogger } from "../config/logger";
@@ -209,7 +209,7 @@ describe("RLN Nullifier Tracking", () => {
       await rlnClient.sendPremiumGasTransaction(user, {
         to: TEST_RECIPIENT,
         value: 0n,
-        gasPrice: ethers.parseUnits("15", "gwei"),
+        gasPrice: PREMIUM_GAS_PRICE,
         data: uniqueTxData("null002-clear-deny"),
       });
 
