@@ -6,7 +6,7 @@ use parking_lot::RwLock;
 use tokio::sync::Notify;
 use tracing::{debug, error};
 // Common?
-use crate::epoch_service::{Epoch, WaitUntilError};
+use crate::epoch_service::{Epoch, EpochServiceInitError, WaitUntilError, DEFAULT_EPOCH_DURATION};
 // Internal
 use crate::error::AppError2;
 use crate::metrics::{
@@ -33,14 +33,14 @@ pub struct EpochService2 {
 
 impl EpochService2 {
     // Note: listen_for_new_epoch never ends so no log will happen with #[instrument]
-    //       + metrics already tracks the current epoch / epoch_slice
+    //       + metrics already tracks the current epoch
     // #[instrument(skip(self), fields(self.epoch_duration, self.genesis, self.current_epoch))]
     pub(crate) async fn listen_for_new_epoch(&self) -> Result<(), AppError2> {
         let mut retry_counter = 0;
         // Note: compute_wait_until return the duration to wait (from now until the next epoch)
         //       this can be very low (if we start the program near the end of an epoch)
         //       so we retry a few times if necessary
-        let (current_epoch, mut wait_until) = loop {
+        let (mut current_epoch, mut wait_until) = loop {
             match EpochService2::compute_wait_until(
                 &self.genesis,
                 &self.epoch_duration,
@@ -99,6 +99,7 @@ impl EpochService2 {
                     ));
                 };
 
+                current_epoch += 1;
                 *self.current_epoch.write() = current_epoch.into();
 
                 // Note: based on this link https://doc.rust-lang.org/reference/expressions/operator-expr.html#type-cast-expressions
@@ -169,6 +170,53 @@ impl EpochService2 {
         (current_epoch, epoch_start_ts, epoch_end_ts)
     }
 }
+
+/// Configuration for EpochService2
+/// (epoch_duration, genesis)
+pub struct EpochService2Config {
+    /// Duration of an epoch (quotas reset every epoch). Default: 24 hours.
+    pub epoch_duration: Duration,
+    /// Genesis timestamp
+    pub genesis: DateTime<Utc>,
+}
+
+impl EpochService2Config {
+
+    /// Create config with custom epoch duration
+    pub fn new(
+        epoch_duration: Duration,
+        genesis: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            epoch_duration,
+            genesis,
+        }
+    }
+}
+
+impl TryFrom<EpochService2Config> for EpochService2 {
+    type Error = EpochServiceInitError;
+
+    fn try_from(config: EpochService2Config) -> Result<Self, Self::Error> {
+        if config.genesis >= Utc::now() {
+            return Err(EpochServiceInitError::FutureGenesis);
+        }
+
+        if config.epoch_duration.as_secs() == 0 {
+            return Err(EpochServiceInitError::EpochDuration);
+        }
+
+        // TODO: add more check?
+
+        Ok(Self {
+            epoch_duration: config.epoch_duration,
+            current_epoch: Arc::new(Default::default()),
+            genesis: config.genesis,
+            epoch_changes: Arc::new(Default::default()),
+        })
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
