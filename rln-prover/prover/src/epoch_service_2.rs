@@ -17,20 +17,21 @@ use crate::metrics::{
     EPOCH_SERVICE_CURRENT_EPOCH, EPOCH_SERVICE_CURRENT_EPOCH_SLICE, EPOCH_SERVICE_DRIFT_MILLIS,
 };
 
-/// Minimum duration returned by EpochService2::compute_wait_until()
+/// EpochService2::compute_wait_until() can return a low duration (see Notes in listen_for_new_epoch)
+/// So we need a minimum threshold to accept or not this duration
 const WAIT_UNTIL_MIN_DURATION: Duration = Duration::from_secs(10);
 /// EpochService::compute_wait_until() can return an error like TooLow (see WAIT_UNTIL_MIN_DURATION)
 /// so the epoch service will retry X many times.
-const WAIT_UNTIL_MAX_RETRY: usize = 10;
+const WAIT_UNTIL_MAX_RETRY: usize = 5;
 
 pub struct EpochService2 {
     /// Duration of an epoch (quotas reset every epoch)
     epoch_duration: Duration,
-    /// Current epoch and epoch slice
+    /// Current epoch
     pub current_epoch: Arc<RwLock<Epoch>>,
     /// Genesis time (aka when the service has been started at the first time)
     genesis: DateTime<Utc>,
-    /// Channel to notify when an epoch / epoch slice has just changed
+    /// Channel to notify when an epoch has just changed
     pub epoch_changes: Arc<Notify>,
 }
 
@@ -39,7 +40,11 @@ impl EpochService2 {
     //       + metrics already tracks the current epoch / epoch_slice
     // #[instrument(skip(self), fields(self.epoch_duration, self.genesis, self.current_epoch))]
     pub(crate) async fn listen_for_new_epoch(&self) -> Result<(), AppError2> {
+
         let mut retry_counter = 0;
+        // Note: compute_wait_until return the duration to wait (from now until the next epoch)
+        //       this can be very low (if we start the program near the end of an epoch)
+        //       so we retry a few times if necessary
         let (current_epoch, mut wait_until) = loop {
             match EpochService2::compute_wait_until(
                 &self.genesis,
@@ -85,10 +90,13 @@ impl EpochService2 {
                 histogram!(EPOCH_SERVICE_DRIFT_MILLIS.name, "prover" => "epoch service")
                     .record(now_ - wait_until);
 
-                // Note: could use checked_add() here, but it's quite impossible to have an overflow here
-                //       it would mean that the epoch_slice_duration is insanely large and wait_until
-                //       overflows as a timestamp
-                wait_until += self.epoch_duration;
+                // Note: checked_add() is used here but this is very unlikely an overflow can occur here
+                wait_until = if let Some(wait_until) = wait_until.checked_add(self.epoch_duration) {
+                    wait_until
+                } else {
+                    error!("wait_until overflows, previous value: {:?}, epoch_duration: {:?}", wait_until, self.epoch_duration);
+                    return Err(AppError2::EpochServiceOverflow(wait_until, self.epoch_duration));
+                };
 
                 *self.current_epoch.write() = current_epoch.into();
 
@@ -111,12 +119,17 @@ impl EpochService2 {
     where
         T: std::fmt::Debug + Add<Duration, Output = T>,
     {
-        let (current_epoch, current_epoch_start_ts, current_epoch_end_ts) =
+        // Note: we need to now() & now2() function as in production (see listen_for_new_epoch)
+        //       now() -> DateTime<Utc> && now2() returns tokio::time::Instant
+        //       but in unit test, we use now() == now2() as it is easier to manipulate DateTime<Utc>
+
+        let (current_epoch, _current_epoch_start_ts, current_epoch_end_ts) =
             Self::compute_current_epoch_0(genesis, now, epoch_duration);
 
-        // TODO / FIXME - Troubleshot: weird to use now() & now2() at different time here...
         // time to wait to next epoch
-        let wait_until_0_ = current_epoch_end_ts - now().timestamp();
+        let now_ = now();
+        let now_2_ = now2();
+        let wait_until_0_ = current_epoch_end_ts - now_.timestamp();
         let wait_until_0 = Duration::from_secs(wait_until_0_ as u64);
         if wait_until_0 < WAIT_UNTIL_MIN_DURATION {
             return Err(WaitUntilError::TooLow(
@@ -125,7 +138,7 @@ impl EpochService2 {
             ));
         }
 
-        let wait_until = now2() + wait_until_0;
+        let wait_until = now_2_ + wait_until_0;
         Ok((current_epoch, wait_until))
     }
 
@@ -136,51 +149,30 @@ impl EpochService2 {
         now: &F,
         epoch_duration: &Duration,
     ) -> (i64, i64, i64) {
-        debug_assert!(now() > *genesis);
-        debug_assert!(epoch_duration.as_secs() > 0);
+
+        debug_assert!(now() >= *genesis);
         debug_assert!(i64::try_from(epoch_duration.as_secs()).is_ok());
+
+        let epoch_dur = epoch_duration.as_secs() as i64;
 
         let genesis_timestamp = genesis.timestamp();
         let now_timestamp = now().timestamp();
         // Get time delta between genesis
         let diff = now_timestamp - genesis_timestamp;
-        let current_epoch = diff.checked_div(epoch_duration.as_secs() as i64).unwrap();
+        // Unwrap safe: epoch_duration > 0 (Duration type ~= u64)
+        let current_epoch = diff.checked_div(epoch_dur).unwrap();
 
-        let epoch_start = genesis_timestamp
+        let epoch_start_ts = genesis_timestamp
             + (current_epoch
-                .checked_mul(epoch_duration.as_secs() as i64)
-                .unwrap());
-        let epoch_end = genesis_timestamp
+                .checked_mul(epoch_dur)
+                .unwrap()); // unwrap safe: should not overflow (as epoch_duration is small)
+        let epoch_end_ts = genesis_timestamp
             + ((current_epoch + 1)
-                .checked_mul(epoch_duration.as_secs() as i64)
-                .unwrap());
+                .checked_mul(epoch_dur)
+                .unwrap()); // unwrap safe: should not overflow (as epoch_duration is small)
 
-        (current_epoch, epoch_start, epoch_end)
+        (current_epoch, epoch_start_ts, epoch_end_ts)
     }
-
-    /*
-    /// Compute current epoch since genesis
-    /// Return current_epoch AND DateTime of the start & end of this current epoch
-    fn compute_current_epoch<F: Fn() -> DateTime<Utc>>(
-        genesis: DateTime<Utc>,
-        now: &F,
-        epoch_duration: &Duration,
-    ) -> (i64, DateTime<Utc>, DateTime<Utc>) {
-
-        debug_assert!(now() > genesis);
-        debug_assert!(epoch_duration.as_secs() > 0);
-        debug_assert!(i64::try_from(epoch_duration.as_secs()).is_ok());
-
-
-        let diff = now() - genesis;
-        // Unwrap safe: epoch_duration > 0 + safe to convert to i64
-        let current_epoch = diff.checked_div(epoch_duration.as_secs() as i32).unwrap();
-        let epoch_start = genesis + (current_epoch.checked_mul(epoch_duration.as_secs() as i32).unwrap());
-        let epoch_end = genesis + (current_epoch.checked_mul(epoch_duration.as_secs() as i32 + 1).unwrap());
-
-        (0, epoch_start, epoch_end)
-    }
-    */
 }
 
 #[cfg(test)]
@@ -284,7 +276,7 @@ mod tests {
         let date_0 = NaiveDate::from_ymd_opt(2025, 5, 14).unwrap();
         let datetime_0 = date_0.and_hms_opt(0, 0, 0).unwrap();
 
-        let genesis: DateTime<Utc> = chrono::DateTime::from_naive_utc_and_offset(datetime_0, Utc);
+        let genesis: DateTime<Utc> = DateTime::from_naive_utc_and_offset(datetime_0, Utc);
 
         {
             // Check wait_until close to genesis
@@ -348,8 +340,6 @@ mod tests {
             (mins, None)
         };
 
-        println!("make_utc_datetime: {} - {:?}", mins, time_delta);
-
         let naive_date = date.and_hms_opt(hours, mins, secs).unwrap();
 
         let naive_date = if let Some(time_delta) = time_delta {
@@ -358,6 +348,6 @@ mod tests {
             naive_date
         };
 
-        chrono::DateTime::from_naive_utc_and_offset(naive_date, chrono::Utc)
+        DateTime::from_naive_utc_and_offset(naive_date, Utc)
     }
 }
