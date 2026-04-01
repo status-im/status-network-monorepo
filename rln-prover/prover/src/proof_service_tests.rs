@@ -135,8 +135,7 @@ mod tests {
 
         // Epoch
         let epoch = Epoch::from(11);
-        let epoch_slice = EpochSlice::from(42);
-        let epoch_store = Arc::new(RwLock::new((epoch, epoch_slice)));
+        let epoch_store = Arc::new(RwLock::new(epoch));
 
         // User db
         let config = UserDb2Config {
@@ -313,8 +312,7 @@ mod tests {
 
         // Epoch
         let epoch = Epoch::from(11);
-        let epoch_slice = EpochSlice::from(42);
-        let epoch_store = Arc::new(RwLock::new((epoch, epoch_slice)));
+        let epoch_store = Arc::new(RwLock::new(epoch));
 
         // Limits
         let rate_limit = RateLimit::from(1);
@@ -398,8 +396,7 @@ mod tests {
 
         // Epoch
         let epoch = Epoch::from(11);
-        let epoch_slice = EpochSlice::from(42);
-        let epoch_store = Arc::new(RwLock::new((epoch, epoch_slice)));
+        let epoch_store = Arc::new(RwLock::new(epoch));
 
         // Limits
         let rate_limit = RateLimit::from(1);

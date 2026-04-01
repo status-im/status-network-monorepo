@@ -226,7 +226,7 @@ impl EpochService {
 pub enum EpochServiceInitError {
     #[error("epoch slice duration is too large (cannot fit in i32) or == 0")]
     EpochSliceDuration,
-    #[error("epoch duration must be > 0 and >= 2 * epoch_slice_duration")]
+    #[error("epoch duration must be > 0")]
     EpochDuration,
     #[error("genesis is in the future")]
     FutureGenesis,

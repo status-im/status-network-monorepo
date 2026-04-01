@@ -54,7 +54,7 @@ use tracing::{debug, info, warn};
 use zeroize::Zeroizing;
 // internal
 pub use crate::args::{ARGS_DEFAULT_GENESIS, AppArgs, AppArgsConfig};
-use crate::epoch_service::EpochService;
+use crate::epoch_service_2::{EpochService2, EpochService2Config};
 use crate::error::AppError2;
 use crate::grpc_service::GrpcProverService;
 use crate::karma_sc_listener::KarmaScEventListener;
@@ -76,6 +76,8 @@ use rln_proof::RlnIdentifier;
 use smart_contract::{KarmaTiers::KarmaTiersInstance, KarmaTiersError, RLN, TIER_LIMITS};
 
 pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
+
+    /*
     // Epoch service with configurable epoch and slice duration
     // Production: epoch_duration = 24h (86400s), epoch_slice = 2min (120s)
     // Testing: epoch_duration = 60s, epoch_slice = 10s (enables quota reset testing)
@@ -95,6 +97,22 @@ pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
     );
     let epoch_service =
         EpochService::try_from(epoch_config).expect("Failed to create epoch service");
+    */
+
+
+    let epoch_duration = Duration::from_secs(app_args.epoch_duration_secs);
+    info!(
+        "Starting epoch service: epoch_duration={}s",
+        app_args.epoch_duration_secs
+    );
+    let epoch_config = EpochService2Config::new(
+        epoch_duration,
+        ARGS_DEFAULT_GENESIS,
+    );
+
+    let epoch_service =
+        EpochService2::try_from(epoch_config).expect("Failed to create epoch service");
+
 
     // Alloy provider (Smart contract provider)
     let provider = if app_args.ws_rpc_url.is_some() {

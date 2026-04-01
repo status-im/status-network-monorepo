@@ -26,7 +26,7 @@ impl UserDbService {
         db_conn: Pool<Postgres>,
         config: UserDb2Config,
         epoch_changes_notifier: Arc<Notify>,
-        epoch_store: Arc<RwLock<(Epoch, EpochSlice)>>,
+        epoch_store: Arc<RwLock<Epoch>>,
         rate_limit: RateLimit,
         tier_limits: TierLimits,
     ) -> Result<Self, UserDb2OpenError> {
@@ -42,17 +42,15 @@ impl UserDbService {
     }
 
     pub async fn listen_for_epoch_changes(&self) -> Result<(), AppError2> {
-        let (mut current_epoch, _) = *self.user_db.epoch_store.read();
+        let mut current_epoch = *self.user_db.epoch_store.read();
 
         loop {
             self.epoch_changes.notified().await;
-            let (new_epoch, _) = *self.user_db.epoch_store.read();
+            let new_epoch = *self.user_db.epoch_store.read();
             debug!("new epoch: {:?}", new_epoch);
             self.update_on_epoch_changes(
                 &mut current_epoch,
                 new_epoch,
-                // &mut current_epoch_slice,
-                // new_epoch_slice,
             )
             .await;
         }
@@ -63,8 +61,6 @@ impl UserDbService {
         &self,
         current_epoch: &mut Epoch,
         new_epoch: Epoch,
-        // current_epoch_slice: &mut EpochSlice,
-        // new_epoch_slice: EpochSlice,
     ) {
         if new_epoch > *current_epoch {
             info!(
@@ -96,6 +92,5 @@ impl UserDbService {
         }
 
         *current_epoch = new_epoch;
-        // *current_epoch_slice = new_epoch_slice;
     }
 }

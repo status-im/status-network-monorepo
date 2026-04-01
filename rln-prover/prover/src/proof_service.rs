@@ -32,7 +32,7 @@ pub struct ProofService {
     receiver: Receiver<ProofGenerationData>,
     broadcast_sender:
         tokio::sync::broadcast::Sender<Result<ProofSendingData, ProofGenerationStringError>>,
-    current_epoch: Arc<RwLock<(Epoch, EpochSlice)>>,
+    current_epoch: Arc<RwLock<Epoch>>,
     user_db: UserDb2,
     rate_limit: RateLimit,
     id: u64,
@@ -44,7 +44,7 @@ impl ProofService {
         broadcast_sender: tokio::sync::broadcast::Sender<
             Result<ProofSendingData, ProofGenerationStringError>,
         >,
-        current_epoch: Arc<RwLock<(Epoch, EpochSlice)>>,
+        current_epoch: Arc<RwLock<Epoch>>,
         user_db: UserDb2,
         rate_limit: RateLimit,
         id: u64,
@@ -92,7 +92,7 @@ impl ProofService {
                 self.id, proof_generation_data.tx_sender
             );
 
-            let (current_epoch, _current_epoch_slice) = *self.current_epoch.read();
+            let current_epoch = *self.current_epoch.read();
             let user_db = self.user_db.clone();
             let proof_generation_data_ = proof_generation_data.clone();
             let rate_limit = self.rate_limit;
@@ -397,8 +397,7 @@ mod tests {
 
         // Epoch
         let epoch = Epoch::from(11);
-        let epoch_slice = EpochSlice::from(42);
-        let epoch_store = Arc::new(RwLock::new((epoch, epoch_slice)));
+        let epoch_store = Arc::new(RwLock::new(epoch));
 
         // User db
         let config = UserDb2Config {
