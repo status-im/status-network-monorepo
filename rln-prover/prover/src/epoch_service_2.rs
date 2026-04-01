@@ -183,13 +183,11 @@ mod tests {
         let day_ = 14;
         let genesis_0_date = NaiveDate::from_ymd_opt(2025, 5, day_).unwrap();
         let genesis_0: NaiveDateTime = genesis_0_date.and_hms_opt(4, 0, 0).unwrap();
-        let genesis: DateTime<Utc> =
-            chrono::DateTime::from_naive_utc_and_offset(genesis_0, chrono::Utc);
+        let genesis: DateTime<Utc> = DateTime::from_naive_utc_and_offset(genesis_0, Utc);
 
         let now_f = move || {
             let now_0: NaiveDateTime = genesis_0_date.and_hms_opt(4 + 2, 0, 0).unwrap();
-            let now: DateTime<Utc> =
-                chrono::DateTime::from_naive_utc_and_offset(now_0, chrono::Utc);
+            let now: DateTime<Utc> = DateTime::from_naive_utc_and_offset(now_0, Utc);
             now
         };
 
@@ -327,6 +325,8 @@ mod tests {
             assert!(matches!(res, Err(WaitUntilError::TooLow(_, _))));
         }
     }
+
+    // Helpers
 
     fn make_utc_datetime(date: NaiveDate, hours: u32, mins: u32, secs: u32) -> DateTime<Utc> {
         let (mins, time_delta) = if mins > 60 {
