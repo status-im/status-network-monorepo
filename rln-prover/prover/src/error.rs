@@ -1,9 +1,9 @@
-use std::time::Duration;
 use alloy::signers::local::LocalSignerError;
 use alloy::transports::{RpcError, TransportErrorKind};
 use ark_serialize::SerializationError;
 use rln::error::ProofError;
 use smart_contract::{KarmaScError, KarmaTiersError, RlnScError};
+use std::time::Duration;
 // internal
 use crate::epoch_service::WaitUntilError;
 use crate::tier::ValidateTierLimitsError;
@@ -67,7 +67,9 @@ pub enum AppError2 {
     RpcTransportError(#[from] RpcError<TransportErrorKind>),
     #[error("Epoch service error: {0}")]
     EpochError(#[from] WaitUntilError),
-    #[error("Epoch service cannot wait til the next epoch, previous epoch time: {0:?} - epoch duration: {1:?}")]
+    #[error(
+        "Epoch service cannot wait til the next epoch, previous epoch time: {0:?} - epoch duration: {1:?}"
+    )]
     EpochServiceOverflow(tokio::time::Instant, Duration),
     #[error(transparent)]
     RegistryError(#[from] HandleTransferError2),

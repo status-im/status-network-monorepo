@@ -1,8 +1,4 @@
-use std::{
-    ops::Add,
-    sync::Arc,
-    time::Duration
-};
+use std::{ops::Add, sync::Arc, time::Duration};
 // third-party
 use chrono::{DateTime, NaiveDate, NaiveDateTime, OutOfRangeError, TimeDelta, Utc};
 use metrics::{gauge, histogram};
@@ -40,7 +36,6 @@ impl EpochService2 {
     //       + metrics already tracks the current epoch / epoch_slice
     // #[instrument(skip(self), fields(self.epoch_duration, self.genesis, self.current_epoch))]
     pub(crate) async fn listen_for_new_epoch(&self) -> Result<(), AppError2> {
-
         let mut retry_counter = 0;
         // Note: compute_wait_until return the duration to wait (from now until the next epoch)
         //       this can be very low (if we start the program near the end of an epoch)
@@ -94,8 +89,14 @@ impl EpochService2 {
                 wait_until = if let Some(wait_until) = wait_until.checked_add(self.epoch_duration) {
                     wait_until
                 } else {
-                    error!("wait_until overflows, previous value: {:?}, epoch_duration: {:?}", wait_until, self.epoch_duration);
-                    return Err(AppError2::EpochServiceOverflow(wait_until, self.epoch_duration));
+                    error!(
+                        "wait_until overflows, previous value: {:?}, epoch_duration: {:?}",
+                        wait_until, self.epoch_duration
+                    );
+                    return Err(AppError2::EpochServiceOverflow(
+                        wait_until,
+                        self.epoch_duration,
+                    ));
                 };
 
                 *self.current_epoch.write() = current_epoch.into();
@@ -149,7 +150,6 @@ impl EpochService2 {
         now: &F,
         epoch_duration: &Duration,
     ) -> (i64, i64, i64) {
-
         debug_assert!(now() >= *genesis);
         debug_assert!(i64::try_from(epoch_duration.as_secs()).is_ok());
 
@@ -162,14 +162,9 @@ impl EpochService2 {
         // Unwrap safe: epoch_duration > 0 (Duration type ~= u64)
         let current_epoch = diff.checked_div(epoch_dur).unwrap();
 
-        let epoch_start_ts = genesis_timestamp
-            + (current_epoch
-                .checked_mul(epoch_dur)
-                .unwrap()); // unwrap safe: should not overflow (as epoch_duration is small)
-        let epoch_end_ts = genesis_timestamp
-            + ((current_epoch + 1)
-                .checked_mul(epoch_dur)
-                .unwrap()); // unwrap safe: should not overflow (as epoch_duration is small)
+        let epoch_start_ts = genesis_timestamp + (current_epoch.checked_mul(epoch_dur).unwrap()); // unwrap safe: should not overflow (as epoch_duration is small)
+        let epoch_end_ts =
+            genesis_timestamp + ((current_epoch + 1).checked_mul(epoch_dur).unwrap()); // unwrap safe: should not overflow (as epoch_duration is small)
 
         (current_epoch, epoch_start_ts, epoch_end_ts)
     }
