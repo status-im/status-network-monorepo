@@ -48,20 +48,13 @@ impl UserDbService {
             self.epoch_changes.notified().await;
             let new_epoch = *self.user_db.epoch_store.read();
             debug!("new epoch: {:?}", new_epoch);
-            self.update_on_epoch_changes(
-                &mut current_epoch,
-                new_epoch,
-            )
-            .await;
+            self.update_on_epoch_changes(&mut current_epoch, new_epoch)
+                .await;
         }
     }
 
     /// Internal - used by listen_for_epoch_changes
-    async fn update_on_epoch_changes(
-        &self,
-        current_epoch: &mut Epoch,
-        new_epoch: Epoch,
-    ) {
+    async fn update_on_epoch_changes(&self, current_epoch: &mut Epoch, new_epoch: Epoch) {
         if new_epoch > *current_epoch {
             info!(
                 "Epoch changed from {:?} to {:?}, clearing deny list",

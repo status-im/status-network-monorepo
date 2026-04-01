@@ -6,7 +6,7 @@ use parking_lot::RwLock;
 use tokio::sync::Notify;
 use tracing::{debug, error};
 // Common?
-use crate::epoch_service::{Epoch, EpochServiceInitError, WaitUntilError, DEFAULT_EPOCH_DURATION};
+use crate::epoch_service::{DEFAULT_EPOCH_DURATION, Epoch, EpochServiceInitError, WaitUntilError};
 // Internal
 use crate::error::AppError2;
 use crate::metrics::{
@@ -181,12 +181,8 @@ pub struct EpochService2Config {
 }
 
 impl EpochService2Config {
-
     /// Create config with custom epoch duration
-    pub fn new(
-        epoch_duration: Duration,
-        genesis: DateTime<Utc>,
-    ) -> Self {
+    pub fn new(epoch_duration: Duration, genesis: DateTime<Utc>) -> Self {
         Self {
             epoch_duration,
             genesis,
@@ -216,7 +212,6 @@ impl TryFrom<EpochService2Config> for EpochService2 {
         })
     }
 }
-
 
 #[cfg(test)]
 mod tests {
