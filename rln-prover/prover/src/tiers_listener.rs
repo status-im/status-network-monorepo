@@ -39,7 +39,7 @@ impl TiersListener {
         while let Some(log) = stream.next().await {
             if let Ok(_tu) = KarmaTiers::TiersUpdated::decode_log_data(log.data()) {
                 let tier_limits =
-                    match KarmaTiersInstance::get_tiers_from_provider(&provider, &self.sc_address)
+                    match KarmaTiersInstance::get_tiers_from_provider_2(&provider, &self.sc_address)
                         .await
                     {
                         Ok(tier_limits) => tier_limits,

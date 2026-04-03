@@ -25,7 +25,9 @@ thiserror.workspace = true
 rustls.workspace = true
 # log = "0.4.29"
 tracing.workspace = true
+tracing-subscriber.workspace = true
 serde.workspace = true
+futures = "0.3.32"
 
 [dev-dependencies]
 claims = "0.8"

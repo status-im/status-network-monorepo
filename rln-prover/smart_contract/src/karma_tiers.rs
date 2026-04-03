@@ -6,6 +6,9 @@ use alloy::{
     sol,
     transports::{RpcError, TransportErrorKind},
 };
+use alloy::primitives::{address, Bytes};
+use alloy::providers::MulticallError;
+use alloy::sol_types::SolCall;
 use serde::{Deserialize, Serialize};
 
 #[derive(thiserror::Error, Debug)]
@@ -14,6 +17,10 @@ pub enum KarmaTiersError {
     RpcTransportError(#[from] RpcError<TransportErrorKind>),
     #[error(transparent)]
     Alloy(#[from] alloy::contract::Error),
+    #[error(transparent)]
+    MultiCall(#[from] MulticallError),
+    #[error(transparent)]
+    Decode(#[from] alloy::sol_types::Error),
     #[error("Pending transaction error: {0}")]
     PendingTransactionError(#[from] alloy::providers::PendingTransactionError),
     #[error("Private key cannot be empty")]
@@ -85,33 +92,6 @@ impl<P: Provider> KarmaTiers::KarmaTiersInstance<P> {
         // Note: unwrap safe - just tested
         let tier_count = u8::try_from(tier_count).unwrap();
 
-        // Wait for issue: https://github.com/alloy-rs/alloy/issues/2744 to be fixed
-        /*
-        let get0 = CallItemBuilder::new(karma_tiers_sc.getTierById(0)); // Set the amount of eth that should be deposited into the contract.
-        let get1 = CallItemBuilder::new(karma_tiers_sc.getTierById(1)); // Set the amount of eth that should be deposited into the contract.
-        let multicall = provider
-            .multicall()
-            .add_call(get0)
-            .add_call(get1)
-            ;
-
-        let (res0, res1) = multicall
-            // .aggregate()
-            .aggregate()
-            .await
-            .unwrap()
-            // .map_err(GetScTiersError::Multicall)?;
-           ;
-
-        // res.into_iter()
-        //     .map(|t| t.map(Tier::from))
-        //     .collect::<Result<Vec<_>, _>>()
-        //     .map_err(|_e| GetScTiersError::MulticallInner)
-        // let res_ = res.unwrap();
-        // Ok(vec![Tier::from(res_.0.unwrap()), Tier::from(res_.1.unwrap())])
-        Ok(vec![])
-        */
-
         let mut tiers = Vec::with_capacity(usize::from(tier_count));
         for i in 0..tier_count {
             let tier = karma_tiers_sc
@@ -122,6 +102,113 @@ impl<P: Provider> KarmaTiers::KarmaTiersInstance<P> {
             tiers.push(Tier::from(tier));
         }
         Ok(tiers)
+    }
+
+    /// Faster version of `get_tiers_from_provider` (using multicall3)
+    pub async fn get_tiers_from_provider_2(
+        provider: &P,
+        sc_address: &Address,
+    ) -> Result<Vec<Tier>, KarmaTiersError> {
+
+        let karma_tiers_sc = KarmaTiers::new(*sc_address, provider);
+
+        let tier_count = karma_tiers_sc
+            .getTierCount()
+            .call()
+            .await
+            .map_err(KarmaTiersError::Alloy)?;
+
+        if tier_count > U256::from(u8::MAX) {
+            return Err(KarmaTiersError::TierCountTooHigh);
+        }
+        // Note: unwrap safe - just tested
+        let tier_count = u8::try_from(tier_count).unwrap();
+
+        // From example: https://alloy.rs/examples/providers/multicall
+        let mut multicall = provider.multicall().dynamic::<KarmaTiers::getTierByIdCall>();
+        for i in 0..tier_count {
+            multicall = multicall.add_dynamic(karma_tiers_sc.getTierById(i));
+        }
+
+        let results = multicall
+            .aggregate()
+            .await
+            .map_err(KarmaTiersError::MultiCall)?;
+
+        let tiers = results.into_iter().map(Tier::from).collect();
+
+        Ok(tiers)
+    }
+
+    pub async fn get_tiers_from_provider_3(
+        provider: &P,
+        sc_address: &Address,
+    ) -> Result<Vec<Tier>, KarmaTiersError> {
+        let karma_tiers_sc = KarmaTiers::new(*sc_address, provider);
+
+        let tier_count = karma_tiers_sc
+            .getTierCount()
+            .call()
+            .await
+            .map_err(KarmaTiersError::Alloy)?;
+
+        if tier_count > U256::from(u8::MAX) {
+            return Err(KarmaTiersError::TierCountTooHigh);
+        }
+        // Note: unwrap safe - just tested
+        let tier_count = u8::try_from(tier_count).unwrap();
+
+        let mut calls = Vec::with_capacity(usize::from(tier_count));
+
+        for i in 0..tier_count {
+            // Generate the ABI-encoded call data
+            // Note: Use the exact generated SolCall struct name for your method
+            let call_struct = KarmaTiers::getTierByIdCall { tierId: i };
+            let encoded_calldata = call_struct.abi_encode();
+
+            calls.push(IMulticall3::Call {
+                target: *sc_address,
+                callData: Bytes::from(encoded_calldata),
+            });
+        }
+
+        // From https://www.multicall3.com/ - always using the following address
+        let multicall3_address = address!("cA11bde05977b3631167028862bE2a173976CA11");
+        let multicall_sc = IMulticall3::new(multicall3_address, provider);
+
+        // 4. Execute the aggregate function on-chain
+        let response = multicall_sc
+            .aggregate(calls)
+            .call()
+            .await
+            .map_err(KarmaTiersError::Alloy)?;
+
+        // 5. Decode the raw bytes back into your Tier structs
+        let mut tiers = Vec::with_capacity(usize::from(tier_count));
+
+        for raw_bytes in response.returnData {
+            // Manually decode the bytes
+            let decoded_return = KarmaTiers::getTierByIdCall::abi_decode_returns(&raw_bytes)
+                .map_err(KarmaTiersError::Decode)?;
+            tiers.push(Tier::from(decoded_return));
+        }
+
+        Ok(tiers)
+    }
+}
+
+sol! {
+    #[sol(rpc)]
+    interface IMulticall3 {
+        struct Call {
+            address target;
+            bytes callData;
+        }
+
+        function aggregate(Call[] calldata calls)
+            external
+            view
+            returns (uint256 blockNumber, bytes[] memory returnData);
     }
 }
 
@@ -171,7 +258,12 @@ impl std::fmt::Debug for KarmaTiers::Tier {
 mod tests {
     use super::*;
     use crate::KarmaTiers::KarmaTiersInstance;
-    use alloy::providers::ProviderBuilder;
+    use alloy::{
+        providers::ProviderBuilder,
+        node_bindings::Anvil,
+        network::EthereumWallet,
+        signers::local::PrivateKeySigner
+    };
 
     impl PartialEq<KarmaTiers::Tier> for Tier {
         fn eq(&self, other: &KarmaTiers::Tier) -> bool {
@@ -193,9 +285,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_tiers() {
-        // Spin up a forked Anvil node.
-        // Ensure `anvil` is available in $PATH.
-        let provider = ProviderBuilder::new().connect_anvil_with_wallet();
+
+        tracing_subscriber::fmt::init();
+
+        // Spawn anvil using a fork of Sepolia (this to have the Multicall3 contract deployed)
+        let anvil = Anvil::new()
+            .fork("https://ethereum-sepolia-rpc.publicnode.com")
+            .spawn();
+
+        let provider = {
+            let anvil_priv_key = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+            let signer: PrivateKeySigner = anvil_priv_key.parse().unwrap();
+            let wallet = EthereumWallet::from(signer);
+
+            ProviderBuilder::new()
+                .wallet(wallet)
+                .connect_http(anvil.endpoint().parse().unwrap())
+        };
+
+        let code = provider.get_code_at(address!("cA11bde05977b3631167028862bE2a173976CA11")).await.unwrap();
+        // println!("Multicall3 Bytecode: {:?}", code);
+        if code.is_empty() {
+            panic!("No Multicall3 smart contract deployed?");
+        }
 
         // Deploy the KarmaTiers contract.
         let contract = KarmaTiers::deploy(&provider).await.unwrap();
@@ -238,9 +350,24 @@ mod tests {
         let result_5 = call_5.call().await.unwrap();
         assert_eq!(result_5, tiers[1]);
 
+        println!("Now calling get_tiers_from_provider...");
         let res = KarmaTiersInstance::get_tiers_from_provider(&provider, contract.address())
             .await
             .unwrap();
         assert_eq!(res, tiers.to_vec());
+
+        println!("Now calling get_tiers_from_provider_2...");
+        let res_2 = KarmaTiersInstance::get_tiers_from_provider_2(&provider, contract.address())
+            .await
+            .unwrap();
+        assert_eq!(res_2, tiers.to_vec());
+
+        println!("Now calling get_tiers_from_provider_3...");
+        let res_3 = KarmaTiersInstance::get_tiers_from_provider_3(&provider, contract.address())
+            .await
+            .unwrap();
+        assert_eq!(res_3, tiers.to_vec());
+
     }
+
 }
