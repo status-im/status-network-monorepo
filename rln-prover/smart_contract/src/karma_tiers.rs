@@ -1,14 +1,14 @@
 use std::fmt::Formatter;
 // third-party
+use alloy::primitives::{Bytes, address};
+use alloy::providers::MulticallError;
+use alloy::sol_types::SolCall;
 use alloy::{
     primitives::{Address, U256},
     providers::Provider,
     sol,
     transports::{RpcError, TransportErrorKind},
 };
-use alloy::primitives::{address, Bytes};
-use alloy::providers::MulticallError;
-use alloy::sol_types::SolCall;
 use serde::{Deserialize, Serialize};
 
 #[derive(thiserror::Error, Debug)]
@@ -109,7 +109,6 @@ impl<P: Provider> KarmaTiers::KarmaTiersInstance<P> {
         provider: &P,
         sc_address: &Address,
     ) -> Result<Vec<Tier>, KarmaTiersError> {
-
         let karma_tiers_sc = KarmaTiers::new(*sc_address, provider);
 
         let tier_count = karma_tiers_sc
@@ -125,7 +124,9 @@ impl<P: Provider> KarmaTiers::KarmaTiersInstance<P> {
         let tier_count = u8::try_from(tier_count).unwrap();
 
         // From example: https://alloy.rs/examples/providers/multicall
-        let mut multicall = provider.multicall().dynamic::<KarmaTiers::getTierByIdCall>();
+        let mut multicall = provider
+            .multicall()
+            .dynamic::<KarmaTiers::getTierByIdCall>();
         for i in 0..tier_count {
             multicall = multicall.add_dynamic(karma_tiers_sc.getTierById(i));
         }
@@ -259,10 +260,8 @@ mod tests {
     use super::*;
     use crate::KarmaTiers::KarmaTiersInstance;
     use alloy::{
-        providers::ProviderBuilder,
-        node_bindings::Anvil,
-        network::EthereumWallet,
-        signers::local::PrivateKeySigner
+        network::EthereumWallet, node_bindings::Anvil, providers::ProviderBuilder,
+        signers::local::PrivateKeySigner,
     };
 
     impl PartialEq<KarmaTiers::Tier> for Tier {
@@ -285,7 +284,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_tiers() {
-
         tracing_subscriber::fmt::init();
 
         // Spawn anvil using a fork of Sepolia (this to have the Multicall3 contract deployed)
@@ -294,7 +292,8 @@ mod tests {
             .spawn();
 
         let provider = {
-            let anvil_priv_key = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+            let anvil_priv_key =
+                "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
             let signer: PrivateKeySigner = anvil_priv_key.parse().unwrap();
             let wallet = EthereumWallet::from(signer);
 
@@ -303,7 +302,10 @@ mod tests {
                 .connect_http(anvil.endpoint().parse().unwrap())
         };
 
-        let code = provider.get_code_at(address!("cA11bde05977b3631167028862bE2a173976CA11")).await.unwrap();
+        let code = provider
+            .get_code_at(address!("cA11bde05977b3631167028862bE2a173976CA11"))
+            .await
+            .unwrap();
         // println!("Multicall3 Bytecode: {:?}", code);
         if code.is_empty() {
             panic!("No Multicall3 smart contract deployed?");
@@ -367,7 +369,5 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res_3, tiers.to_vec());
-
     }
-
 }
