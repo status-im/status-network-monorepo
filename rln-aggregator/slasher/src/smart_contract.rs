@@ -1,6 +1,7 @@
+use std::time::Duration;
 use crate::smart_contract::KarmaSC::{KarmaSCErrors, KarmaSCInstance};
 use crate::smart_contract::RLN::{RLNErrors, RLNInstance};
-use alloy::primitives::address;
+use alloy::primitives::{address, B256};
 use alloy::sol_types::SolCall;
 use alloy::{
     primitives::{Address, U256, keccak256},
@@ -8,10 +9,12 @@ use alloy::{
     sol,
     sol_types::SolValue,
 };
+use alloy::eips::BlockNumberOrTag;
 use ark_ff::PrimeField;
 use derive_more::Display;
 use rln::utils::IdSecret;
-use tracing::error;
+use tokio::time::sleep;
+use tracing::{debug, error, info};
 
 sol! {
 
@@ -40,11 +43,16 @@ sol! {
             uint256 index;
         }
 
+        function setSlashRevealWindowTime(uint256 _slashRevealWindowTime) external onlyRole(DEFAULT_ADMIN_ROLE);
+
         function register(uint256 identityCommitment, address user) external onlyRole(REGISTER_ROLE);
         // mapping(uint256 commitment => User user) public members;
         function members(uint256 commitment) public view returns (User memory);
 
         function slashCommit(address account, bytes32 hash) external;
+
+        // uint256 public slashRevealWindowTime;
+        function slashRevealWindowTime() public view returns (uint256);
 
         // mapping(address account => uint256 lastRevealStartTime) public lastRevealStartTime;
         function lastRevealStartTime(address account) public view returns (uint256);
@@ -88,6 +96,91 @@ impl<P: Provider> RLN::RLNInstance<P> {
             .await?;
 
         // Now call slashReveal
+        let pkey_fb32 = U256::from_limbs(identity_secret_hash.into_bigint().0)
+            .to_be_bytes::<32>()
+            .into();
+
+        let slash_reveal_call_result = self
+            .slashReveal(account_to_slash, pkey_fb32, account_for_reward)
+            .call()
+            .await;
+        if let Err(e) = slash_reveal_call_result {
+            // Error can come from either RLN SC or Karma SC
+            let rln_errors = e.as_decoded_interface_error::<RLN::RLNErrors>();
+            if let Some(rln_errors) = rln_errors {
+                return Err(SlashError::RlnSc(rln_errors.into()));
+            };
+            let karma_sc_errors = e.as_decoded_interface_error::<KarmaSC::KarmaSCErrors>();
+            if let Some(karma_sc_errors) = karma_sc_errors {
+                return Err(SlashError::KarmaSc(karma_sc_errors.into()));
+            };
+
+            error!("Error in slash reveal: {:#?}", e);
+        }
+
+        let _slash_reveal_tx = self
+            .slashReveal(account_to_slash, pkey_fb32, account_for_reward)
+            .send()
+            .await?
+            .watch()
+            .await?;
+
+        Ok(())
+    }
+
+    // Test
+
+    pub(crate) async fn slash_commit(
+        &self,
+        account_to_slash: Address,
+        identity_secret_hash: IdSecret,
+        account_for_reward: Address,
+    ) -> Result<B256, SlashError> {
+
+        let slash_commit_hash = {
+            let to_hash = (
+                U256::from_limbs(identity_secret_hash.into_bigint().0).to_be_bytes::<32>(),
+                account_for_reward,
+            );
+            let slash_commit_hash_ = to_hash.abi_encode_packed();
+            // println!("slash_commit_hash_: {:?}", slash_commit_hash_);
+            keccak256(slash_commit_hash_.as_slice())
+        };
+
+        let _ = self
+            .slashCommit(account_to_slash, slash_commit_hash.0.into())
+            .send()
+            .await?
+            .watch()
+            .await?;
+
+        Ok(slash_commit_hash)
+    }
+
+    pub(crate) async fn reveal_start_time(
+        &self,
+        account_to_slash: Address,
+        slash_commit_hash: B256,
+    ) -> Result<U256, SlashError> {
+        let res = self.slashCommitments(account_to_slash, slash_commit_hash.0.into()).call().await?;
+        Ok(res)
+    }
+
+    pub(crate) async fn last_reveal_start_time(
+        &self,
+        account_to_slash: Address,
+    ) -> Result<U256, SlashError> {
+        let res = self.lastRevealStartTime(account_to_slash).call().await?;
+        Ok(res)
+    }
+
+    pub(crate) async fn slash_reveal(
+        &self,
+        account_to_slash: Address,
+        identity_secret_hash: IdSecret,
+        account_for_reward: Address,
+    ) -> Result<(), SlashError> {
+
         let pkey_fb32 = U256::from_limbs(identity_secret_hash.into_bigint().0)
             .to_be_bytes::<32>()
             .into();
@@ -372,6 +465,9 @@ pub(crate) async fn deploy_sc_for_slashing<P: Provider + Clone + 'static>(
         .await
         .unwrap();
 
+    // Tweak reveal window time: 5 minutes
+    // contract_rln.setSlashRevealWindowTime(U256::from(5 * 60)).send().await.unwrap().watch().await.unwrap();
+
     // Add some karma to Bob
     {
         // let token_sc = MockToken::deploy(provider, "Karma".to_string(), "KARMA".to_string()).await.unwrap();
@@ -429,9 +525,47 @@ pub(crate) async fn deploy_sc_for_slashing<P: Provider + Clone + 'static>(
     (contract_poseidon_hasher, contract_karma_sc, contract_rln)
 }
 
+pub async fn wait_until_evm_timestamp<P: Provider>(
+    provider: &P,
+    target_timestamp: u64, // The commit timestamp + your slashRevealWindowTime
+) {
+
+    info!("Waiting for EVM timestamp to reach {}...", target_timestamp);
+
+    loop {
+        let latest_block = provider
+            .get_block_by_number(BlockNumberOrTag::Latest)
+            .await
+            .expect("Block should exist") // FIXME
+            .unwrap(); // FIXME
+
+        let current_evm_timestamp = latest_block.header.timestamp;
+
+        if current_evm_timestamp >= target_timestamp {
+            info!("Target time reached! Current EVM Time: {} ✅✅✅", current_evm_timestamp);
+            break;
+        }
+
+        let seconds_left = target_timestamp.saturating_sub(current_evm_timestamp);
+        info!("EVM Time: {} | Remaining: {} seconds...", current_evm_timestamp, seconds_left);
+
+        // Note: using 12 secs as it is the average block time (for Eth mainnet & testnet)
+        let sleep_duration = if seconds_left > 60 {
+            Duration::from_secs(30)
+        } else {
+            Duration::from_secs(12)
+        };
+
+        sleep(sleep_duration).await;
+    }
+
+    // Ok(())
+}
+
 #[cfg(feature = "anvil")]
 #[cfg(test)]
 mod tests {
+    use alloy::consensus::private::serde_json::json;
     use super::*;
     use alloy::dyn_abi::DynSolValue;
     use alloy::eips::BlockNumberOrTag;
@@ -452,6 +586,9 @@ mod tests {
     use ark_ff::{BigInt, BigInteger, One, PrimeField, Zero};
     use rln::hashers::poseidon_hash;
     use rln::protocol::keygen;
+    use serde_json::Value::Null;
+    use assert_matches::assert_matches;
+    use tracing_subscriber::EnvFilter;
 
     #[tokio::test]
     async fn test_register() {
@@ -804,6 +941,9 @@ mod tests {
             .await
             .unwrap();
 
+        // Tweak reveal window time: 2 minutes
+        contract_rln.setSlashRevealWindowTime(U256::from(2 * 60)).send().await.unwrap().watch().await.unwrap();
+
         // Add some karma to Bob
         {
             // let token_sc = MockToken::deploy(provider, "Karma".to_string(), "KARMA".to_string()).await.unwrap();
@@ -1059,6 +1199,8 @@ mod tests {
 
         // println!("contract rln address: {:?}", contract_rln.address());
 
+
+
         // Register Bob in RLN SC
         let (identity_secret_hash_1, id_commitment_1) = keygen();
         let id_co_1 = U256::from_limbs(id_commitment_1.into_bigint().0);
@@ -1094,5 +1236,93 @@ mod tests {
 
         assert!(bob_balance_1 < bob_balance_0);
         assert!(alice_balance_1 > alice_balance_0);
+    }
+
+    #[tokio::test]
+    async fn test_slashing_multi_slasher() -> anyhow::Result<()> {
+
+        setup_test_tracing();
+
+        let provider = ProviderBuilder::new().connect_anvil_with_wallet();
+        let (contract_poseidon_hasher, contract_karma_sc, contract_rln) =
+            deploy_sc_for_slashing(&provider).await;
+
+        info!("contract rln address: {:?}", contract_rln.address());
+        info!("slash reveal window time: {:?}", contract_rln.slashRevealWindowTime().call().await);
+
+        // Register Bob in RLN SC
+        let (identity_secret_hash_1, id_commitment_1) = keygen();
+        let id_co_1 = U256::from_limbs(id_commitment_1.into_bigint().0);
+        let _ = contract_rln
+            .register(id_co_1, addr_bob)
+            .send()
+            .await
+            .unwrap()
+            .watch()
+            .await
+            .unwrap();
+
+        let (bob_balance_0, alice_balance_0) = {
+            let call_4 = contract_karma_sc.balanceOf(addr_bob);
+            let bob_balance_0 = call_4.call().await.unwrap();
+            let call_4_2 = contract_karma_sc.balanceOf(addr_alice);
+            let alice_balance_0 = call_4_2.call().await.unwrap();
+            (bob_balance_0, alice_balance_0)
+        };
+
+        info!("Slash commit by Alice...");
+        let alice_to_slash_hash = contract_rln
+            .slash_commit(addr_bob, identity_secret_hash_1.clone(), addr_alice)
+            .await
+            .unwrap();
+
+        let r_t = contract_rln.reveal_start_time(addr_bob, alice_to_slash_hash).await?;
+        info!("reveal time: {}", r_t);
+        let l_r_t = contract_rln.last_reveal_start_time(addr_bob,).await?;
+        info!("last reveal time: {}", l_r_t);
+
+        info!("Slash commit by Mickey...");
+        let mickey_to_slash_hash = contract_rln
+            .slash_commit(addr_bob, identity_secret_hash_1.clone(), addr_mickey)
+            .await
+            .unwrap();
+
+        let r_t = contract_rln.reveal_start_time(addr_bob, mickey_to_slash_hash).await?;
+        info!("slash reveal time: {}", r_t);
+        let l_r_t = contract_rln.last_reveal_start_time(addr_bob,).await?;
+        info!("last reveal time: {}", l_r_t);
+
+        // Turn OFF instant auto-mining
+        provider.raw_request::<_, ()>("evm_setAutomine".into(), [json!(false)]).await.unwrap();
+        // Turn ON 12 srecs interval mining
+        provider.raw_request::<_, ()>("evm_setIntervalMining".into(), [json!(1)]).await.unwrap();
+
+        wait_until_evm_timestamp(&provider, l_r_t.try_into().unwrap()).await;
+
+        // Now slash reveal
+        info!("1st slash reveal from Mickey...");
+        contract_rln
+            .slash_reveal(addr_bob, identity_secret_hash_1.clone(), addr_mickey)
+            .await
+            .unwrap();
+
+        // Expect 2nd slash reveal to fail (Mickey already did his slash reveal)
+        info!("2nd slash reveal from Alice...");
+        let res = contract_rln
+            .slash_reveal(addr_bob, identity_secret_hash_1.clone(), addr_alice)
+            .await;
+        assert_matches!(res, Err(SlashError::RlnSc(RlnScError::MemberNotFound)));
+
+        Ok(())
+    }
+
+    // utils
+
+    fn setup_test_tracing() {
+        let _ = tracing_subscriber::fmt()
+            .with_test_writer()
+            .with_env_filter(EnvFilter::from_default_env())
+            // ignore error if another // unit test already initialize it
+            .try_init();
     }
 }
