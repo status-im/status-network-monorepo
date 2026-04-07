@@ -7,6 +7,7 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 import { ERC20VotesUpgradeable } from "./utils/ERC20VotesUpgradeable.sol";
 import { IRewardDistributor } from "./interfaces/IRewardDistributor.sol";
 import { IGaugeVoter } from "./interfaces/IGaugeVoter.sol";
+import { IKarmaTiers } from "./interfaces/IKarmaTiers.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
@@ -36,6 +37,8 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     error Karma__CannotSlashZeroBalance();
     /// @notice Emitted when there are insufficient funds to transfer
     error Karma__InsufficientTransferBalance();
+    /// @notice Emitted when slasher does not meet the required karma tier
+    error Karma__SlashTierRequirementNotMet();
 
     /// @notice Emitted when a reward distributor is added
     event RewardDistributorAdded(address distributor);
@@ -51,6 +54,10 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     event SlashRewardPercentageUpdated(uint256 oldPercentage, uint256 newPercentage);
     /// @notice Emitted when the gauge voter is updated
     event GaugeVoterUpdated(address indexed oldGaugeVoter, address indexed newGaugeVoter);
+    /// @notice Emitted when the KarmaTiers contract is updated
+    event KarmaTiersUpdated(address indexed oldKarmaTiers, address indexed newKarmaTiers);
+    /// @notice Emitted when the slash tier requirement is updated
+    event SlashTierRequirementUpdated(uint8 oldTierRequirement, uint8 newTierRequirement);
 
     /*//////////////////////////////////////////////////////////////////////////
                                     CONSTANTS
@@ -87,9 +94,14 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     /// @notice The gauge voter contract to notify on voting power changes
     IGaugeVoter public gaugeVoter;
 
+    /// @notice The KarmaTiers contract used to check tier requirements for slashing
+    IKarmaTiers public karmaTiers;
+    /// @notice Minimum karma tier required to call slash() (only enforced when karmaTiers is set)
+    uint8 public slashTierRequirement;
+
     /// @notice Gap for upgrade safety.
     // solhint-disable-next-line
-    uint256[30] private __gap_Karma;
+    uint256[29] private __gap_Karma;
 
     /// @notice Modifier to check if sender is admin or operator
     modifier onlyAdminOrOperator() {
@@ -207,6 +219,29 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     }
 
     /**
+     * @notice Sets the KarmaTiers contract used to check tier requirements for slashing.
+     * @dev Only the admin can set the KarmaTiers contract.
+     * @param _karmaTiers The address of the KarmaTiers contract (or address(0) to disable tier checks).
+     */
+    function setKarmaTiers(address _karmaTiers) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        address old = address(karmaTiers);
+        karmaTiers = IKarmaTiers(_karmaTiers);
+        emit KarmaTiersUpdated(old, _karmaTiers);
+    }
+
+    /**
+     * @notice Sets the minimum karma tier required to call slash().
+     * @dev Only the admin can set the slash tier requirement.
+     * @dev This requirement is only enforced when a KarmaTiers contract is configured.
+     * @param tierRequirement The minimum tier ID required (inclusive).
+     */
+    function setSlashTierRequirement(uint8 tierRequirement) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        uint8 old = slashTierRequirement;
+        slashTierRequirement = tierRequirement;
+        emit SlashTierRequirementUpdated(old, tierRequirement);
+    }
+
+    /**
      * @notice Sets the reward for a reward distributor.
      * @dev Only the owner can set the reward for a reward distributor.
      * @dev The total allocation for all reward distributors is updated.
@@ -240,11 +275,38 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     /**
      * @notice Slashes karma from an account based on the current slashing percentage
      * @dev Only accounts with the SLASHER_ROLE can call this function
+     * @dev The slasher (msg.sender) must meet the configured karma tier requirement (if KarmaTiers is set)
      * @param account Account to slash
      * @param rewardRecipient Address that will receive the slash reward
      * @return slashedAmount The amount of karma that was slashed
      */
     function slash(address account, address rewardRecipient) public virtual onlyAdminOrSlasher returns (uint256) {
+        _checkSlashTierRequirement(msg.sender);
+        return _slash(account, rewardRecipient);
+    }
+
+    /**
+     * @notice Slashes karma from an account based on the current slashing percentage
+     * @dev Only accounts with the SLASHER_ROLE can call this function
+     * @dev The provided slasher address must meet the configured karma tier requirement (if KarmaTiers is set)
+     * @dev Intended for use by intermediary contracts (e.g. RLN) that act on behalf of an end user, so the
+     *      actual initiating address can be passed explicitly for tier verification.
+     * @param account Account to slash
+     * @param rewardRecipient Address that will receive the slash reward
+     * @param slasher Address of the account initiating the slash (used for tier verification)
+     * @return slashedAmount The amount of karma that was slashed
+     */
+    function slash(
+        address account,
+        address rewardRecipient,
+        address slasher
+    )
+        public
+        virtual
+        onlyAdminOrSlasher
+        returns (uint256)
+    {
+        _checkSlashTierRequirement(slasher);
         return _slash(account, rewardRecipient);
     }
 
@@ -433,6 +495,14 @@ contract Karma is Initializable, ERC20VotesUpgradeable, UUPSUpgradeable, AccessC
     function _onlyAdminOrSlasher(address sender) internal view {
         if (!hasRole(DEFAULT_ADMIN_ROLE, sender) && !hasRole(SLASHER_ROLE, sender)) {
             revert Karma__Unauthorized();
+        }
+    }
+
+    function _checkSlashTierRequirement(address slasher) internal view {
+        if (address(karmaTiers) == address(0)) return;
+        uint8 tier = karmaTiers.getTierIdByKarmaBalance(balanceOf(slasher));
+        if (tier < slashTierRequirement) {
+            revert Karma__SlashTierRequirementNotMet();
         }
     }
 

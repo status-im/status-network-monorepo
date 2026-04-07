@@ -104,6 +104,9 @@ After the reveal window has passed, the caller calls `slashReveal()` to execute 
 3. **Window Validation**: The contract checks that the current time is within or after the reveal window for this
    commit.
 4. **Slash Execution**: If all validations pass, the Karma `slash()` function is called to execute the actual penalty.
+   The RLN contract passes `msg.sender` (the human initiator) explicitly as the `slasher` argument so that any
+   [configured tier requirement](./karma.md#slash-tier-requirement) is evaluated against the person who committed the
+   slash, not against the RLN contract itself.
 
 ### Reveal Window Timing
 

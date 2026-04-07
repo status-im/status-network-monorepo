@@ -210,6 +210,26 @@ With default settings (50% slash percentage, 10% reward percentage):
 Only accounts with the `SLASHER_ROLE` or the admin can execute slashing operations. This ensures that slashing is
 performed by trusted parties and prevents arbitrary penalties.
 
+### Slash Tier Requirement
+
+Beyond role-based access, the admin can require that the slasher holds a minimum Karma tier before a slash is accepted.
+This is configured through two parameters:
+
+- **KarmaTiers contract**: The `KarmaTiers` contract used to look up a slasher's tier based on their Karma balance. Set
+  via `setKarmaTiers(address)` (requires `DEFAULT_ADMIN_ROLE`). When set to the zero address (the default), the tier
+  check is skipped entirely and all role-authorised slashers can slash freely.
+
+- **Minimum tier index**: The minimum tier index a slasher must hold, set via `setSlashTierRequirement(uint8)` (requires
+  `DEFAULT_ADMIN_ROLE`). Tier indices are zero-based and correspond to the tiers configured in the `KarmaTiers`
+  contract.
+
+The tier check applies uniformly to all callers — **the admin is not exempt**. If a caller's Karma balance places them
+below the required tier, the slash reverts with `Karma__SlashTierRequirementNotMet`.
+
+When slashing is triggered indirectly through the [RLN Registry](rln.md), the RLN contract passes the human initiator's
+address explicitly so that the tier check is performed against the person who committed the slash, not against the RLN
+contract itself.
+
 ## Supply and Balance Calculation
 
 The Karma contract calculates supply and balances by aggregating both actual tokens and virtual rewards from all
