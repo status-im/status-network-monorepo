@@ -71,7 +71,7 @@ sol! {
 }
 
 impl<P: Provider> RLN::RLNInstance<P> {
-    pub(crate) async fn slash_2(
+    pub(crate) async fn slash(
         &self,
         account_to_slash: Address,
         identity_secret_hash: IdSecret,
@@ -608,7 +608,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_slashing_3() {
+    async fn test_slashing() {
 
         setup_test_tracing();
 
@@ -639,7 +639,7 @@ mod tests {
         };
 
         contract_rln
-            .slash_2(ADDR_BOB, identity_secret_hash_1, ADDR_ALICE)
+            .slash(ADDR_BOB, identity_secret_hash_1, ADDR_ALICE)
             .await
             .unwrap();
 

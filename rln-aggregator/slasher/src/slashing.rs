@@ -121,7 +121,7 @@ async fn slash<P: Provider>(
         recovered_identity_secret_hash
     );
     rln_sc
-        .slash_2(sender, recovered_identity_secret_hash, account_to_reward)
+        .slash(sender, recovered_identity_secret_hash, account_to_reward)
         .await
         .context("Failed to call slash on RLN SC")?;
 
