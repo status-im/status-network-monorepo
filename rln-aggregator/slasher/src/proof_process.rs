@@ -75,16 +75,6 @@ impl ProofProcessService {
         let sender_addr: &[u8; Address::len_bytes()] = proof.sender.as_slice().try_into().unwrap();
         let sender_addr = Address::from(sender_addr);
 
-        /*
-        let sender_addr = match sender_addr {
-            Ok(sender_addr) => sender_addr,
-            Err(e) => {
-                warn!("Received an invalid sender address: {}", e);
-                return Err(ProofProcessError::InvalidSender);
-            }
-        };
-        */
-
         let mut guard = self.db.write().await;
 
         self.current_epoch = match self.current_epoch {
@@ -161,18 +151,6 @@ pub(crate) struct DbEntry {
     proof_2: Option<RlnAggProof>,
     seen_proof_count: u64,
 }
-
-/*
-impl Default for DbEntry {
-    fn default() -> Self {
-        Self {
-            proof_1: None,
-            proof_2: None,
-            seen_proof_count: 0,
-        }
-    }
-}
-*/
 
 impl DbEntry {
     fn set_proof(&mut self, proof: &RlnAggProof) {

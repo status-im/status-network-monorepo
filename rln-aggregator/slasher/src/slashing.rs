@@ -131,7 +131,7 @@ async fn slash<P: Provider>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prover_proto::{RlnAggProof, RlnProof};
+    use crate::prover_proto::RlnAggProof;
     use alloy::primitives::address;
     use ark_bn254::Fr;
     use ark_serialize::CanonicalSerialize;
@@ -142,27 +142,26 @@ mod tests {
         RLNProofValues, generate_proof, keygen, proof_values_from_witness, rln_witness_from_values,
         serialize_proof_values,
     };
-    use rln::utils::IdSecret;
     use std::io::{Cursor, Write};
     use zerokit_utils::{ZerokitMerkleProof, ZerokitMerkleTree};
 
-    const addr_alice: Address = address!("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
-    const addr_bob: Address = address!("0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
+    const ADDR_ALICE: Address = address!("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
+    const ADDR_BOB: Address = address!("0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
 
     fn serialize_proof(proof: Proof<Curve>, proof_values: RLNProofValues) -> Vec<u8> {
         let mut output_buffer = Cursor::new(Vec::new());
         if let Err(e) = proof.serialize_compressed(&mut output_buffer) {
-            panic!();
+            panic!("Proof serialization failed with {:?}", e);
         }
         if let Err(e) = output_buffer.write_all(&serialize_proof_values(&proof_values)) {
-            panic!();
+            panic!("Proof values serialization failed with {:?}", e);
         }
         output_buffer.into_inner()
     }
 
     #[test]
     fn test_recover() {
-        let (user_secret, user_co) = keygen();
+        let (user_secret, _user_co) = keygen();
         let epoch = hash_to_field_le(b"foo");
         let spam_limit = Fr::from(10);
 
@@ -237,18 +236,18 @@ mod tests {
         let proof_1_se = serialize_proof(proof_1, proof_values_1);
         let slashing_data = SlashingData {
             proof_1: RlnAggProof {
-                sender: addr_bob.to_vec(),
+                sender: ADDR_BOB.to_vec(),
                 tx_hash: vec![0; 32],
                 proof: proof_0_se,
                 epoch: 0,
             },
             proof_2: RlnAggProof {
-                sender: addr_bob.to_vec(),
+                sender: ADDR_BOB.to_vec(),
                 tx_hash: vec![1; 32],
                 proof: proof_1_se,
                 epoch: 0,
             },
-            sender: addr_alice,
+            sender: ADDR_ALICE,
         };
         let rec = recover(slashing_data).unwrap();
         assert_eq!(user_secret, rec);

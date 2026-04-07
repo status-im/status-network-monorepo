@@ -219,18 +219,6 @@ impl MockProverProof {
             tokio::time::sleep(sleep_time).await;
 
             i += 1;
-
-            /*
-            // tokio::time::sleep(Duration::from_nanos(10)).await;
-
-            i += 1;
-
-            if i % 3 == 0 {
-                info!("Already send {} proof reply", i);
-                tokio::time::sleep(Duration::from_millis(1)).await;
-                // break;
-            }
-            */
         }
         // Ok(())
     }
