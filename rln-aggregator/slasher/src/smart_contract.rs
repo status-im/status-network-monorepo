@@ -1,17 +1,16 @@
-use std::time::Duration;
 use crate::smart_contract::KarmaSC::{KarmaSCErrors, KarmaSCInstance};
 use crate::smart_contract::RLN::{RLNErrors, RLNInstance};
 use alloy::{
-    primitives::{Address, address, B256, U256, keccak256, ruint::FromUintError},
+    eips::BlockNumberOrTag,
+    primitives::{Address, B256, U256, address, keccak256, ruint::FromUintError},
     providers::Provider,
     sol,
-    sol_types::{SolValue, SolCall},
-    eips::BlockNumberOrTag,
-
+    sol_types::{SolCall, SolValue},
 };
 use ark_ff::PrimeField;
 use derive_more::Display;
 use rln::utils::IdSecret;
+use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{debug, error, info};
 
@@ -77,9 +76,12 @@ impl<P: Provider> RLN::RLNInstance<P> {
         identity_secret_hash: IdSecret,
         account_for_reward: Address,
     ) -> Result<(), SlashError> {
-
-
-        self.slash_commit(account_to_slash, identity_secret_hash.clone(), account_for_reward).await?;
+        self.slash_commit(
+            account_to_slash,
+            identity_secret_hash.clone(),
+            account_for_reward,
+        )
+        .await?;
 
         let mut last_reveal_start_time = self.last_reveal_start_time(account_to_slash).await?;
 
@@ -90,7 +92,10 @@ impl<P: Provider> RLN::RLNInstance<P> {
             let last_reveal_start_time_ = self.last_reveal_start_time(account_to_slash).await?;
 
             if last_reveal_start_time_ > last_reveal_start_time {
-                debug!("Reveal start time was updated: {:?}, was: {:?}", last_reveal_start_time_, last_reveal_start_time);
+                debug!(
+                    "Reveal start time was updated: {:?}, was: {:?}",
+                    last_reveal_start_time_, last_reveal_start_time
+                );
                 // Another user has done a slash commit so reveal start time has increased
                 last_reveal_start_time = last_reveal_start_time_;
                 continue;
@@ -99,7 +104,8 @@ impl<P: Provider> RLN::RLNInstance<P> {
             }
         }
 
-        self.slash_reveal(account_to_slash, identity_secret_hash, account_for_reward).await?;
+        self.slash_reveal(account_to_slash, identity_secret_hash, account_for_reward)
+            .await?;
 
         Ok(())
     }
@@ -110,7 +116,6 @@ impl<P: Provider> RLN::RLNInstance<P> {
         identity_secret_hash: IdSecret,
         account_for_reward: Address,
     ) -> Result<B256, SlashError> {
-
         let slash_commit_hash = {
             let to_hash = (
                 U256::from_limbs(identity_secret_hash.into_bigint().0).to_be_bytes::<32>(),
@@ -156,7 +161,6 @@ impl<P: Provider> RLN::RLNInstance<P> {
         identity_secret_hash: IdSecret,
         account_for_reward: Address,
     ) -> Result<(), SlashError> {
-
         let pkey_fb32 = U256::from_limbs(identity_secret_hash.into_bigint().0)
             .to_be_bytes::<32>()
             .into();
@@ -269,7 +273,7 @@ pub enum SlashError {
     #[error(transparent)]
     KarmaSc(#[from] KarmaScError),
     #[error("Wait time for slash reveal is too high: {0}")]
-    WaitTimestampTooHigh(#[from] FromUintError<u64>)
+    WaitTimestampTooHigh(#[from] FromUintError<u64>),
 }
 
 sol! {
@@ -396,7 +400,6 @@ pub(crate) async fn deploy_sc_for_slashing<P: Provider + Clone + 'static>(
     KarmaSCInstance<P>,
     RLNInstance<P>,
 ) {
-
     // Deploy Karma contract
     let contract_karma_sc_0 = KarmaSC::deploy(provider.clone()).await.unwrap();
     let init_data = KarmaSC::initializeCall { _owner: ADDR_ALICE }.abi_encode();
@@ -447,7 +450,14 @@ pub(crate) async fn deploy_sc_for_slashing<P: Provider + Clone + 'static>(
 
     // Tweak reveal window time (for some unit tests)
     if let Some(reveal_window_time) = reveal_window_time {
-        contract_rln.setSlashRevealWindowTime(reveal_window_time).send().await.unwrap().watch().await.unwrap();
+        contract_rln
+            .setSlashRevealWindowTime(reveal_window_time)
+            .send()
+            .await
+            .unwrap()
+            .watch()
+            .await
+            .unwrap();
     }
 
     // Add some karma to Bob
@@ -479,11 +489,7 @@ pub(crate) async fn deploy_sc_for_slashing<P: Provider + Clone + 'static>(
     (contract_poseidon_hasher, contract_karma_sc, contract_rln)
 }
 
-pub async fn wait_until_evm_timestamp<P: Provider>(
-    provider: &P,
-    target_timestamp: u64,
-) {
-
+pub async fn wait_until_evm_timestamp<P: Provider>(provider: &P, target_timestamp: u64) {
     info!("Waiting for EVM timestamp to reach {}...", target_timestamp);
 
     loop {
@@ -496,12 +502,18 @@ pub async fn wait_until_evm_timestamp<P: Provider>(
         let current_evm_timestamp = latest_block.header.timestamp;
 
         if current_evm_timestamp >= target_timestamp {
-            info!("Target time reached! Current EVM Time: {} ✅✅✅", current_evm_timestamp);
+            info!(
+                "Target time reached! Current EVM Time: {} ✅✅✅",
+                current_evm_timestamp
+            );
             break;
         }
 
         let seconds_left = target_timestamp.saturating_sub(current_evm_timestamp);
-        info!("EVM Time: {} | Remaining: {} seconds...", current_evm_timestamp, seconds_left);
+        info!(
+            "EVM Time: {} | Remaining: {} seconds...",
+            current_evm_timestamp, seconds_left
+        );
 
         // Note: using 12 secs as it is the average block time (for Eth mainnet & testnet)
         let sleep_duration = if seconds_left > 60 {
@@ -526,10 +538,10 @@ mod tests {
     use alloy::sol_types::SolCall;
     use ark_bn254::Fr;
     use ark_ff::PrimeField;
-    use serde_json::json;
+    use assert_matches::assert_matches;
     use rln::hashers::poseidon_hash;
     use rln::protocol::keygen;
-    use assert_matches::assert_matches;
+    use serde_json::json;
     use tracing_subscriber::EnvFilter;
 
     const ADDR_MICKEY: Address = address!("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC");
@@ -609,7 +621,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_slashing() {
-
         setup_test_tracing();
 
         let provider = ProviderBuilder::new().connect_anvil_with_wallet();
@@ -657,7 +668,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_slashing_multi_slasher() -> anyhow::Result<()> {
-
         setup_test_tracing();
 
         let provider = ProviderBuilder::new().connect_anvil_with_wallet();
@@ -666,7 +676,10 @@ mod tests {
             deploy_sc_for_slashing(&provider, Some(U256::from(2 * 60))).await;
 
         info!("contract rln address: {:?}", contract_rln.address());
-        info!("slash reveal window time: {:?}", contract_rln.slashRevealWindowTime().call().await);
+        info!(
+            "slash reveal window time: {:?}",
+            contract_rln.slashRevealWindowTime().call().await
+        );
 
         // Register Bob in RLN SC
         let (identity_secret_hash_1, id_commitment_1) = keygen();
@@ -689,7 +702,7 @@ mod tests {
         // FIXME
         // let r_t = contract_rln.reveal_start_time(ADDR_BOB, alice_to_slash_hash).await?;
         // info!("reveal time: {}", r_t);
-        let l_r_t = contract_rln.last_reveal_start_time(ADDR_BOB,).await?;
+        let l_r_t = contract_rln.last_reveal_start_time(ADDR_BOB).await?;
         info!("last reveal time: {}", l_r_t);
 
         info!("Slash commit by Mickey...");
@@ -707,9 +720,15 @@ mod tests {
         // Note: Anvil does not mine block automatically by default
         //       but here we want to wait until a given block time so we enable auto mining
         // Turn off instant auto-mining
-        provider.raw_request::<_, ()>("evm_setAutomine".into(), [json!(false)]).await.unwrap();
+        provider
+            .raw_request::<_, ()>("evm_setAutomine".into(), [json!(false)])
+            .await
+            .unwrap();
         // Turn on 12 secs interval mining
-        provider.raw_request::<_, ()>("evm_setIntervalMining".into(), [json!(1)]).await.unwrap();
+        provider
+            .raw_request::<_, ()>("evm_setIntervalMining".into(), [json!(1)])
+            .await
+            .unwrap();
 
         wait_until_evm_timestamp(&provider, l_r_t.try_into().unwrap()).await;
 

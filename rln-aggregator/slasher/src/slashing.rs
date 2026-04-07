@@ -173,7 +173,8 @@ mod tests {
         let (rln_identifier, pk, matrices, graph_bytes) = {
             // Use custom circuit with LIMIT_BIT_SIZE=20 (supports ~1M message limit)
             let arkzkey_bytes = include_bytes!("../resources/rln_final.arkzkey");
-            let (pk, matrices) = zkey_from_raw(arkzkey_bytes).expect("Failed to load custom RLN circuit");
+            let (pk, matrices) =
+                zkey_from_raw(arkzkey_bytes).expect("Failed to load custom RLN circuit");
             let graph_bytes = include_bytes!("../resources/graph.bin");
 
             (

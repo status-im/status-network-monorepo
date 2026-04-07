@@ -33,10 +33,7 @@ pub mod prover_proto {
     tonic::include_proto!("prover");
 }
 use crate::prover_proto::rln_agg_proof_reply::Resp;
-use crate::prover_proto::{
-    RlnAggFilter,
-    rln_aggregator_client::RlnAggregatorClient,
-};
+use crate::prover_proto::{RlnAggFilter, rln_aggregator_client::RlnAggregatorClient};
 use crate::smart_contract::RLN;
 
 #[derive(Debug, Clone, Parser)]
