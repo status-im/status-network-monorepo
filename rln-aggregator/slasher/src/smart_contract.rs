@@ -71,6 +71,7 @@ sol! {
 }
 
 impl<P: Provider> RLN::RLNInstance<P> {
+    /*
     pub(crate) async fn slash(
         &self,
         account_to_slash: Address,
@@ -126,7 +127,7 @@ impl<P: Provider> RLN::RLNInstance<P> {
 
         Ok(())
     }
-
+    */
 
     pub(crate) async fn slash_2(
         &self,
@@ -487,7 +488,8 @@ const addr_bob: Address = address!("0x70997970C51812dc3A010C7d01b50e0d17dc79C8")
 const addr_mickey: Address = address!("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC");
 
 pub(crate) async fn deploy_sc_for_slashing<P: Provider + Clone + 'static>(
-    provider: P,
+    provider: &P,
+    reveal_window_time: Option<U256>,
 ) -> (
     PoseidonHasher::PoseidonHasherInstance<P>,
     KarmaSCInstance<P>,
@@ -540,8 +542,11 @@ pub(crate) async fn deploy_sc_for_slashing<P: Provider + Clone + 'static>(
         .await
         .unwrap();
 
-    // Tweak reveal window time: 5 minutes
-    // contract_rln.setSlashRevealWindowTime(U256::from(5 * 60)).send().await.unwrap().watch().await.unwrap();
+    // Tweak reveal window time
+
+    if let Some(reveal_window_time) = reveal_window_time {
+        contract_rln.setSlashRevealWindowTime(reveal_window_time).send().await.unwrap().watch().await.unwrap();
+    }
 
     // Add some karma to Bob
     {
@@ -968,6 +973,7 @@ mod tests {
     }
     */
 
+    /*
     async fn deploy_sc_for_slashing<P: Provider>(
         provider: &P,
     ) -> (
@@ -1076,6 +1082,7 @@ mod tests {
 
         (contract_poseidon_hasher, contract_karma_sc, contract_rln)
     }
+    */
 
     #[tokio::test]
     async fn test_slashing_2() {
@@ -1095,7 +1102,7 @@ mod tests {
             ;
         */
         let (contract_poseidon_hasher, contract_karma_sc, contract_rln) =
-            deploy_sc_for_slashing(&provider).await;
+            deploy_sc_for_slashing(&provider, None).await;
 
         println!("contract rln address: {:?}", contract_rln.address());
 
@@ -1273,7 +1280,7 @@ mod tests {
 
         let provider = ProviderBuilder::new().connect_anvil_with_wallet();
         let (contract_poseidon_hasher, contract_karma_sc, contract_rln) =
-            deploy_sc_for_slashing(&provider).await;
+            deploy_sc_for_slashing(&provider, None).await;
 
         // println!("contract rln address: {:?}", contract_rln.address());
 
@@ -1320,8 +1327,9 @@ mod tests {
         setup_test_tracing();
 
         let provider = ProviderBuilder::new().connect_anvil_with_wallet();
+        // Reveal window time set to 2 minutes
         let (_, contract_karma_sc, contract_rln) =
-            deploy_sc_for_slashing(&provider).await;
+            deploy_sc_for_slashing(&provider, Some(U256::from(2 * 60))).await;
 
         info!("contract rln address: {:?}", contract_rln.address());
         info!("slash reveal window time: {:?}", contract_rln.slashRevealWindowTime().call().await);

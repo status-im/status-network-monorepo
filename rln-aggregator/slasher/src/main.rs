@@ -232,7 +232,7 @@ async fn start_slashing_service(
         Some(true) => {
             let provider = ProviderBuilder::new().connect_anvil_with_wallet();
             // Need to deploy the SC in Anvil
-            let (_, _, rln_sc) = deploy_sc_for_slashing(provider.clone()).await;
+            let (_, _, rln_sc) = deploy_sc_for_slashing(&provider, None).await;
 
             // FIXME: should be returned by deploy_sc_for_slashing
             let account_to_reward = address!("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
