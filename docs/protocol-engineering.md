@@ -12,8 +12,9 @@
 5. [Smart Contract Integration](#smart-contract-integration)
 6. [Epoch and Quota Management](#epoch-and-quota-management)
 7. [Security Mechanisms](#security-mechanisms)
-8. [Configuration Reference](#configuration-reference)
-9. [Deployment Topologies](#deployment-topologies)
+8. [Decentralized Slashing & Proof Aggregation Layer](#decentralized-slashing--proof-aggregation-layer)
+9. [Configuration Reference](#configuration-reference)
+10. [Deployment Topologies](#deployment-topologies)
 
 ---
 
@@ -763,6 +764,132 @@ Different components fail differently:
 
 ---
 
+## Decentralized Slashing & Proof Aggregation Layer
+
+The sequencer-side `RlnVerifierValidator` and `NullifierTracker` (covered in [Sequencer Node Layer](#sequencer-node-layer)) prevent in-band spam: they reject transactions whose proofs replay a nullifier or exceed quota at validation time. They do *not* punish a user who managed to land a single spam transaction. That's the job of the **decentralized slashing path**: independent slasher nodes observe RLN proofs after the fact, detect when a user has exceeded `--spam-limit` (the rate limit baked into the RLN proof's `message_id`), recover the user's secret hash from the Shamir shares embedded in the proofs, and submit it to the on-chain RLN contract. The contract verifies the secret matches a registered identity commitment (via Poseidon hash) and burns the spammer's Karma. See [vac-RFC RLN-V1](https://rfc.vac.dev/vac/32/rln-v1) for the cryptographic primitives.
+
+To keep the prover decoupled from an unbounded set of slashers (and to satisfy the spec's "prover MUST NOT impose a connection limit on aggregators" requirement), an **aggregation layer** sits between them.
+
+### Aggregator Role
+
+**Source**: [`rln-aggregator/aggregator/src/main.rs`](../rln-aggregator/aggregator/src/main.rs), [`rln-aggregator/aggregator/src/proof_delivery_service.rs`](../rln-aggregator/aggregator/src/proof_delivery_service.rs)
+
+The aggregator is a stateless gRPC fan-out. On startup it dials each `--url` (one or more rln-prover endpoints), opens a `RlnProver.GetProofs` server-streaming subscription per prover, and pushes received proofs into a Tokio broadcast channel. Slashers connect to the aggregator's own `RlnAggregator.GetProofs` endpoint (port 50061 by default) and consume from the broadcast.
+
+The aggregator MUST be stateless with respect to slashing decisions — it has no Merkle tree, no spam counter, no contract awareness. It only forwards proofs. Multiple aggregator instances MAY be deployed for redundancy; each subscribes to the prover independently and operates without coordination.
+
+The prover does not cap subscribers. `RlnProverService::get_proofs` (`rln-prover/prover/src/grpc_service.rs:281-296`) spawns an independent tokio task and broadcast receiver per subscriber, with no semaphore or per-client gate. HTTP/2 stream limits (`max_concurrent_streams: 64`) apply per *connection*, not across all aggregators. Two or more aggregators connecting simultaneously is supported by design.
+
+### Slasher Role
+
+**Source**: [`rln-aggregator/slasher/src/main.rs`](../rln-aggregator/slasher/src/main.rs), [`rln-aggregator/slasher/src/slashing.rs`](../rln-aggregator/slasher/src/slashing.rs), [`rln-aggregator/slasher/src/smart_contract.rs`](../rln-aggregator/slasher/src/smart_contract.rs)
+
+A slasher subscribes to one or more aggregators (via `-i/--ip` and `-p/--port`) and feeds proofs into a per-sender counter. When a sender's counter reaches `--spam_limit` (which **must** equal the prover's `--spam-limit`), it has produced `spam_limit + 1` proofs in the same epoch — enough Shamir shares for the slasher to interpolate and recover the user's `id_secret` in plaintext.
+
+The slasher then submits the recovered secret to the RLN contract on the L2 via WS RPC (`--ws-rpc-url`). The contract Poseidon-hashes the secret to recompute the registered `id_commitment`, looks it up in the registry, and (if found) credits Karma to `--account_to_reward` and triggers a Karma burn against the spammer. After the on-chain `AccountSlashed` event fires, the prover's `KarmaScEventListener` removes the slashed user from its local Merkle tree, preventing further proof generation.
+
+**Important: slashers connect to an L2 RPC node, not the sequencer.** The sequencer is sealed off behind the validator chain and is not the public-facing RPC interface. In Docker compose this means `ws://l2-node-besu:8546`; in k8s, the public RPC endpoint behind the LB.
+
+### gRPC Load Balancing
+
+Once you run more than one aggregator, slashers need a single, stable entrypoint that distributes connections across the backends. Round-robin connection pinning works here: gRPC server-streams are long-lived, so any LB that does L7 HTTP/2 routing (or even L4 TCP) at connection-establishment time is sufficient. Each slasher pins to one aggregator for the lifetime of its stream and reconnects to whichever backend the LB hands it next on disconnect.
+
+In local Docker Compose this is implemented with **Envoy** ([`docker/config/envoy/envoy.yaml`](../docker/config/envoy/envoy.yaml)): a single HTTP/2 listener on `:50061`, a `STRICT_DNS` cluster with `lb_policy: ROUND_ROBIN` resolving to `rln-aggregator-1` and `rln-aggregator-2`, with `stream_idle_timeout: 0s` and `route.timeout: 0s` so the long-lived `GetProofs` streams aren't killed. The Envoy admin interface on `:9901` exposes `/clusters` and `/stats` for debugging upstream health.
+
+### Local Docker Topology
+
+```
+                    rln-prover  (11.11.11.120 :50051)
+                          │
+                          │  RlnProver.GetProofs
+                          │  (gRPC server-stream — no subscriber cap)
+                          │
+              ┌───────────┴───────────┐
+              ▼                       ▼
+      rln-aggregator-1         rln-aggregator-2
+       (11.11.11.123)           (11.11.11.124)
+              │                       │
+              └───────────┬───────────┘
+                          │
+                          │  RlnAggregator.GetProofs (HTTP/2 backends)
+                          │
+                  rln-aggregator-lb  (11.11.11.122 :50061, admin :9901)
+                       Envoy / ROUND_ROBIN
+                          │
+                          │  one slasher → one backend (per connection)
+                          ▼
+                    rln-slasher  (11.11.11.125)
+                          │
+                          │  ws://l2-node-besu:8546
+                          ▼
+                    l2-node-besu  ──►  RLN contract (slash submission)
+```
+
+Compose definitions live in [`docker/compose-spec-l2-services-rln.yml`](../docker/compose-spec-l2-services-rln.yml). The aggregators and the LB join the existing `rln` profile and start with the rest of the L2 stack. The slasher lives in a separate `rln-slashing` profile (opt-in) because it depends on the RLN contract being deployed first.
+
+**Building the images.** Neither the aggregator nor the slasher has a published Docker image; they're built locally from the [`rln-aggregator/`](../rln-aggregator/) Rust workspace. Use the dedicated build scripts (modeled on [`scripts/build-rln-prover.sh`](../scripts/build-rln-prover.sh)):
+
+```bash
+# Build status-network-rln-aggregator and rewrite the image: lines for both
+# rln-aggregator-1 and rln-aggregator-2 in the compose spec.
+./scripts/build-rln-aggregator.sh
+
+# Build status-network-rln-slasher and rewrite the rln-slasher image: line.
+./scripts/build-rln-slasher.sh
+```
+
+Both scripts accept `-t/--tag`, `--no-compose`, `--restart`, and `--no-cache`. Run with `-h` for full help.
+
+**Running the slasher.** After `make start-env-with-rln-production` finishes (so the RLN contract is deployed), set the slasher's signing key and bring it up under the opt-in profile. The `--no-recreate` flag is **mandatory** — without it, compose will silently regress `rln-prover` from production mode back to mock mode (the production-mode CLI override is set via `RLN_PROVER_CMD` in the make target, and that env var isn't in your interactive shell, so a `compose up` invocation that re-evaluates the project will fall back to the mock default and recreate the prover):
+
+```bash
+RLN_SLASHER_PRIVATE_KEY=0x... \
+docker compose -f docker/compose-tracing-v2-rln.yml \
+  --profile l1 --profile l2 --profile rln --profile rln-slashing \
+  up -d --no-recreate rln-slasher
+```
+
+### `spam_limit` Alignment Requirement
+
+The slasher's `--spam_limit` MUST equal the prover's `--spam-limit`. If the slasher's value is lower, it will try to slash users who are still within the prover's allowed range and the recovered secret won't match any committed share. If it's higher, it will never collect enough shares to interpolate.
+
+| Scenario | Prover `--spam-limit` | Slasher `--spam_limit` |
+|---|---|---|
+| Production (`make start-env-with-rln-production`) | `1000000` (set by Makefile RLN_PROVER_CMD) | `1000000` (slasher service default in compose) |
+| Dev default (no Makefile override) | `10000` (rln-prover args.rs default) | Override via `RLN_SLASHER_SPAM_LIMIT=10000` |
+
+Both must also be ≤ the RLN circuit hard limit of `1048575` (2^20 − 1, due to `Num2Bits(20)` in the custom circuit). See [`docs/PRODUCTION-CONFIG-CHECKLIST.md`](./PRODUCTION-CONFIG-CHECKLIST.md) for the rationale.
+
+### Slasher CLI Options
+
+**File**: [`rln-aggregator/slasher/src/main.rs`](../rln-aggregator/slasher/src/main.rs)
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-i, --ip` | `::1` | RLN aggregator (or LB) IP / hostname |
+| `-p, --port` | `50061` | RLN aggregator (or LB) port |
+| `-u, --ws-rpc-url` | — | L2 WS RPC endpoint (must point at an RPC node, not the sequencer) |
+| `--spam_limit` | required | RLN spam limit, MUST match prover's `--spam-limit` |
+| `--account_to_reward` | — | Address that receives Karma when a slash succeeds |
+| `--rln_sc` | — | Deployed RLN contract address |
+| `--slash_limit` | `5` | Max concurrent slashing tasks |
+| `--mock-sc` | `false` | Test only — spin up local Anvil and deploy a mock RLN SC |
+| `--mock-register` | — | Test only — `address,id_commitment` pairs for the mock SC |
+| `PRIVATE_KEY` (env) | required | Hex private key used to sign slashing transactions |
+
+### Aggregator CLI Options
+
+**File**: [`rln-aggregator/aggregator/src/main.rs`](../rln-aggregator/aggregator/src/main.rs)
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-i, --ip` | `::1` | Service bind address |
+| `-p, --port` | `50061` | Service port (gRPC `RlnAggregator.GetProofs`) |
+| `-u, --url` | — | Prover URL(s) to subscribe to. May be passed multiple times to fan-in from N provers |
+| `--mock-prover-proof` | `false` | Test only — emit synthetic proofs instead of subscribing to a real prover |
+
+---
+
 ## Configuration Reference
 
 ### Besu Plugin CLI Options
@@ -824,26 +951,42 @@ L1 Network (10.10.10.0/24)
     │
 L2 Network (11.11.11.0/24)
     │
-    ├── Sequencer (SEQUENCER mode)
+    ├── Sequencer (SEQUENCER mode) — 11.11.11.101
     │   ├── RLN validation: enabled
     │   ├── Prover forwarder: disabled
     │   └── Storage: FOREST
     │
-    ├── RPC Node (RPC mode)
+    ├── RPC Node l2-node-besu (RPC mode) — 11.11.11.119
     │   ├── RLN validation: disabled (no proof verification on RPC)
     │   ├── Prover forwarder: enabled
     │   ├── Gasless: enabled
     │   ├── Storage: BONSAI
     │   └── Premium threshold: 12 GWei
     │
-    ├── RPC Follower Node (RPC mode)
+    ├── RPC Follower Node l2-node-besu-follower — 11.11.11.121
     │   └── (Same config as RPC node)
     │
-    ├── RLN Prover
+    ├── RLN Prover — 11.11.11.120
     │   ├── Port: 50051 (gRPC)
-    │   ├── Mock SC mode for local dev
-    │   ├── Epoch: 30s / 10s slices
+    │   ├── Mock SC mode for local dev (production via make target)
+    │   ├── Epoch: 60s
     │   └── Kill switch: shared volume
+    │
+    ├── RLN Aggregator LB (Envoy) — 11.11.11.122
+    │   ├── Port: 50061 (gRPC LB), 9901 (admin)
+    │   ├── ROUND_ROBIN over rln-aggregator-{1,2}
+    │   └── HTTP/2 with stream timeouts disabled
+    │
+    ├── RLN Aggregator 1 — 11.11.11.123
+    │   └── Subscribes to rln-prover:50051
+    │
+    ├── RLN Aggregator 2 — 11.11.11.124
+    │   └── Subscribes to rln-prover:50051
+    │
+    ├── RLN Slasher (rln-slashing profile, opt-in) — 11.11.11.125
+    │   ├── Connects to rln-aggregator-lb:50061
+    │   ├── Connects to ws://l2-node-besu:8546 for RLN contract
+    │   └── Spam limit must match the prover's
     │
     └── PostgreSQL
         └── Database: prover_db

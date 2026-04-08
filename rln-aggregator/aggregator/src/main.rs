@@ -10,7 +10,7 @@ use clap::Parser;
 use rand::{RngExt, rngs::StdRng};
 use tokio::{net::TcpListener, task::JoinSet};
 use tonic::{IntoRequest, codegen::tokio_stream::StreamExt, transport::Channel};
-use tracing::{debug, error, info, level_filters::LevelFilter};
+use tracing::{debug, error, info, level_filters::LevelFilter, warn};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 // internal
 use crate::proof_delivery_service::{ProofDeliveryServer, ProofDeliveryServerConfig};
@@ -94,10 +94,47 @@ async fn run_aggregator(app_args: AppArgs) -> anyhow::Result<()> {
         for (id, url) in app_args.urls.into_iter().enumerate() {
             let tx = bcast_tx.clone();
 
-            // rln-prover clients
+            // rln-prover client with reconnect-on-failure. The prover may
+            // restart (e.g. mock-mode -> production-mode handover during
+            // contract deployment) or the gRPC stream may otherwise drop.
+            // We retry indefinitely with exponential backoff (1s -> 30s
+            // cap), resetting backoff after a successful reconnect.
             set.spawn(async move {
-                let mut client = ProverClient::new(id as u64, url, tx).await?;
-                client.serve().await
+                let mut backoff = Duration::from_secs(1);
+                let max_backoff = Duration::from_secs(30);
+                loop {
+                    match ProverClient::new(id as u64, url.clone(), tx.clone()).await {
+                        Ok(mut client) => {
+                            info!(
+                                "[client {} {}] connected to prover; opening GetProofs stream",
+                                id, url
+                            );
+                            backoff = Duration::from_secs(1);
+                            match client.serve().await {
+                                Ok(()) => warn!(
+                                    "[client {} {}] GetProofs stream ended; reconnecting in {:?}",
+                                    id, url, backoff
+                                ),
+                                Err(e) => warn!(
+                                    "[client {} {}] GetProofs stream errored: {:#}; reconnecting in {:?}",
+                                    id, url, e, backoff
+                                ),
+                            }
+                        }
+                        Err(e) => {
+                            warn!(
+                                "[client {} {}] connect failed: {:#}; retrying in {:?}",
+                                id, url, e, backoff
+                            );
+                        }
+                    }
+                    tokio::time::sleep(backoff).await;
+                    backoff = (backoff * 2).min(max_backoff);
+                }
+                // Unreachable, but the closure must have a return type
+                // matching the JoinSet (anyhow::Result<()>).
+                #[allow(unreachable_code)]
+                Ok::<(), anyhow::Error>(())
             });
         }
     }

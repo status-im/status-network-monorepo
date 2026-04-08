@@ -1,0 +1,91 @@
+# Envoy gRPC load balancer for the RLN proof aggregation layer.
+#
+# Slashers connect to this LB on :50061 and Envoy round-robins their gRPC
+# server-streaming connection to one of the rln-aggregator-{1,2} backends.
+#
+# Long-lived streams: GetProofs is a server-streaming RPC that stays open for
+# the slasher's entire lifetime, so stream_idle_timeout and route timeout are
+# both disabled. Round-robin happens at connection-establishment time, not
+# per-message — this matches the spec's "slashers MAY connect to one or more
+# aggregators for redundant proof delivery" model.
+#
+# Admin interface on :9901 (curl http://localhost:9901/clusters to verify
+# upstream health, /stats for counters, /listeners for listener state).
+
+admin:
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901
+
+static_resources:
+  listeners:
+    - name: rln_aggregator_grpc
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 50061
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: rln_aggregator_ingress
+                codec_type: HTTP2
+                # Disable idle timeout so long-lived GetProofs streams stay open
+                stream_idle_timeout: 0s
+                request_timeout: 0s
+                http2_protocol_options:
+                  max_concurrent_streams: 100
+                route_config:
+                  name: rln_aggregator_routes
+                  virtual_hosts:
+                    - name: rln_aggregator_vhost
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                            grpc: {}
+                          route:
+                            cluster: rln_aggregators
+                            # Disable route timeout for long-lived streams
+                            timeout: 0s
+                            # gRPC uses idle_timeout 0 to mean infinite
+                            idle_timeout: 0s
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+    - name: rln_aggregators
+      type: STRICT_DNS
+      connect_timeout: 5s
+      lb_policy: ROUND_ROBIN
+      # Force HTTP/2 to upstream so we can carry gRPC properly.
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options:
+              max_concurrent_streams: 100
+      load_assignment:
+        cluster_name: rln_aggregators
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: rln-aggregator-1
+                      port_value: 50061
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: rln-aggregator-2
+                      port_value: 50061
+      health_checks:
+        - timeout: 2s
+          interval: 5s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          tcp_health_check: {}

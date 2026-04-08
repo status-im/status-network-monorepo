@@ -15,7 +15,7 @@ clean-environment:
 		docker compose -f docker/compose-tracing-v2-ci-extension.yml -f docker/compose-tracing-v2-staterecovery-extension.yml --profile l1 --profile l2 --profile debug --profile staterecovery kill -s 9 || true;
 		docker compose -f docker/compose-tracing-v2-ci-extension.yml -f docker/compose-tracing-v2-staterecovery-extension.yml --profile l1 --profile l2 --profile debug --profile staterecovery down || true;
 		# Ensure RLN stack containers are stopped as well
-		docker rm -f rln-prover sequencer postgres-replica l2-node-besu-follower || true;
+		docker rm -f rln-prover sequencer postgres-replica l2-node-besu-follower rln-aggregator-1 rln-aggregator-2 rln-aggregator-lb rln-slasher || true;
 		make clean-local-folders;
 		# Remove both legacy and RLN stack volumes (ignore failures if they don't exist)
 		docker volume rm linea-local-dev linea-logs docker_local-dev docker_logs docker_rln-data || true; # ignore failure if volumes do not exist already
@@ -135,7 +135,7 @@ start-env-with-rln-production:
 	echo "Step 5: Restarting RLN prover in production mode (via docker compose)..." && \
 	RLN_PROVER_CMD="--no-config --ip 0.0.0.0 --port 50051 --ws-rpc-url ws://sequencer:8546 --ksc $$KARMA_ADDR --rlnsc $$RLN_ADDR --tsc $$TIERS_ADDR --registration-min 1 --db postgres://postgres:postgres@postgres:5432/prover_db --registration-gas-price-gwei 12 --spam-limit 1000000 --epoch-duration-secs 60" \
 	RLN_PROVER_PRIVATE_KEY=0x8f5a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a \
-	docker compose -f docker/compose-tracing-v2-rln.yml up -d --force-recreate rln-prover && \
+	docker compose -f docker/compose-tracing-v2-rln.yml up -d --force-recreate rln-prover rln-aggregator-1 rln-aggregator-2 rln-aggregator-lb && \
 	echo "✅ RLN environment running in PRODUCTION mode!" && \
 	echo "   - RLN Prover connected to real smart contracts" && \
 	echo "   - Karma tiers initialized" && \
