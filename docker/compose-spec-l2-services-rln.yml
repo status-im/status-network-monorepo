@@ -54,7 +54,12 @@ services:
       - ./config/rln-prover/mock_users.json:/app/mock_users.json:ro
       - gas-kill-switch:/var/lib/besu/kill-switch
     healthcheck:
-      test: [ "CMD-SHELL", "ps aux | grep -w prover_cli | grep -v grep" ]
+      # Process check + actual port bind check. Without the port check the
+      # healthcheck reports healthy as soon as prover_cli spawns, even though
+      # the gRPC server may not yet be listening on :50051 — which causes
+      # depends_on dependents (rln-aggregator-{1,2}) to crash on first
+      # connect with "Connection refused".
+      test: [ "CMD-SHELL", "ps aux | grep -w prover_cli | grep -v grep && timeout 1 bash -c '</dev/tcp/127.0.0.1/50051'" ]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -64,18 +69,34 @@ services:
         ipv4_address: 11.11.11.120
     platform: linux/arm64
 
-  rln-aggregator:
-    hostname: rln-aggregator
-    container_name: rln-aggregator
-    image: 0xnadeem/status-network-rln-aggregator:v1.0.0
+  # ---------------------------------------------------------------------------
+  # RLN proof aggregation layer
+  # ---------------------------------------------------------------------------
+  # Two stateless aggregators subscribe to the prover's GetProofs server-stream
+  # and rebroadcast proofs to slashers via their own RlnAggregator.GetProofs
+  # endpoint. An Envoy gRPC LB (rln-aggregator-lb) sits in front of them on
+  # :50061 and round-robins slasher connections across the two backends.
+  #
+  # Note: spam_limit MUST match the rln-prover's --spam-limit. The production
+  # Makefile target sets prover spam-limit to 1000000, so the slasher service
+  # below uses the same default. If you override RLN_PROVER_CMD with a smaller
+  # spam-limit, also override RLN_SLASHER_SPAM_LIMIT to match.
+  # ---------------------------------------------------------------------------
+
+  # No published image for the aggregator yet — build locally with:
+  #   ./scripts/build-rln-aggregator.sh
+  # The build script tags the image and rewrites the image: lines below for
+  # both rln-aggregator-1 and rln-aggregator-2.
+  rln-aggregator-1:
+    hostname: rln-aggregator-1
+    container_name: rln-aggregator-1
+    image: status-network-rln-aggregator:local
     profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo", "rln" ]
-    ports:
-      - "50061:50061"
     restart: unless-stopped
     depends_on:
       rln-prover:
         condition: service_healthy
-    command: ["-u", "http://rln-prover:50051"]
+    command: ["-i", "0.0.0.0", "-p", "50061", "-u", "http://rln-prover:50051"]
     environment:
       RUST_LOG: "${RUST_LOG:-debug}"
     healthcheck:
@@ -86,8 +107,108 @@ services:
       start_period: 10s
     networks:
       linea:
-        ipv4_address: 11.11.11.121
-    platform: linux/amd64
+        ipv4_address: 11.11.11.123
+    platform: linux/arm64
+
+  rln-aggregator-2:
+    hostname: rln-aggregator-2
+    container_name: rln-aggregator-2
+    image: status-network-rln-aggregator:local
+    profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo", "rln" ]
+    restart: unless-stopped
+    depends_on:
+      rln-prover:
+        condition: service_healthy
+    command: ["-i", "0.0.0.0", "-p", "50061", "-u", "http://rln-prover:50051"]
+    environment:
+      RUST_LOG: "${RUST_LOG:-debug}"
+    healthcheck:
+      test: [ "CMD-SHELL", "ps aux | grep -w aggregator | grep -v grep" ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      linea:
+        ipv4_address: 11.11.11.124
+    platform: linux/arm64
+
+  rln-aggregator-lb:
+    hostname: rln-aggregator-lb
+    container_name: rln-aggregator-lb
+    image: envoyproxy/envoy:v1.32-latest
+    profiles: [ "l2", "l2-bc", "debug", "external-to-monorepo", "rln" ]
+    restart: unless-stopped
+    depends_on:
+      rln-aggregator-1:
+        condition: service_healthy
+      rln-aggregator-2:
+        condition: service_healthy
+    command:
+      - "-c"
+      - "/etc/envoy/envoy.yaml"
+      - "--service-cluster"
+      - "rln-aggregator-lb"
+      - "--log-level"
+      - "info"
+    ports:
+      - "50061:50061"
+      - "9901:9901"
+    volumes:
+      - ./config/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    healthcheck:
+      # Envoy image has neither wget nor curl. Bash is in /bin so we use the
+      # built-in /dev/tcp redirect to verify the gRPC LB listener is bound.
+      test: [ "CMD-SHELL", "timeout 1 bash -c '</dev/tcp/127.0.0.1/50061'" ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    networks:
+      linea:
+        ipv4_address: 11.11.11.122
+    platform: linux/arm64
+
+  rln-slasher:
+    hostname: rln-slasher
+    container_name: rln-slasher
+    # No published image yet for the slasher — build locally with:
+    #   ./scripts/build-rln-slasher.sh
+    # Opt-in profile: this service depends on the RLN smart contract being
+    # deployed (see make start-env-with-rln-production), which happens AFTER
+    # the rest of the L2 stack is up. Start it manually with:
+    #   docker compose -f docker/compose-tracing-v2-rln.yml --profile rln-slashing up -d rln-slasher
+    image: status-network-rln-slasher:local
+    profiles: [ "rln-slashing" ]
+    restart: on-failure
+    depends_on:
+      rln-aggregator-lb:
+        condition: service_healthy
+      l2-node-besu:
+        condition: service_healthy
+    command:
+      # NOTE: slasher's --ip arg parses as IpAddr (numeric only), not a
+      # hostname. Pin to the LB's static compose IP (11.11.11.122). If the
+      # LB IP changes, update this too.
+      - "-i"
+      - "11.11.11.122"
+      - "-p"
+      - "50061"
+      - "--ws-rpc-url"
+      - "ws://l2-node-besu:8546"
+      - "--spam_limit"
+      - "${RLN_SLASHER_SPAM_LIMIT:-1000000}"
+      - "--account_to_reward"
+      - "${RLN_SLASHER_REWARD_ADDR:-0x1B9AbEeC3215D8AdE8a33607f2cF0f4F60e5F0D0}"
+      - "--rln_sc"
+      - "${RLN_SC_ADDRESS:-0x5C95Bcd50E6D1B4E3CDC478484C9030Ff0a7D493}"
+    environment:
+      RUST_LOG: "${RUST_LOG:-debug}"
+      PRIVATE_KEY: "${RLN_SLASHER_PRIVATE_KEY:-}"
+    networks:
+      linea:
+        ipv4_address: 11.11.11.125
+    platform: linux/arm64
 
   sequencer:
     hostname: sequencer

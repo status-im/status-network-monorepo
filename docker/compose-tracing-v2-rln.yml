@@ -61,6 +61,32 @@ services:
       file: compose-spec-l2-services-rln.yml
       service: rln-prover
 
+  # RLN proof aggregation layer: 2x stateless aggregators behind an Envoy
+  # gRPC LB (rln-aggregator-lb on host port 50061). Slashers connect to the
+  # LB and proofs from the prover are fanned out via either backend.
+  rln-aggregator-1:
+    extends:
+      file: compose-spec-l2-services-rln.yml
+      service: rln-aggregator-1
+
+  rln-aggregator-2:
+    extends:
+      file: compose-spec-l2-services-rln.yml
+      service: rln-aggregator-2
+
+  rln-aggregator-lb:
+    extends:
+      file: compose-spec-l2-services-rln.yml
+      service: rln-aggregator-lb
+
+  # RLN slasher (rln-slashing profile, opt-in). Start AFTER the production
+  # contract deploy step has finished:
+  #   docker compose -f docker/compose-tracing-v2-rln.yml --profile rln-slashing up -d rln-slasher
+  rln-slasher:
+    extends:
+      file: compose-spec-l2-services-rln.yml
+      service: rln-slasher
+
   # RPC node with gRPC transaction validator
   l2-node-besu:
     extends:
