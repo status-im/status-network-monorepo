@@ -203,7 +203,6 @@ impl RlnAggregator for ProofDeliveryService {
 
                             },
                             Err(RecvError::Lagged(skipped_msg_count)) => {
-                                // TODO: handle the slow receiver here
                                 error!("[Proof delivery service] client is too slow (already {} skipped message), disconnecting him...", skipped_msg_count);
                                 error!("[Proof delivery service] {}", bcast_rx.len());
                                 // println!("[Proof delivery service] client is too slow (already {} skipped message), disconnecting him...", skipped_msg_count);

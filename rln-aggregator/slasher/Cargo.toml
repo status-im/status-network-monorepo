@@ -22,9 +22,11 @@ ark-groth16 = { version = "0.5.0", default-features = false, features = [] }
 url = "2.5.8"
 zeroize = "1.8.2"
 derive_more = { version = "2.1.1", features = ["display"] }
+serde_json = "1.0.149"
 
 [dev-dependencies]
 zerokit_utils = { version = "0.7.0", default-features = false, features = ["pmtree-ft"] }
+assert_matches = "1.5.0"
 
 [build-dependencies]
 tonic-prost-build.workspace = true

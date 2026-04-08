@@ -3,14 +3,12 @@ use crate::proof_delivery_service::ProofDeliveryServerConfig;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::MockProverProof;
     use crate::proof_delivery_service::ProofDeliveryServer;
     use crate::prover_proto::rln_aggregator_client::RlnAggregatorClient;
     use crate::prover_proto::rln_proof_reply::Resp;
     use crate::prover_proto::{RlnAggFilter, RlnProofError, RlnProofReply};
     use anyhow::Context;
     use futures::StreamExt;
-    use rand::RngExt;
     use rand::prelude::StdRng;
     use std::time::Duration;
     use tokio::io::AsyncWriteExt;
@@ -258,7 +256,6 @@ mod tests {
 
                 i += 1;
             }
-            Ok(())
         }
     }
 

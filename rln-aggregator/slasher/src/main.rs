@@ -6,15 +6,13 @@ mod smart_contract;
 use std::net::IpAddr;
 use std::str::FromStr;
 // third-party
-use alloy::primitives::{U256, address};
 use alloy::{
     network::EthereumWallet,
-    primitives::Address,
+    primitives::{Address, U256, address},
     providers::{ProviderBuilder, WsConnect},
     signers::local::PrivateKeySigner,
 };
 use anyhow::{Context, anyhow};
-use ark_bn254::Fr;
 use clap::Parser;
 use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinSet;
@@ -33,17 +31,9 @@ use smart_contract::deploy_sc_for_slashing;
 pub mod prover_proto {
     // Include generated code (see build.rs)
     tonic::include_proto!("prover");
-    // for reflection service
-    // pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
-    //     tonic::include_file_descriptor_set!("prover_descriptor");
 }
 use crate::prover_proto::rln_agg_proof_reply::Resp;
-use crate::prover_proto::{
-    // Address,
-    RlnAggFilter,
-    // RlnAggProof
-    rln_aggregator_client::RlnAggregatorClient,
-};
+use crate::prover_proto::{RlnAggFilter, rln_aggregator_client::RlnAggregatorClient};
 use crate::smart_contract::RLN;
 
 #[derive(Debug, Clone, Parser)]
@@ -112,7 +102,7 @@ pub struct AppArgs {
 }
 
 #[derive(Debug, Clone)]
-struct MockRegisterArg {
+pub struct MockRegisterArg {
     pub address: String,
     pub value: String,
 }
@@ -232,13 +222,13 @@ async fn start_slashing_service(
         Some(true) => {
             let provider = ProviderBuilder::new().connect_anvil_with_wallet();
             // Need to deploy the SC in Anvil
-            let (_, _, rln_sc) = deploy_sc_for_slashing(provider.clone()).await;
+            let (_, _, rln_sc) = deploy_sc_for_slashing(&provider, None).await;
 
             // FIXME: should be returned by deploy_sc_for_slashing
             let account_to_reward = address!("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
 
-            if app_args.mock_register.is_some() {
-                for mock_register_arg in app_args.mock_register.unwrap().iter() {
+            if let Some(mock_register) = app_args.mock_register {
+                for mock_register_arg in mock_register.iter() {
                     let address = Address::from_str(mock_register_arg.address.as_str())
                         .expect("Invalid address");
                     // let id_commitment = Fr::from_str(mock_register_arg.value.as_str()).expect("Invalid address");
@@ -249,7 +239,7 @@ async fn start_slashing_service(
                         address, id_commitment
                     );
                     let call_1 = rln_sc.register(id_commitment, address);
-                    let tx_hash_1 = call_1.send().await.unwrap().watch().await.unwrap();
+                    let _ = call_1.send().await.unwrap().watch().await.unwrap();
                 }
             }
 
