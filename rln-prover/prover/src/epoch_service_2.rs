@@ -391,7 +391,7 @@ mod tests {
         let mut current_epoch = *epoch_service.current_epoch.read();
 
         // Start epoch service
-        let _ = tokio::task::spawn(async move { epoch_service.listen_for_new_epoch().await });
+        tokio::task::spawn(async move { epoch_service.listen_for_new_epoch().await });
 
         let counter_max = 3;
         let res = tokio::task::spawn(tokio::time::timeout(
@@ -417,7 +417,7 @@ mod tests {
             },
         ));
 
-        let _res = res.await.unwrap().unwrap();
+        res.await.unwrap().unwrap();
     }
 
     // Helpers
