@@ -8,7 +8,7 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::vec::Vec;
 use ark_ff::PrimeField;
 
-use rln::protocol::{verify_proof, RLNProofValues, deserialize_proof_values};
+use rln::protocol::{verify_zk_proof, RLNProofValues, bytes_le_to_rln_proof_values};
 use rln::circuit::zkey_from_raw;
 use std::io::Cursor;
 use std::panic;
@@ -147,21 +147,15 @@ pub extern "system" fn Java_net_consensys_linea_rln_jni_RlnBridge_verifyRlnProof
 
         let share_x = fr_from_hex(&public_input_strs[0])?;
         let share_y = fr_from_hex(&public_input_strs[1])?;
-        let epoch = fr_from_hex(&public_input_strs[2])?;
+        let external_nullifier = fr_from_hex(&public_input_strs[2])?;
         let root = fr_from_hex(&public_input_strs[3])?;
         let nullifier = fr_from_hex(&public_input_strs[4])?;
 
-        let rln_proof_values = RLNProofValues {
-            x: share_x,
-            y: share_y,
-            external_nullifier: epoch,
-            root,
-            nullifier,
-        };
+        let rln_proof_values = RLNProofValues::new(root, share_x, external_nullifier, share_y, nullifier);
 
-        match verify_proof(vk, &proof, &rln_proof_values) {
+        match verify_zk_proof(vk, &proof, &rln_proof_values) {
             Ok(verified) => Ok(verified),
-            Err(e) => {
+            Err(_e) => {
                 // Verification failed - error details handled by Java side logging
                 Ok(false) // Indicate verification failure rather than an operational error
             }
@@ -238,17 +232,18 @@ pub extern "system" fn Java_net_consensys_linea_rln_jni_RlnBridge_parseAndVerify
 
         let position = proof_cursor.position() as usize;
         let proof_values_bytes = &combined_proof_bytes[position..];
-        let (proof_values, _) = deserialize_proof_values(proof_values_bytes);
+        let (proof_values, _) = bytes_le_to_rln_proof_values(proof_values_bytes)
+            .map_err(|e| format!("Failed to deserialize proof values: {}", e))?;
 
         // Log detailed debug info
         eprintln!("DEBUG: combined_proof_bytes len: {}", combined_proof_bytes.len());
         eprintln!("DEBUG: proof position after deser: {}", position);
         eprintln!("DEBUG: proof_values_bytes len: {}", proof_values_bytes.len());
-        eprintln!("DEBUG: Proof x: {}", fr_to_hex(&proof_values.x));
-        eprintln!("DEBUG: Proof y: {}", fr_to_hex(&proof_values.y));
-        eprintln!("DEBUG: Proof epoch (external_nullifier): {}", fr_to_hex(&proof_values.external_nullifier));
-        eprintln!("DEBUG: Proof root: {}", fr_to_hex(&proof_values.root));
-        eprintln!("DEBUG: Proof nullifier: {}", fr_to_hex(&proof_values.nullifier));
+        eprintln!("DEBUG: Proof x: {}", fr_to_hex(&proof_values.x()));
+        eprintln!("DEBUG: Proof y: {}", fr_to_hex(&proof_values.y()));
+        eprintln!("DEBUG: Proof epoch (external_nullifier): {}", fr_to_hex(&proof_values.external_nullifier()));
+        eprintln!("DEBUG: Proof root: {}", fr_to_hex(&proof_values.root()));
+        eprintln!("DEBUG: Proof nullifier: {}", fr_to_hex(&proof_values.nullifier()));
         eprintln!("DEBUG: Current epoch from sequencer: {}", current_epoch_string);
 
         // Hash the VK for comparison
@@ -257,21 +252,21 @@ pub extern "system" fn Java_net_consensys_linea_rln_jni_RlnBridge_parseAndVerify
         eprintln!("DEBUG: VK bytes len: {}, first 16 bytes: {:?}", vk_bytes.len(), &vk_bytes[..std::cmp::min(16, vk_bytes.len())]);
 
         let zero_fr = Fr::from(0u64);
-        if proof_values.external_nullifier == zero_fr {
+        if *proof_values.external_nullifier() == zero_fr {
             return Err("Invalid epoch: epoch cannot be zero".to_string());
         }
 
         // Verify the proof
-        match verify_proof(vk, &proof, &proof_values) {
+        match verify_zk_proof(vk, &proof, &proof_values) {
             Ok(true) => {
                 // Return the extracted values as hex strings
                 // Array format: [share_x, share_y, epoch, root, nullifier, verification_result]
                 Ok(vec![
-                    fr_to_hex(&proof_values.x),
-                    fr_to_hex(&proof_values.y),
-                    fr_to_hex(&proof_values.external_nullifier),
-                    fr_to_hex(&proof_values.root),
-                    fr_to_hex(&proof_values.nullifier),
+                    fr_to_hex(&proof_values.x()),
+                    fr_to_hex(&proof_values.y()),
+                    fr_to_hex(&proof_values.external_nullifier()),
+                    fr_to_hex(&proof_values.root()),
+                    fr_to_hex(&proof_values.nullifier()),
                     "true".to_string(), // verification_result
                 ])
             }
@@ -306,4 +301,4 @@ pub extern "system" fn Java_net_consensys_linea_rln_jni_RlnBridge_parseAndVerify
             JObjectArray::default()
         }
     }
-} 
+}
