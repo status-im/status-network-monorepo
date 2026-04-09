@@ -215,6 +215,8 @@ impl TryFrom<EpochService2Config> for EpochService2 {
 mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveDateTime, TimeDelta};
+    use crate::ARGS_DEFAULT_GENESIS;
+    use serial_test::serial;
 
     #[test]
     fn test_compute_current_epoch() {
@@ -364,6 +366,52 @@ mod tests {
             let res = EpochService2::compute_wait_until(&genesis, &epoch_duration, &now, &now);
             assert!(matches!(res, Err(WaitUntilError::TooLow(_, _))));
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_service() {
+
+        let epoch_duration = Duration::from_secs(30);
+        let cfg = EpochService2Config {
+            epoch_duration,
+            genesis: ARGS_DEFAULT_GENESIS,
+        };
+        let epoch_service = EpochService2::try_from(cfg).unwrap();
+        let notifier = epoch_service.epoch_changes.clone();
+
+        let epoch_store = epoch_service.current_epoch.clone();
+        let mut current_epoch = *epoch_service.current_epoch.read();
+
+        // Start epoch service
+        let _ = tokio::task::spawn(async move {
+            epoch_service.listen_for_new_epoch().await
+        });
+
+        let counter_max = 3;
+        let res = tokio::task::spawn(
+            tokio::time::timeout(
+                epoch_duration.checked_mul(counter_max + 1).unwrap(),
+                async move {
+                        let mut counter = 0;
+                        loop {
+                            let res = notifier.notified().await;
+                            counter += 1;
+                            if counter >= counter_max {
+                                break;
+                            }
+
+                            let epoch = *epoch_store.read();
+                            if epoch != current_epoch + 1 && current_epoch != Epoch::from(0) {
+                                panic!("Start with epoch: {:?}, and now in epoch: {:?}, aborting unit test...", current_epoch, epoch);
+                            }
+                            current_epoch = epoch;
+                        }
+                    }
+            )
+        );
+
+        let _res = res.await.unwrap().unwrap();
     }
 
     // Helpers
