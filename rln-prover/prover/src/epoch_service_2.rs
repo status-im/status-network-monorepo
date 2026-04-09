@@ -24,11 +24,11 @@ pub struct EpochService2 {
     /// Duration of an epoch (quotas reset every epoch)
     epoch_duration: Duration,
     /// Current epoch
-    pub current_epoch: Arc<RwLock<Epoch>>,
+    pub(crate) current_epoch: Arc<RwLock<Epoch>>,
     /// Genesis time (aka when the service has been started at the first time)
     genesis: DateTime<Utc>,
     /// Channel to notify when an epoch has just changed
-    pub epoch_changes: Arc<Notify>,
+    pub(crate) epoch_changes: Arc<Notify>, // assume single subscriber (see tokio Notify doc)
 }
 
 impl EpochService2 {
@@ -50,7 +50,7 @@ impl EpochService2 {
                 Ok((current_epoch, wait_until)) => break (current_epoch, wait_until),
                 Err(WaitUntilError::TooLow(d1, d2)) => {
                     // Wait until is too low (according to const WAIT_UNTIL_MIN_DURATION)
-                    // so we will retry (WAIT_UNTIL_MAX_COMPUTE_ERROR many times) after a short sleep
+                    // so we will retry (WAIT_UNTIL_MAX_RETRY many times) after a short sleep
                     debug!("compute_wait_until return TooLow, will retry after a sleep...");
                     tokio::time::sleep(WAIT_UNTIL_MIN_DURATION).await;
                     retry_counter += 1;
@@ -68,9 +68,6 @@ impl EpochService2 {
                 }
             }
         };
-        // Debug
-        // let current_epoch = 0;
-        // let mut wait_until = tokio::time::Instant::now();
 
         *self.current_epoch.write() = current_epoch.into();
         debug!("Initial epoch: {}", current_epoch);
@@ -107,6 +104,7 @@ impl EpochService2 {
                 gauge!(EPOCH_SERVICE_CURRENT_EPOCH.name, "prover" => "epoch service")
                     .set(current_epoch as f64);
 
+                //
                 self.epoch_changes.notify_one();
             }
         }
@@ -115,8 +113,8 @@ impl EpochService2 {
     fn compute_wait_until<T, F: Fn() -> DateTime<Utc>, TF: Fn() -> T>(
         genesis: &DateTime<Utc>,
         epoch_duration: &Duration,
-        now: &F,
-        now2: &TF,
+        wall_clock_now: &F,
+        monotonic_now: &TF,
     ) -> Result<(i64, T), WaitUntilError>
     where
         T: std::fmt::Debug + Add<Duration, Output = T>,
@@ -126,11 +124,11 @@ impl EpochService2 {
         //       but in unit test, we use now() == now2() as it is easier to manipulate DateTime<Utc>
 
         let (current_epoch, _current_epoch_start_ts, current_epoch_end_ts) =
-            Self::compute_current_epoch_0(genesis, now, epoch_duration);
+            Self::compute_current_epoch_0(genesis, wall_clock_now, epoch_duration);
 
         // time to wait to next epoch
-        let now_ = now();
-        let now_2_ = now2();
+        let now_ = wall_clock_now();
+        let now_2_ = monotonic_now();
         let wait_until_0_ = current_epoch_end_ts - now_.timestamp();
         let wait_until_0 = Duration::from_secs(wait_until_0_ as u64);
         if wait_until_0 < WAIT_UNTIL_MIN_DURATION {
@@ -216,7 +214,6 @@ impl TryFrom<EpochService2Config> for EpochService2 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::providers::WatchTxError::Timeout;
     use chrono::{NaiveDate, NaiveDateTime, TimeDelta};
 
     #[test]

@@ -76,27 +76,6 @@ use rln_proof::RlnIdentifier;
 use smart_contract::{KarmaTiers::KarmaTiersInstance, KarmaTiersError, RLN, TIER_LIMITS};
 
 pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
-    /*
-    // Epoch service with configurable epoch and slice duration
-    // Production: epoch_duration = 24h (86400s), epoch_slice = 2min (120s)
-    // Testing: epoch_duration = 60s, epoch_slice = 10s (enables quota reset testing)
-    use crate::epoch_service::EpochServiceConfig;
-
-    let epoch_duration = Duration::from_secs(app_args.epoch_duration_secs);
-
-    info!(
-        "Starting epoch service: epoch_duration={}s",
-        app_args.epoch_duration_secs
-    );
-
-    let epoch_config = EpochServiceConfig::with_epoch_duration(
-        epoch_duration,
-        Duration::from_secs(10), // default value - unused
-        ARGS_DEFAULT_GENESIS,
-    );
-    let epoch_service =
-        EpochService::try_from(epoch_config).expect("Failed to create epoch service");
-    */
 
     let epoch_duration = Duration::from_secs(app_args.epoch_duration_secs);
     info!(
