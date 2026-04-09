@@ -76,7 +76,6 @@ use rln_proof::RlnIdentifier;
 use smart_contract::{KarmaTiers::KarmaTiersInstance, KarmaTiersError, RLN, TIER_LIMITS};
 
 pub async fn run_prover(app_args: AppArgs) -> Result<(), AppError2> {
-
     let epoch_duration = Duration::from_secs(app_args.epoch_duration_secs);
     info!(
         "Starting epoch service: epoch_duration={}s",

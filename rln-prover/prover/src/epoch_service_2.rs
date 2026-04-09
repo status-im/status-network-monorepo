@@ -130,11 +130,13 @@ impl EpochService2 {
         let now_ = wall_clock_now();
         let now_2_ = monotonic_now();
         // let wait_until_0_ = current_epoch_end_ts - now_.timestamp();
-        let wait_until_0_ms = current_epoch_end_ts.saturating_mul(1000)
-            - now_.timestamp_millis();
+        let wait_until_0_ms = current_epoch_end_ts.saturating_mul(1000) - now_.timestamp_millis();
         // Note: wait_until_0_ms can be < 0: system clock skew, NTP correction, suspend/resume
         if wait_until_0_ms < 0 {
-            return Err(WaitUntilError::TooLow(Duration::ZERO, WAIT_UNTIL_MIN_DURATION));
+            return Err(WaitUntilError::TooLow(
+                Duration::ZERO,
+                WAIT_UNTIL_MIN_DURATION,
+            ));
         }
         let wait_until_0 = Duration::from_millis(wait_until_0_ms as u64);
         if wait_until_0 < WAIT_UNTIL_MIN_DURATION {
@@ -220,8 +222,8 @@ impl TryFrom<EpochService2Config> for EpochService2 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{NaiveDate, NaiveDateTime, TimeDelta};
     use crate::ARGS_DEFAULT_GENESIS;
+    use chrono::{NaiveDate, NaiveDateTime, TimeDelta};
     use serial_test::serial;
 
     #[test]
@@ -377,7 +379,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_service() {
-
         let epoch_duration = Duration::from_secs(30);
         let cfg = EpochService2Config {
             epoch_duration,
@@ -390,32 +391,31 @@ mod tests {
         let mut current_epoch = *epoch_service.current_epoch.read();
 
         // Start epoch service
-        let _ = tokio::task::spawn(async move {
-            epoch_service.listen_for_new_epoch().await
-        });
+        let _ = tokio::task::spawn(async move { epoch_service.listen_for_new_epoch().await });
 
         let counter_max = 3;
-        let res = tokio::task::spawn(
-            tokio::time::timeout(
-                epoch_duration.checked_mul(counter_max + 1).unwrap(),
-                async move {
-                        let mut counter = 0;
-                        loop {
-                            let res = notifier.notified().await;
-                            counter += 1;
-                            if counter >= counter_max {
-                                break;
-                            }
-
-                            let epoch = *epoch_store.read();
-                            if epoch != current_epoch + 1 && current_epoch != Epoch::from(0) {
-                                panic!("Start with epoch: {:?}, and now in epoch: {:?}, aborting unit test...", current_epoch, epoch);
-                            }
-                            current_epoch = epoch;
-                        }
+        let res = tokio::task::spawn(tokio::time::timeout(
+            epoch_duration.checked_mul(counter_max + 1).unwrap(),
+            async move {
+                let mut counter = 0;
+                loop {
+                    let res = notifier.notified().await;
+                    counter += 1;
+                    if counter >= counter_max {
+                        break;
                     }
-            )
-        );
+
+                    let epoch = *epoch_store.read();
+                    if epoch != current_epoch + 1 && current_epoch != Epoch::from(0) {
+                        panic!(
+                            "Start with epoch: {:?}, and now in epoch: {:?}, aborting unit test...",
+                            current_epoch, epoch
+                        );
+                    }
+                    current_epoch = epoch;
+                }
+            },
+        ));
 
         let _res = res.await.unwrap().unwrap();
     }
