@@ -129,8 +129,14 @@ impl EpochService2 {
         // time to wait to next epoch
         let now_ = wall_clock_now();
         let now_2_ = monotonic_now();
-        let wait_until_0_ = current_epoch_end_ts - now_.timestamp();
-        let wait_until_0 = Duration::from_secs(wait_until_0_ as u64);
+        // let wait_until_0_ = current_epoch_end_ts - now_.timestamp();
+        let wait_until_0_ms = current_epoch_end_ts.saturating_mul(1000)
+            - now_.timestamp_millis();
+        // Note: wait_until_0_ms can be < 0: system clock skew, NTP correction, suspend/resume
+        if wait_until_0_ms < 0 {
+            return Err(WaitUntilError::TooLow(Duration::ZERO, WAIT_UNTIL_MIN_DURATION));
+        }
+        let wait_until_0 = Duration::from_millis(wait_until_0_ms as u64);
         if wait_until_0 < WAIT_UNTIL_MIN_DURATION {
             return Err(WaitUntilError::TooLow(
                 wait_until_0,
