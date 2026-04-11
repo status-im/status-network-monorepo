@@ -44,6 +44,8 @@ import org.slf4j.LoggerFactory;
  * <p>All queries go directly to the prover via gRPC. When gRPC is unavailable, the manager fails
  * open (isDenied returns false) to avoid blocking transactions.
  */
+@SuppressWarnings(
+    "deprecation") // BytesHolder.toHexString() deprecated in besu 26.3; migration pending
 public class DenyListManager implements Closeable {
   private static final Logger LOG = LoggerFactory.getLogger(DenyListManager.class);
 

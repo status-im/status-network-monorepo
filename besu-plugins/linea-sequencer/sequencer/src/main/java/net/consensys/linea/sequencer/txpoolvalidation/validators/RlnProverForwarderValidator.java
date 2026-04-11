@@ -78,6 +78,8 @@ import org.slf4j.LoggerFactory;
  * @author Status Network Development Team
  * @since 1.0
  */
+@SuppressWarnings(
+    "deprecation") // BytesHolder.toHexString() deprecated in besu 26.3; migration pending
 public class RlnProverForwarderValidator implements PluginTransactionPoolValidator, Closeable {
   private static final Logger LOG = LoggerFactory.getLogger(RlnProverForwarderValidator.class);
 

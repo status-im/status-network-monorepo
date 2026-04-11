@@ -71,6 +71,8 @@ import org.hyperledger.besu.plugin.services.rpc.RpcMethodError;
 import org.hyperledger.besu.plugin.services.rpc.RpcResponseType;
 
 @Slf4j
+@SuppressWarnings(
+    "deprecation") // BytesHolder.toHexString() deprecated in besu 26.3; migration pending
 public class LineaEstimateGas {
   @VisibleForTesting public static final SECPSignature FAKE_SIGNATURE_FOR_SIZE_CALCULATION;
 
