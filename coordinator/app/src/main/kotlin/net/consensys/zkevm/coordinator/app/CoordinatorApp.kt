@@ -3,15 +3,20 @@ package net.consensys.zkevm.coordinator.app
 import io.micrometer.core.instrument.MeterRegistry
 import io.vertx.core.Vertx
 import io.vertx.micrometer.backends.BackendRegistries
+import io.vertx.micrometer.backends.NoopBackendRegistry
 import io.vertx.sqlclient.SqlClient
 import linea.coordinator.config.v2.CoordinatorConfig
 import linea.coordinator.config.v2.DatabaseConfig
+import linea.persistence.ftx.DisabledForcedTransactionsDao
+import linea.persistence.ftx.PostgresForcedTransactionsDao
+import linea.persistence.ftx.RetryingPostgresForcedTransactionsDao
 import net.consensys.linea.async.toSafeFuture
 import net.consensys.linea.jsonrpc.client.LoadBalancingJsonRpcClient
 import net.consensys.linea.jsonrpc.client.VertxHttpJsonRpcClientFactory
 import net.consensys.linea.metrics.micrometer.MicrometerMetricsFacade
 import net.consensys.linea.vertx.loadVertxConfig
 import net.consensys.zkevm.coordinator.api.Api
+import net.consensys.zkevm.coordinator.app.conflationbacktesting.ConflationBacktestingService
 import net.consensys.zkevm.fileio.DirectoryCleaner
 import net.consensys.zkevm.persistence.dao.aggregation.AggregationsRepositoryImpl
 import net.consensys.zkevm.persistence.dao.aggregation.PostgresAggregationsDao
@@ -28,8 +33,12 @@ import org.apache.logging.log4j.Level
 import org.apache.logging.log4j.LogManager
 import org.apache.logging.log4j.Logger
 import tech.pegasys.teku.infrastructure.async.SafeFuture
+import kotlin.time.Clock
 
-class CoordinatorApp(private val configs: CoordinatorConfig) {
+class CoordinatorApp(
+  private val configs: CoordinatorConfig,
+  private val clock: Clock = Clock.System,
+) {
   private val log: Logger = LogManager.getLogger(this::class.java)
   private val vertx: Vertx =
     run {
@@ -49,12 +58,23 @@ class CoordinatorApp(private val configs: CoordinatorConfig) {
       requestResponseLogLevel = Level.TRACE,
       failuresLogLevel = Level.WARN,
     )
+
+  private val conflationBacktestingService = ConflationBacktestingService(
+    vertx = vertx,
+    configs = configs,
+    metricsFacade = MicrometerMetricsFacade(NoopBackendRegistry.INSTANCE.meterRegistry, "conflationbacktesting"),
+  )
   private val api =
     Api(
-      Api.Config(
-        configs.api.observabilityPort,
+      configs = Api.Config(
+        observabilityPort = configs.api.observabilityPort,
+        jsonRpcPort = configs.api.jsonRpcPort,
+        jsonRpcPath = configs.api.jsonRpcPath,
+        jsonRpcServerVerticles = configs.api.jsonRpcServerVerticles,
       ),
-      vertx,
+      vertx = vertx,
+      conflationBacktestingService = conflationBacktestingService,
+      metricsFacade = micrometerMetricsFacade,
     )
 
   private val persistenceRetryer =
@@ -65,6 +85,8 @@ class CoordinatorApp(private val configs: CoordinatorConfig) {
         backoffDelay = configs.database.persistenceRetries.backoffDelay,
         maxRetries = configs.database.persistenceRetries.maxRetries?.toInt(),
         timeout = configs.database.persistenceRetries.timeout,
+        ignoreFirstExceptionsUntilTimeElapsed =
+        configs.database.persistenceRetries.ignoreFirstExceptionsUntilTimeElapsed,
       ),
     )
 
@@ -80,6 +102,20 @@ class CoordinatorApp(private val configs: CoordinatorConfig) {
         persistenceRetryer = persistenceRetryer,
       ),
     )
+
+  private val forcedTransactionsDao = run {
+    if (configs.forcedTransactions?.disabled ?: true) {
+      DisabledForcedTransactionsDao()
+    } else {
+      RetryingPostgresForcedTransactionsDao(
+        delegate =
+        PostgresForcedTransactionsDao(
+          connection = sqlClient,
+        ),
+        persistenceRetryer = persistenceRetryer,
+      )
+    }
+  }
 
   private val blobsRepository =
     BlobsRepositoryImpl(
@@ -116,10 +152,12 @@ class CoordinatorApp(private val configs: CoordinatorConfig) {
       httpJsonRpcClientFactory = httpJsonRpcClientFactory,
       batchesRepository = batchesRepository,
       blobsRepository = blobsRepository,
+      forcedTransactionsDao = forcedTransactionsDao,
       aggregationsRepository = aggregationsRepository,
       sqlClient = sqlClient,
       smartContractErrors = configs.smartContractErrors,
       metricsFacade = micrometerMetricsFacade,
+      clock = this.clock,
     )
 
   private val requestFileCleanup =
@@ -160,17 +198,19 @@ class CoordinatorApp(private val configs: CoordinatorConfig) {
   fun start() {
     requestFileCleanup.cleanup()
       .thenCompose { l1App.start() }
-      .thenCompose { api.start().toSafeFuture() }
+      .thenCompose { conflationBacktestingService.start() }
+      .thenCompose { api.start() }
       .get()
 
     log.info("Started :)")
   }
 
   fun stop(): Int {
-    return kotlin.runCatching {
+    return runCatching {
       SafeFuture.allOf(
         l1App.stop(),
-        api.stop().toSafeFuture(),
+        api.stop(),
+        conflationBacktestingService.stop(),
       ).thenApply {
         LoadBalancingJsonRpcClient.stop()
       }.thenCompose {
@@ -188,12 +228,11 @@ class CoordinatorApp(private val configs: CoordinatorConfig) {
   }
 
   private fun initDb(dbConfig: DatabaseConfig): SqlClient {
-    val dbVersion = "4"
     Db.applyDbMigrations(
       host = dbConfig.host,
       port = dbConfig.port,
       database = dbConfig.schema,
-      target = dbVersion,
+      target = dbConfig.schemaVersion.toString(),
       username = dbConfig.username,
       password = dbConfig.password.value,
     )

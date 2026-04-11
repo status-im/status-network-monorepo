@@ -24,7 +24,7 @@ buildscript {
 
 apply plugin: 'jacoco'
 jacoco {
-  toolVersion = '0.8.12'
+  toolVersion = libs.versions.jacoco.get()
 }
 
 /*
@@ -59,6 +59,7 @@ tasks.withType(Test).configureEach {
 //    '-Xlog:gc',
     // Mockito and jackson-databind do some strange reflection during tests.
     // This suppresses an illegal access warning.
+    '-Xss4m',
     '--add-opens',
     'java.base/java.util=ALL-UNNAMED',
     '--add-opens',
@@ -74,6 +75,10 @@ tasks.withType(Test).configureEach {
       systemProperty name, System.getProperty(name)
     }
   }
+  // Override default timeout
+  systemProperty("junit.jupiter.execution.timeout.default", "15 m")
+  // override set number of forks
+  maxParallelForks = 1
   // Configure default parallelism
   if (System.getenv().containsKey("JUNIT_TESTS_PARALLELISM")) {
     systemProperty("junit.jupiter.execution.parallel.enabled", true)
@@ -81,12 +86,13 @@ tasks.withType(Test).configureEach {
     systemProperty("junit.jupiter.execution.parallel.mode.classes.default", "concurrent")
     systemProperty("junit.jupiter.execution.parallel.config.strategy", "fixed")
     systemProperty("junit.jupiter.execution.parallel.config.fixed.parallelism",
-      System.getenv().getOrDefault("JUNIT_TESTS_PARALLELISM", "4").toInteger())
+                   System.getenv().getOrDefault("JUNIT_TESTS_PARALLELISM", "4").toInteger())
   }
   // Configure BESU-related paths
   delete("${project.getLayout().getBuildDirectory().get()}/besu/traces")
   mkdir("${project.getLayout().getBuildDirectory().get()}/besu/traces")
   mkdir("${project.getLayout().getBuildDirectory().get()}/besu/traces/prague")
+  mkdir("${project.getLayout().getBuildDirectory().get()}/besu/traces/osaka")
   mkdir("${project.getLayout().getBuildDirectory().get()}/besu/plugins")
   System.setProperty("besu.plugins.dir",
           System.getenv().getOrDefault("besu.plugins.dir",
@@ -155,37 +161,58 @@ tasks.withType(Test).configureEach {
 // Test Tasks
 // =============================================================================
 
+// Gradle 9: custom Test tasks must explicitly wire the test source set
+tasks.withType(Test).matching { it.name != 'test' }.configureEach {
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+}
+
 tasks.test.configure {
   // Following required as some unit tests run BESU checks
   dependsOn("copyTracerPlugin", "extractShomeiBesuPlugin")
   //
   useJUnitPlatform {
     excludeTags("nightly | replay | weekly")
+    excludeTags("nightly-modexp")
     excludeTags("prc-calltests")
   }
   finalizedBy(jacocoTestReport)
+  systemProperty("junit.jupiter.execution.timeout.default", "20 m")
 }
 
 tasks.register("fastReplayTests", Test) {
+  // Following required as some fast replay tests run BESU checks
+  dependsOn("copyTracerPlugin", "extractShomeiBesuPlugin")
   useJUnitPlatform {
     includeTags("replay")
     excludeTags("nightly | weekly")
   }
   finalizedBy("jacocoFastReplayTestsReport")
+  systemProperty("junit.jupiter.execution.timeout.default", "30 m")
 }
 
 tasks.register("nightlyReplayTests", Test) {
   useJUnitPlatform {
     includeTags("nightly & replay")
   }
+  systemProperty("junit.jupiter.execution.timeout.default", "60 m")
 }
 
 tasks.register("nightlyTests", Test) {
   useJUnitPlatform {
     includeTags("nightly")
+    excludeTags("nightly-modexp")
     excludeTags("replay")
   }
   finalizedBy("jacocoNightlyTestsReport")
+  systemProperty("junit.jupiter.execution.timeout.default", "20 m")
+}
+
+tasks.register("nightlyModexpTests", Test) {
+  useJUnitPlatform {
+    includeTags("nightly-modexp")
+  }
+  systemProperty("junit.jupiter.execution.timeout.default", "60 m")
 }
 
 tasks.register("weeklyTests", Test) {
@@ -220,9 +247,15 @@ tasks.register("besuNodeTests", Test) {
   forkEvery = 1
   maxParallelForks = 3
   environment("RUN_WITH_BESU_NODE", true)
+  // Disable JIT compilation to prevent JVM safepoint deadlocks caused by gnark's
+  // Go/cgo runtime threads hijacking Java threads in Go's goroutine scheduler.
+  // With JIT enabled, compiler-triggered safepoints deadlock against Go threads.
+  // This doesn't seem to be needed for a non-MacOSX systems
+  // jvmArgs += ['-Xint']
   //
   useJUnitPlatform {
     excludeTags("nightly")
+    excludeTags("nightly-modexp")
     excludeTags("replay")
     excludeTags("weekly")
     excludeTags("prc-calltests")
@@ -236,6 +269,8 @@ tasks.register("besuNodeFastReplayTests", Test) {
   forkEvery = 1
   maxParallelForks = 3
   environment("RUN_WITH_BESU_NODE", true)
+  // Disable JIT — see besuNodeTests comment for explanation
+  // jvmArgs += ['-Xint']
   //
   useJUnitPlatform {
     includeTags("replay")

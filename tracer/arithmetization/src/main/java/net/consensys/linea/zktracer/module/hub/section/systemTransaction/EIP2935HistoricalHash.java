@@ -39,7 +39,7 @@ import org.hyperledger.besu.plugin.data.ProcessableBlockHeader;
 
 public class EIP2935HistoricalHash extends TraceSection {
 
-  public static final short NB_ROWS_HUB_SYSI_EIP2935 = 4;
+  public static final short NB_ROWS_HUB_SYSI_EIP_2935 = 4;
 
   public static final Address EIP2935_HISTORY_STORAGE_ADDRESS =
       AddressUtils.addressFromBytes(
@@ -48,7 +48,7 @@ public class EIP2935HistoricalHash extends TraceSection {
               bigIntegerToBytes16(HISTORY_STORAGE_ADDRESS_LO)));
 
   public EIP2935HistoricalHash(final Hub hub, WorldView world, ProcessableBlockHeader blockHeader) {
-    super(hub, NB_ROWS_HUB_SYSI_EIP2935);
+    super(hub, NB_ROWS_HUB_SYSI_EIP_2935);
     final long blockNumber = blockHeader.getNumber();
     final boolean currentBlockIsGenesis = blockNumber == 0;
     // Note: this is supposed to be useless in prod, as BLOCKHASH must have already loaded the
@@ -64,7 +64,7 @@ public class EIP2935HistoricalHash extends TraceSection {
         !currentBlockIsGenesis && !blockhashHistoryAccount.code().isEmpty();
 
     final Bytes32 previousBlockhashOrZero =
-        currentBlockIsGenesis ? Bytes32.ZERO : blockHeader.getParentHash();
+        currentBlockIsGenesis ? Bytes32.ZERO : Bytes32.wrap(blockHeader.getParentHash().getBytes());
 
     final EIP2935TransactionFragment transactionFragment =
         new EIP2935TransactionFragment(
@@ -81,7 +81,7 @@ public class EIP2935HistoricalHash extends TraceSection {
             .makeWithTrm(
                 blockhashHistoryAccount,
                 blockhashHistoryAccount,
-                EIP2935_HISTORY_STORAGE_ADDRESS,
+                EIP2935_HISTORY_STORAGE_ADDRESS.getBytes(),
                 DomSubStampsSubFragment.standardDomSubStamps(hubStamp(), 1),
                 SYSI);
     fragments().add(accountFragment);

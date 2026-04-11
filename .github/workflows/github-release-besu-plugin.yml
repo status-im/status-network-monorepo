@@ -1,0 +1,81 @@
+name: Github Release for Besu Plugins
+
+permissions:
+  contents: write
+  actions: read
+
+on:
+  workflow_call:
+    inputs:
+      pluginName:
+        required: true
+        type: string
+        description: 'plugin name used for the tag name, e.g linea-staterecovery'
+      workspaceModulePath:
+        required: true
+        type: string
+        description: 'Path to plugin to release, e.g state-recovery/besu-plugin'
+      version:
+        required: true
+        type: string
+        description: 'Release semantic version: e.g "1.0.0"'
+  workflow_dispatch:
+    inputs:
+      pluginName:
+        required: true
+        type: string
+        description: 'plugin name used for the tag name, e.g linea-staterecovery'
+      workspaceModulePath:
+        required: true
+        type: string
+        description: 'Path to plugin to release, e.g state-recovery/besu-plugin'
+      version:
+        required: true
+        type: string
+        description: 'Release semantic version: e.g "1.0.0"'
+
+jobs:
+  release:
+    runs-on: gha-runner-scale-set-ubuntu-22.04-amd64-med
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Set up Java and Gradle
+        uses: ./.github/actions/setup-java-and-gradle
+
+      - name: Clean
+        # ./gradlew clean is necessary because the build is cached
+        # and cause issues with JReleaser
+        run: ./gradlew clean
+
+      - name: Build
+        run: |
+          GRAGLE_PATH=:$(echo "besu-plugins/${{inputs.workspaceModulePath}}" | sed 's/\//:/g')
+          echo $GRAGLE_PATH
+          ./gradlew $GRAGLE_PATH:shadowJar -Pversion=v${{inputs.version}}
+          ls -lh besu-plugins/${{inputs.workspaceModulePath}}/build/libs
+
+      - name: Release to GitHub
+        uses: jreleaser/release-action@90ac653bb9c79d11179e65d81499f3f34527dcd5 #v2.5.0
+        with:
+          arguments: full-release --git-root-search --basedir=${{github.workspace}}/besu-plugins/${{inputs.workspaceModulePath}} -P=version=v${{inputs.version}}
+        env:
+          GITHUB_TOKEN: ${{secrets._GITHUB_TOKEN_RELEASE_ACCESS}}
+          JRELEASER_TAG_NAME: ${{inputs.pluginName}}-v${{inputs.version}}
+          JRELEASER_PROJECT_VERSION: ${{inputs.version}}
+          JRELEASER_GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          JRELEASER_GITHUB_USERNAME: ${{github.actor}}
+          JRELEASER_GITHUB_EMAIL: ${{github.actor}}@users.noreply.github.com
+
+      # Persist logs
+      - name: JReleaser release output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jreleaser-release
+          path: |
+            build/jreleaser/trace.log
+            build/jreleaser/output.properties

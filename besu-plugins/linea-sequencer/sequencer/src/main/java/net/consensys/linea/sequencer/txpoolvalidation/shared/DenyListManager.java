@@ -110,7 +110,7 @@ public class DenyListManager implements Closeable {
    * @return The Proto Address with the 20-byte value
    */
   private static Address toProtoAddress(org.hyperledger.besu.datatypes.Address address) {
-    return Address.newBuilder().setValue(ByteString.copyFrom(address.toArrayUnsafe())).build();
+    return Address.newBuilder().setValue(ByteString.copyFrom(address.getBytes().toArray())).build();
   }
 
   /** Initializes the gRPC client connection. */

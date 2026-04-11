@@ -29,7 +29,7 @@ public abstract class PhaseSection {
 
   public void trace(Trace.Rlptxn trace, GenericTracedValue tracedValues) {
     traceTransactionRow(trace, tracedValues.tx(), tracedValues);
-    traceComputationsRows(trace, tracedValues.tx(), tracedValues);
+    traceComputationRows(trace, tracedValues.tx(), tracedValues);
   }
 
   private void traceTransactionRow(
@@ -46,11 +46,13 @@ public abstract class PhaseSection {
         .pTxnMaxFeePerGas(tx.maxFeePerGas())
         .pTxnGasLimit(tx.getBesuTransaction().getGasLimit())
         .pTxnToHi(
-            tx.isDeployment() ? 0 : tx.getBesuTransaction().getTo().get().slice(0, 4).toLong())
+            tx.isDeployment()
+                ? 0
+                : tx.getBesuTransaction().getTo().get().getBytes().slice(0, 4).toLong())
         .pTxnToLo(
             tx.isDeployment()
                 ? Bytes.EMPTY
-                : tx.getBesuTransaction().getTo().get().slice(4, LLARGE))
+                : tx.getBesuTransaction().getTo().get().getBytes().slice(4, LLARGE))
         .pTxnValue(bigIntegerToBytes(tx.getBesuTransaction().getValue().getAsBigInteger()))
         .pTxnNumberOfZeroBytes(tx.numberOfZeroBytesInPayload())
         .pTxnNumberOfNonzeroBytes(tx.numberOfNonzeroBytesInPayload())
@@ -59,7 +61,7 @@ public abstract class PhaseSection {
     tracePostValues(trace, tracedValues);
   }
 
-  protected abstract void traceComputationsRows(
+  protected abstract void traceComputationRows(
       Trace.Rlptxn trace, TransactionProcessingMetadata tx, GenericTracedValue tracedValues);
 
   protected abstract void traceIsPhaseX(Trace.Rlptxn trace);
@@ -76,11 +78,12 @@ public abstract class PhaseSection {
         .type1(tracedValues.type1())
         .type2(tracedValues.type2())
         // .type3(tracedValues.type3())
-        // .type4(tracedValues.type4())
+        .type4(tracedValues.type4())
         .replayProtection(tracedValues.tx().replayProtection())
         .yParity(tracedValues.tx().yParity())
         .requiresEvmExecution(tracedValues.tx().requiresEvmExecution())
         .isDeployment(tracedValues.tx().isDeployment())
+        .lengthOfDelegationList(tracedValues.tx().getBesuTransaction().codeDelegationListSize())
         .proverUserTxnNumberMax(tracedValues.userTxnNumberMax());
   }
 

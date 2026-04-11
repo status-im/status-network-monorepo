@@ -1,4 +1,4 @@
-include makefile-contracts.mk
+include contracts/makefile-contracts.mk
 
 docker-pull-images-external-to-monorepo:
 		docker compose -f docker/compose-tracing-v2-ci-extension.yml --profile external-to-monorepo pull
@@ -12,8 +12,8 @@ clean-testnet-folders:
 		rm -rf tmp/testnet/* || true # ignore failure if folders do not exist already
 
 clean-environment:
-		docker compose -f docker/compose-tracing-v2-ci-extension.yml -f docker/compose-tracing-v2-staterecovery-extension.yml --profile l1 --profile l2 --profile debug --profile staterecovery kill -s 9 || true;
-		docker compose -f docker/compose-tracing-v2-ci-extension.yml -f docker/compose-tracing-v2-staterecovery-extension.yml --profile l1 --profile l2 --profile debug --profile staterecovery down || true;
+		docker compose -f docker/compose-tracing-v2-ci-fleet-extension.yml -f docker/compose-tracing-v2-staterecovery-extension.yml --profile l1 --profile l2 --profile debug --profile staterecovery kill -s 9 || true;
+		docker compose -f docker/compose-tracing-v2-ci-fleet-extension.yml -f docker/compose-tracing-v2-staterecovery-extension.yml --profile l1 --profile l2 --profile debug --profile staterecovery down || true;
 		# Ensure RLN stack containers are stopped as well
 		docker rm -f rln-prover sequencer postgres-replica l2-node-besu-follower || true;
 		make clean-local-folders;
@@ -24,7 +24,7 @@ clean-environment:
 start-env: COMPOSE_PROFILES:=l1,l2
 start-env: CLEAN_PREVIOUS_ENV:=true
 start-env: COMPOSE_FILE:=docker/compose-tracing-v2.yml
-start-env: L1_CONTRACT_VERSION:=6
+start-env: L1_CONTRACT_VERSION:=7_1
 start-env: SKIP_CONTRACTS_DEPLOYMENT:=false
 start-env: SKIP_L1_L2_NODE_HEALTH_CHECK:=false
 start-env: LINEA_PROTOCOL_CONTRACTS_ONLY:=false
@@ -38,9 +38,9 @@ start-env:
 	mkdir -p tmp/local; \
 	COMPOSE_PROFILES=$(COMPOSE_PROFILES) docker compose -f $(COMPOSE_FILE) up -d; \
 	while [ "$(SKIP_L1_L2_NODE_HEALTH_CHECK)" = "false" ] && \
-			{ [ "$$(docker compose -f $(COMPOSE_FILE) ps -q l1-el-node | xargs docker inspect -f '{{.State.Health.Status}}')" != "healthy" ] || \
-				[ "$$(docker compose -f $(COMPOSE_FILE) ps -q l1-cl-node | xargs docker inspect -f '{{.State.Health.Status}}')" != "healthy" ] || \
-  			[ "$$(docker compose -f $(COMPOSE_FILE) ps -q sequencer | xargs docker inspect -f '{{.State.Health.Status}}')" != "healthy" ]; }; do \
+			{ [ "$$(docker compose -f $(COMPOSE_FILE) ps -q l1-el-node | xargs -r docker inspect -f '{{.State.Health.Status}}')" != "healthy" ] || \
+				[ "$$(docker compose -f $(COMPOSE_FILE) ps -q l1-cl-node | xargs -r docker inspect -f '{{.State.Health.Status}}')" != "healthy" ] || \
+  			[ "$$(docker compose -f $(COMPOSE_FILE) ps -q sequencer | xargs -r docker inspect -f '{{.State.Health.Status}}')" != "healthy" ]; }; do \
   			sleep 2; \
   			echo "Checking health status of: l1-el-node, l1-cl-node and l2 sequencer..."; \
   	done; \
@@ -89,8 +89,8 @@ start-env-with-validium-and-tracing-v2-ci:
 	make start-env-with-validium COMPOSE_FILE=docker/compose-tracing-v2-ci-extension.yml LINEA_COORDINATOR_DISABLE_TYPE2_STATE_PROOF_PROVIDER=false LINEA_COORDINATOR_SIGNER_TYPE=web3signer
 
 ## Enable Fleet leader and follower besu nodes
-start-env-with-tracing-v2-fleet-ci:
-	make start-env COMPOSE_FILE=docker/compose-tracing-v2-fleet-ci-extension.yml LINEA_COORDINATOR_DISABLE_TYPE2_STATE_PROOF_PROVIDER=false LINEA_COORDINATOR_SIGNER_TYPE=web3signer
+start-env-with-tracing-v2-ci-fleet:
+	make start-env COMPOSE_FILE=docker/compose-tracing-v2-ci-fleet-extension.yml LINEA_USE_MARU_OVERRIDE_CONFIG=true LINEA_COORDINATOR_DISABLE_TYPE2_STATE_PROOF_PROVIDER=false LINEA_COORDINATOR_SIGNER_TYPE=web3signer
 
 start-env-with-staterecovery: COMPOSE_PROFILES:=l1,l2,staterecovery
 start-env-with-staterecovery: L1_CONTRACT_VERSION:=6
@@ -119,10 +119,10 @@ start-env-with-rln-production:
 	echo "  RLN: $$RLN_ADDR" && \
 	echo "  KarmaTiers: $$TIERS_ADDR" && \
 	echo "Step 3: Initializing karma tiers via Foundry..." && \
-	(cd status-network-contracts && forge script script/InitializeKarmaTiers.s.sol:InitializeKarmaTiersScript \
+	(cd status-network-contracts && KARMA_TIERS_ADDRESS=$$TIERS_ADDR forge script script/InitializeKarmaTiers.s.sol:InitializeKarmaTiersScript \
 		--rpc-url http://localhost:8545 \
 		--private-key 0x1dd171cec7e2995408b5513004e8207fe88d6820aeff0d82463b3e41df251aae \
-		--broadcast --legacy --with-gas-price 110000000000 || true) && \
+		--broadcast --legacy --with-gas-price 110000000000) && \
 	echo "Step 3.5: Minting Karma to deployer for admin tier access..." && \
 	(cast send --legacy --gas-price 110000000000 \
 		--private-key 0x1dd171cec7e2995408b5513004e8207fe88d6820aeff0d82463b3e41df251aae \

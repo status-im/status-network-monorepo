@@ -9,13 +9,52 @@ plugins {
   alias(libs.plugins.docker)
 }
 
-task compileAll
+tasks.register("compileAll") {
+  group = "build"
+  description = "Compiles all Java and Kotlin sources, including tests, across all projects."
+}
 
 // to allow to have unused vars/imports,etc for faster debugging/prototyping
 // instead of deleting and re-adding code all the time
 def allowCompilationWarnings = System.getenv('LINEA_DEV_ALLOW_WARNINGS') != null
 
+// Runs during Gradle's configuration phase. Only applies when building from a git checkout;
+// skip for source tarballs, Docker contexts without .git, or when git is unavailable — otherwise
+// this would break all Gradle invocations (including help/tasks).
+if (file('.git').exists()) {
+  try {
+    def proc = [
+      'git',
+      'config',
+      'core.hooksPath',
+      '.githooks'
+    ].execute()
+    proc.waitFor()
+    if (proc.exitValue() != 0) {
+      logger.warn(
+          "Could not set git core.hooksPath to .githooks (git exited with {}). Local hooks under .githooks may not run.",
+          proc.exitValue(),
+          )
+    }
+  } catch (Exception e) {
+    logger.warn(
+        "Could not run git config to set core.hooksPath to .githooks: {}. Local hooks under .githooks may not run.",
+        e.message ?: e.toString(),
+        )
+  }
+}
+
 allprojects {
+  // Aggregate every Java/Kotlin compile task (main + tests, all source sets) into root :compileAll.
+  afterEvaluate { proj ->
+    proj.tasks.withType(JavaCompile).all { compileTask ->
+      rootProject.tasks.named("compileAll").configure { dependsOn(compileTask) }
+    }
+    proj.tasks.withType(KotlinCompile).all { compileTask ->
+      rootProject.tasks.named("compileAll").configure { dependsOn(compileTask) }
+    }
+  }
+
   repositories {
     mavenCentral()
     mavenLocal()
@@ -24,15 +63,29 @@ allprojects {
   apply plugin: 'java' // do not add kotlin plugin here, it will add unnecessary Kotlin runtime dependencies
   apply plugin: 'jacoco'
 
+  // Override JUnit version from Besu BOM to ensure Java 25 compatibility
+  configurations.configureEach {
+    resolutionStrategy.eachDependency { details ->
+      if (details.requested.group in [
+            'org.junit.platform',
+            'org.junit.jupiter',
+            'org.junit'
+          ]) {
+        def junitVersion = details.requested.group == 'org.junit.platform' ?
+            "${libs.versions.junitPlatform.get()}" : "${libs.versions.junit.get()}"
+        details.useVersion(junitVersion)
+        details.because('Java 25 requires JUnit 5.13+ for ASM compatibility')
+      }
+    }
+  }
+
   tasks.withType(KotlinCompile).configureEach {
-    compileAll.dependsOn it
     compilerOptions {
       allWarningsAsErrors = !allowCompilationWarnings
     }
   }
 
   tasks.withType(JavaCompile).configureEach {
-    compileAll.dependsOn it
     options.encoding = 'UTF-8'
     options.deprecation = true
     options.compilerArgs.addAll([
@@ -43,30 +96,40 @@ allprojects {
       '-Xlint:finally',
       '-Xlint:static',
       '-Xlint:deprecation',
+      '-Xlint:unchecked',
+      '-Xlint:rawtypes',
+      '-Werror'
     ])
-    if (!allowCompilationWarnings) {
-      options.compilerArgs.addAll(['-Werror'])
+    if (allowCompilationWarnings) {
+      options.compilerArgs.remove('-Werror')
     }
 
-    if (!project.path.contains("testing-tools")) {
+    if (project.path.contains("testing-tools")) {
       // testing tools have 100+ errors because of this
       // skipping them for now
-      options.compilerArgs.addAll(['-Xlint:rawtypes'])
+      options.compilerArgs.remove('-Xlint:rawtypes')
     }
   }
 
   jacoco {
-    toolVersion = '0.8.11'
+    toolVersion = libs.versions.jacoco.get()
     if (project.tasks.findByName('integrationTest')) {
       applyTo integrationTest
     }
     if (project.tasks.findByName('acceptanceTest')) {
       applyTo acceptanceTest
     }
+    if (project.tasks.findByName('acceptanceTests')) {
+      applyTo acceptanceTests
+    }
   }
 
   jacocoTestReport {
     dependsOn test
+  }
+
+  tasks.withType(Javadoc).configureEach {
+    exclude '**/generated/**'
   }
 
   tasks.withType(Test).configureEach {
@@ -117,14 +180,14 @@ allprojects {
                   'ktlint_standard_property-naming': 'disabled',
                   'ktlint_standard_function-naming': 'disabled',
                   'ktlint_standard_function-signature': 'disabled',
-                  //                  'ktlint_function_signature_rule_force_multiline_when_parameter_count_greater_or_equal_than': '1'
+                  // 'ktlint_function_signature_rule_force_multiline_when_parameter_count_greater_or_equal_than': '1'
                 ])
           }
         }
         // spotless check applied to build.gradle (groovy) files
         groovyGradle {
           target '*.gradle'
-          greclipse()
+          greclipse("4.35")
           leadingTabsToSpaces(2)
           endWithNewline()
         }
@@ -166,10 +229,12 @@ task jacocoRootReport(type: JacocoReport) {
     xml.required = true
     // xml.enabled = true FIXME: deprecated, breaking latest versions of gradle.
     csv.required = true
-    html.destination file("build/reports/jacocoHtml")
+    html.outputLocation = file("build/reports/jacocoHtml")
   }
   onlyIf = { true }
 }
+
+apply plugin: 'linea.besu-plugin'
 
 dockerCompose {
   localStack {

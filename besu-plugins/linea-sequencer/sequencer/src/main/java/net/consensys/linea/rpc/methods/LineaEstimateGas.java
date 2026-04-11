@@ -9,7 +9,6 @@
 
 package net.consensys.linea.rpc.methods;
 
-import static net.consensys.linea.bl.TransactionProfitabilityCalculator.getCompressedTxSize;
 import static net.consensys.linea.sequencer.modulelimit.ModuleLineCountValidator.ModuleLineCountResult.MODULE_NOT_DEFINED;
 import static net.consensys.linea.sequencer.modulelimit.ModuleLineCountValidator.ModuleLineCountResult.TX_MODULE_LINE_COUNT_OVERFLOW;
 import static net.consensys.linea.zktracer.Fork.fromMainnetHardforkIdToTracerFork;
@@ -130,7 +129,8 @@ public class LineaEstimateGas {
       final LineaProfitabilityConfiguration profitabilityConf,
       final LineaL1L2BridgeSharedConfiguration l1L2BridgeConfiguration,
       final LineaTracerConfiguration tracerConfiguration,
-      final WorldStateService worldStateService) {
+      final WorldStateService worldStateService,
+      final TransactionProfitabilityCalculator transactionProfitabilityCalculator) {
     init(
         rpcConfiguration,
         transactionValidatorConfiguration,
@@ -138,6 +138,7 @@ public class LineaEstimateGas {
         l1L2BridgeConfiguration,
         tracerConfiguration,
         worldStateService,
+        transactionProfitabilityCalculator,
         null,
         null,
         null);
@@ -150,13 +151,14 @@ public class LineaEstimateGas {
       final LineaL1L2BridgeSharedConfiguration l1L2BridgeConfiguration,
       final LineaTracerConfiguration tracerConfiguration,
       final WorldStateService worldStateService,
+      final TransactionProfitabilityCalculator transactionProfitabilityCalculator,
       final DenyListManager denyListManager,
       final KarmaServiceClient karmaServiceClient,
       final GasKillSwitchMonitor gasKillSwitchMonitor) {
     this.rpcConfiguration = rpcConfiguration;
     this.txValidatorConf = transactionValidatorConfiguration;
     this.profitabilityConf = profitabilityConf;
-    this.txProfitabilityCalculator = new TransactionProfitabilityCalculator(profitabilityConf);
+    this.txProfitabilityCalculator = transactionProfitabilityCalculator;
     this.l1L2BridgeConfiguration = l1L2BridgeConfiguration;
     this.tracerConfiguration = tracerConfiguration;
     this.moduleLineCountValidator =
@@ -413,7 +415,7 @@ public class LineaEstimateGas {
               .toBigInteger());
     }
 
-    int compressedSize = getCompressedTxSize(transaction);
+    int compressedSize = txProfitabilityCalculator.getCompressedTxSize(transaction);
     return txProfitabilityCalculator.profitablePriorityFeePerGas(
         transaction,
         profitabilityConf.estimateGasMinMargin(),
@@ -575,7 +577,8 @@ public class LineaEstimateGas {
             sender -> {
               final var resp =
                   rpcEndpointService.call(
-                      "eth_getTransactionCount", new Object[] {sender.toHexString(), "latest"});
+                      "eth_getTransactionCount",
+                      new Object[] {sender.getBytes().toHexString(), "latest"});
 
               if (!resp.getType().equals(RpcResponseType.SUCCESS)) {
                 throw new PluginRpcEndpointException(

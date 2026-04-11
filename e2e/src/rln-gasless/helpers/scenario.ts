@@ -126,7 +126,7 @@ export const DENY_008 = scenario("DENY_008", "Deny list state is consistent acro
 export const DENY_009 = scenario("DENY_009", "Concurrent deny list additions are safe", "DENY_LIST");
 
 // ============================================================================
-// PREMIUM GAS SCENARIOS (PREM_001 - PREM_006)
+// PREMIUM GAS SCENARIOS (PREM_001 - PREM_005)
 // ============================================================================
 
 export const PREM_001 = scenario("PREM_001", "Transaction with gasPrice >= threshold bypasses RLN", "PREMIUM_GAS");
@@ -138,8 +138,6 @@ export const PREM_003 = scenario("PREM_003", "Exactly at threshold gasPrice bypa
 export const PREM_004 = scenario("PREM_004", "Premium gas works even without Karma registration", "PREMIUM_GAS");
 
 export const PREM_005 = scenario("PREM_005", "Premium gas transaction from unfunded wallet fails", "PREMIUM_GAS");
-
-export const PREM_006 = scenario("PREM_006", "Gas estimate shows premium multiplier for denied users", "PREMIUM_GAS");
 
 // ============================================================================
 // INTEGRATION SCENARIOS (INT_001 - INT_006)
@@ -278,7 +276,6 @@ export const ALL_SCENARIOS: Scenario[] = [
   PREM_003,
   PREM_004,
   PREM_005,
-  PREM_006,
   // Integration
   INT_001,
   INT_002,

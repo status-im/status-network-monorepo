@@ -61,12 +61,12 @@ public final class TransientFragment implements TraceFragment {
 
   @Override
   public Trace.Hub trace(Trace.Hub trace) {
-    domSubStampsSubFragment.trace(trace);
+    domSubStampsSubFragment.traceHub(trace);
 
     return trace
         .peekAtTransient(true)
-        .pTransientAddressHi(bytesToLong(address.slice(0, 4)))
-        .pTransientAddressLo(address.slice(4, LLARGE))
+        .pTransientAddressHi(bytesToLong(address.getBytes().slice(0, 4)))
+        .pTransientAddressLo(address.getBytes().slice(4, LLARGE))
         .pTransientStorageKeyHi(key.slice(0, LLARGE))
         .pTransientStorageKeyLo(key.slice(LLARGE, LLARGE))
         .pTransientValueCurrHi(valueCurr.slice(0, LLARGE))

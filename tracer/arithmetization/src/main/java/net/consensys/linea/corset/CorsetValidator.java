@@ -51,7 +51,7 @@ import net.consensys.linea.zktracer.ChainConfig;
 public class CorsetValidator extends AbstractExecutable {
   public record Result(boolean isValid, File traceFile, String corsetOutput) {}
 
-  private static final String ZKEVM_BIN_PREFIX = "../linea-constraints/zkevm_";
+  private static final String ZKEVM_BIN_PREFIX = "../../tracer-constraints/zkevm_";
   private static final String ZKEVM_BIN_SUFFIX = ".bin";
 
   /** Indicates whether or not this validator is active (i.e. we located the go-corset binary). */
@@ -267,7 +267,8 @@ public class CorsetValidator extends AbstractExecutable {
       // section can be null if there was no recorded data for the given target ir.
       if (section != null) {
         // Iterate over the fields of the section
-        for (Iterator<Map.Entry<String, JsonNode>> it = section.fields(); it.hasNext(); ) {
+        for (Iterator<Map.Entry<String, JsonNode>> it = section.properties().iterator();
+            it.hasNext(); ) {
           Map.Entry<String, JsonNode> field = it.next();
           HashSet<Integer> fieldData = data.get(field.getKey());
           // Initialise field data if necessary

@@ -21,7 +21,7 @@ class RomOperationComparator implements Comparator<RomOperation> {
   public int compare(RomOperation chunk1, RomOperation chunk2) {
     // First sort by Address
     final int addressComparison =
-        chunk1.metadata().address().compareTo(chunk2.metadata().address());
+        chunk1.metadata().address().getBytes().compareTo(chunk2.metadata().address().getBytes());
     if (addressComparison != 0) {
       return addressComparison;
     } else {
@@ -33,7 +33,8 @@ class RomOperationComparator implements Comparator<RomOperation> {
       } else {
         // Third sort by Deployment Status (true greater)
         if (chunk1.metadata().underDeployment() == chunk2.metadata().underDeployment()) {
-          return 0;
+          // Fourth sort by delegation number
+          return chunk1.metadata().delegationNumber() - chunk2.metadata().delegationNumber();
         } else {
           return chunk1.metadata().underDeployment() ? -1 : 1;
         }

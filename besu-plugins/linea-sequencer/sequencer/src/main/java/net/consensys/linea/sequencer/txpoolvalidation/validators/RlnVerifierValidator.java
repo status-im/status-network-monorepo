@@ -837,7 +837,7 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
     LOG.debug("RLN proof found in cache for txHash: {}", txHashString);
 
     // Verify sender-proof binding: the proof must be for this sender
-    if (!java.util.Arrays.equals(proof.senderBytes(), sender.toArrayUnsafe())) {
+    if (!java.util.Arrays.equals(proof.senderBytes(), sender.getBytes().toArray())) {
       LOG.error(
           "SECURITY VIOLATION: RLN proof sender mismatch for tx {}. Expected: {}, Proof sender: {}",
           txHashString,

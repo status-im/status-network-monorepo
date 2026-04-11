@@ -16,9 +16,9 @@
 package net.consensys.linea.zktracer.precompiles;
 
 import static net.consensys.linea.testing.BytecodeRunner.MAX_GAS_LIMIT;
-import static net.consensys.linea.zktracer.Fork.forkPredatesOsaka;
 import static net.consensys.linea.zktracer.Trace.*;
-import static net.consensys.linea.zktracer.module.oob.OobOperation.computeExponentLog;
+import static net.consensys.linea.zktracer.instructionprocessing.callTests.Utilities.randomSampleByCurrentCommitHash;
+import static net.consensys.linea.zktracer.module.hub.fragment.imc.oob.precompiles.modexp.ModexpPricingOobCall.computeExponentLog;
 import static net.consensys.linea.zktracer.opcode.OpCode.CALL;
 import static net.consensys.linea.zktracer.opcode.OpCode.JUMPDEST;
 import static net.consensys.linea.zktracer.precompiles.LowGasStipendPrecompileCallTests.GasCase.COST;
@@ -49,7 +49,6 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 public class LowGasStipendPrecompileCallTests extends TracerTestBase {
-
   // Enums for the different testing scenarios
   enum ValueCase {
     ZERO,
@@ -103,8 +102,7 @@ public class LowGasStipendPrecompileCallTests extends TracerTestBase {
    */
   @Tag("nightly")
   @ParameterizedTest
-  @MethodSource("lowGasStipendPrecompileCallTestSource")
-  @MethodSource("lowGasStipendPrecompileCallP256TestSource")
+  @MethodSource("sampleLowGasStipendPrecompileTestSources")
   void lowGasStipendPrecompileCallTest(
       Address precompileAddress,
       ValueCase valueCase,
@@ -144,7 +142,7 @@ public class LowGasStipendPrecompileCallTests extends TracerTestBase {
       callDataSize = 96 + bbs + ebs + mbs;
 
       final Bytes modexpInput = generateModexpInput(bbs, mbs, ebs);
-      final int multiplier = (forkPredatesOsaka(fork)) ? 8 : 16;
+      final int multiplier = 16;
       exponentLog = computeExponentLog(modexpInput, multiplier, callDataSize, bbs, ebs);
       // codeOwnerAccount owns the bytecode that will be given as input to MODEXP through
       // EXTCODECOPY
@@ -182,10 +180,10 @@ public class LowGasStipendPrecompileCallTests extends TracerTestBase {
     // TODO: are there other cases to exclude?
     if (valueCase.isNonZeroCase()
         && (gasCase == COST_MINUS_ONE || gasCase == COST || gasCase == GasCase.COST_PLUS_ONE)
-        && !precompileAddress.equals(ALTBN128_ADD)
-        && !precompileAddress.equals(BLS12_G1ADD)
-        && !precompileAddress.equals(BLS12_G2ADD)
-        && !precompileAddress.equals(MODEXP)) {
+        && !precompileAddress.getBytes().equals(ALTBN128_ADD.getBytes())
+        && !precompileAddress.getBytes().equals(BLS12_G1ADD.getBytes())
+        && !precompileAddress.getBytes().equals(BLS12_G2ADD.getBytes())
+        && !precompileAddress.getBytes().equals(MODEXP.getBytes())) {
       gas -= GAS_CONST_G_CALL_STIPEND;
     }
 
@@ -196,7 +194,7 @@ public class LowGasStipendPrecompileCallTests extends TracerTestBase {
         .push(callDataSize) // callDataSize
         .push(callDataOffset) // callDataOffset
         .push(value) // value
-        .push(precompileAddress) // address
+        .push(precompileAddress.getBytes()) // address
         .push(gas) // gas
         .op(CALL);
 
@@ -205,15 +203,26 @@ public class LowGasStipendPrecompileCallTests extends TracerTestBase {
     }
 
     final BytecodeRunner bytecodeRunner = BytecodeRunner.of(program);
-    final long forkAppropriateGasLimit = forkPredatesOsaka(fork) ? 61_000_000L : MAX_GAS_LIMIT;
     bytecodeRunner.run(
-        forkAppropriateGasLimit,
+        MAX_GAS_LIMIT,
         precompileAddress == MODEXP ? additionalAccounts : List.of(),
         chainConfig,
         testInfo);
   }
 
-  static Stream<Arguments> lowGasStipendPrecompileCallP256TestSource() {
+  static Stream<Arguments> sampleLowGasStipendPrecompileTestSources() {
+    return randomSampleByCurrentCommitHash(fullGasStipendPrecompileCallP256TestSource()).stream();
+  }
+
+  static List<Arguments> fullGasStipendPrecompileCallP256TestSource() {
+    List<Arguments> arguments = new ArrayList<>();
+    arguments.addAll(lowGasStipendPrecompileCallTestSource());
+    arguments.addAll(lowGasStipendPrecompileCallP256TestSource());
+
+    return arguments;
+  }
+
+  static List<Arguments> lowGasStipendPrecompileCallP256TestSource() {
     List<Arguments> arguments = new ArrayList<>();
     for (GasCase gasCase : GasCase.values()) {
       for (ValueCase valueCase : ValueCase.values()) {
@@ -239,13 +248,10 @@ public class LowGasStipendPrecompileCallTests extends TracerTestBase {
         arguments.add(Arguments.of(P256_VERIFY, valueCase, gasCase, Integer.MAX_VALUE, false));
       }
     }
-    arguments.clear();
-    arguments.add(Arguments.of(P256_VERIFY, ValueCase.ZERO, COST_MINUS_ONE, 160, false));
-    arguments.add(Arguments.of(BLS12_G1ADD, ValueCase.ZERO, COST, 13, false));
-    return arguments.stream();
+    return arguments;
   }
 
-  static Stream<Arguments> lowGasStipendPrecompileCallTestSource() {
+  static List<Arguments> lowGasStipendPrecompileCallTestSource() {
     List<Arguments> arguments = new ArrayList<>();
     for (GasCase gasCase : GasCase.values()) {
       for (ValueCase valueCase : ValueCase.values()) {
@@ -357,7 +363,7 @@ public class LowGasStipendPrecompileCallTests extends TracerTestBase {
       arguments.add(Arguments.of(MODEXP, ValueCase.ZERO, gasCase, null, true));
     }
 
-    return arguments.stream();
+    return arguments;
   }
 
   // Support methods

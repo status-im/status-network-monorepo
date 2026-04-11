@@ -16,7 +16,6 @@
 package net.consensys.linea.zktracer.precompiles;
 
 import static net.consensys.linea.zktracer.Trace.*;
-import static net.consensys.linea.zktracer.Trace.Oob.G_QUADDIVISOR;
 import static net.consensys.linea.zktracer.instructionprocessing.callTests.Utilities.populateMemory;
 
 import net.consensys.linea.reporting.TracerTestBase;
@@ -29,6 +28,7 @@ import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.datatypes.Address;
 
 public class PrecompileUtils extends TracerTestBase {
+  private static final short G_QUADDIVISOR = 3;
 
   /**
    * Computes the precompile cost based on the precompile address, arguments size, and r value in
@@ -207,11 +207,11 @@ public class PrecompileUtils extends TracerTestBase {
       Address codeOwnerAddress, int targetOffset, BytecodeCompiler program) {
     // Copy to targetOffset the code of codeOwnerAccount
     program
-        .push(codeOwnerAddress)
+        .push(codeOwnerAddress.getBytes())
         .op(OpCode.EXTCODESIZE) // size
         .push(0) // offset
         .push(targetOffset) // targetOffset
-        .push(codeOwnerAddress) // address
+        .push(codeOwnerAddress.getBytes()) // address
         .op(OpCode.EXTCODECOPY);
   }
 

@@ -9,8 +9,10 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
 import tech.pegasys.teku.infrastructure.async.SafeFuture
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.nanoseconds
@@ -377,6 +379,37 @@ class AsyncRetryerTest {
       .withThrowableOfType(ExecutionException::class.java)
       .withCauseInstanceOf(IndexOutOfBoundsException::class.java)
       .withMessageContaining("Error 4")
+  }
+
+  @Test
+  fun `retry should retry until maxRetries are reached and consumer not being called before delay`(vertx: Vertx) {
+    val callCount = AtomicInteger(0)
+    val startTime = Clock.System.now()
+    val exceptionConsumerCallDelays: MutableList<Duration> = CopyOnWriteArrayList()
+    val future =
+      AsyncRetryer.retry<Int>(
+        vertx = vertx,
+        backoffDelay = 20.milliseconds,
+        maxRetries = 10,
+        exceptionConsumer = { exceptionConsumerCallDelays.add(Clock.System.now().minus(startTime)) },
+        ignoreFirstExceptionsUntilTimeElapsed = 100.milliseconds,
+      ) {
+        throw IndexOutOfBoundsException("Error ${callCount.incrementAndGet()}")
+      }
+
+    runCatching { future.get() }
+
+    assertThat(callCount.get()).isEqualTo(11)
+    assertThat(future)
+      .isCompletedExceptionally
+      .isNotCancelled
+      .failsWithin(2.seconds.toJavaDuration())
+      .withThrowableOfType(ExecutionException::class.java)
+      .withCauseInstanceOf(IndexOutOfBoundsException::class.java)
+      .withMessageContaining("Error 11")
+
+    assertThat(exceptionConsumerCallDelays.filter { it > 100.milliseconds }).isNotEmpty()
+    assertThat(exceptionConsumerCallDelays.filter { it < 100.milliseconds }).isEmpty()
   }
 
   @Test

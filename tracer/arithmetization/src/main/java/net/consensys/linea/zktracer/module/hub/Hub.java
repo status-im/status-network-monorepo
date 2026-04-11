@@ -18,17 +18,16 @@ package net.consensys.linea.zktracer.module.hub;
 import static com.google.common.base.Preconditions.*;
 import static net.consensys.linea.plugins.config.LineaL1L2BridgeSharedConfiguration.TEST_DEFAULT;
 import static net.consensys.linea.zktracer.Fork.getGasCalculatorFromFork;
+import static net.consensys.linea.zktracer.Trace.GAS_CONST_G_PER_EMPTY_ACCOUNT_COST;
+import static net.consensys.linea.zktracer.Trace.GAS_CONST_PER_AUTH_BASE_COST;
 import static net.consensys.linea.zktracer.Trace.Hub.MULTIPLIER___STACK_STAMP;
 import static net.consensys.linea.zktracer.module.ModuleName.*;
-import static net.consensys.linea.zktracer.module.hub.HubProcessingPhase.TX_EXEC;
-import static net.consensys.linea.zktracer.module.hub.HubProcessingPhase.TX_FINL;
-import static net.consensys.linea.zktracer.module.hub.HubProcessingPhase.TX_INIT;
-import static net.consensys.linea.zktracer.module.hub.HubProcessingPhase.TX_SKIP;
-import static net.consensys.linea.zktracer.module.hub.HubProcessingPhase.TX_WARM;
+import static net.consensys.linea.zktracer.module.hub.AccountSnapshot.canonicalWithoutFrame;
+import static net.consensys.linea.zktracer.module.hub.HubProcessingPhase.*;
 import static net.consensys.linea.zktracer.module.hub.TransactionProcessingType.*;
 import static net.consensys.linea.zktracer.module.hub.signals.TracedException.*;
 import static net.consensys.linea.zktracer.opcode.OpCode.*;
-import static net.consensys.linea.zktracer.types.AddressUtils.effectiveToAddress;
+import static net.consensys.linea.zktracer.types.AddressUtils.isPrecompile;
 import static org.hyperledger.besu.evm.frame.MessageFrame.Type.*;
 
 import java.util.*;
@@ -45,7 +44,6 @@ import net.consensys.linea.zktracer.container.module.IncrementingModule;
 import net.consensys.linea.zktracer.container.module.Module;
 import net.consensys.linea.zktracer.module.ModuleName;
 import net.consensys.linea.zktracer.module.add.Add;
-import net.consensys.linea.zktracer.module.bin.Bin;
 import net.consensys.linea.zktracer.module.blake2fmodexpdata.BlakeModexpData;
 import net.consensys.linea.zktracer.module.blockdata.module.BlockData;
 import net.consensys.linea.zktracer.module.blockdata.module.CancunBlockData;
@@ -97,6 +95,7 @@ import net.consensys.linea.zktracer.module.mod.Mod;
 import net.consensys.linea.zktracer.module.mul.Mul;
 import net.consensys.linea.zktracer.module.mxp.Mxp;
 import net.consensys.linea.zktracer.module.oob.Oob;
+import net.consensys.linea.zktracer.module.rlpAuth.RlpAuth;
 import net.consensys.linea.zktracer.module.rlpUtils.RlpUtils;
 import net.consensys.linea.zktracer.module.rlpaddr.RlpAddr;
 import net.consensys.linea.zktracer.module.rlptxn.RlpTxn;
@@ -128,13 +127,13 @@ import net.consensys.linea.zktracer.types.TransactionProcessingMetadata;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.datatypes.Address;
+import org.hyperledger.besu.datatypes.Log;
+import org.hyperledger.besu.datatypes.LogTopic;
 import org.hyperledger.besu.datatypes.Transaction;
 import org.hyperledger.besu.datatypes.Wei;
 import org.hyperledger.besu.evm.account.AccountState;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
-import org.hyperledger.besu.evm.log.Log;
-import org.hyperledger.besu.evm.log.LogTopic;
 import org.hyperledger.besu.evm.operation.Operation;
 import org.hyperledger.besu.evm.worldstate.WorldView;
 import org.hyperledger.besu.plugin.data.BlockBody;
@@ -213,7 +212,6 @@ public final class Hub implements Module {
   // stateless modules
   private final Wcp wcp = new Wcp();
   private final Add add = new Add();
-  private final Bin bin = new Bin();
   private final Blockhash blockhash;
   private final Euc euc = new Euc();
   private final Ext ext = new Ext();
@@ -235,10 +233,11 @@ public final class Hub implements Module {
   private final LogInfo logInfo = new LogInfo(rlpTxnRcpt);
   private final LogData logData = new LogData(rlpTxnRcpt);
   private final RlpAddr rlpAddr;
+  private final RlpAuth rlpAuth;
 
   // modules triggered by sub-fragments of the MISCELLANEOUS / IMC perspective
   private final Mxp mxp = new Mxp();
-  private final Oob oob = new Oob(this, add, mod, wcp);
+  private final Oob oob = new Oob();
   private final Mmu mmu;
   private final Stp stp = new Stp();
   private final Exp exp = new Exp();
@@ -404,7 +403,6 @@ public final class Hub implements Module {
     return List.of(
         this,
         add,
-        bin,
         blakeModexpData,
         blockdata,
         blockhash,
@@ -423,6 +421,7 @@ public final class Hub implements Module {
         mxp,
         oob,
         rlpAddr,
+        rlpAuth,
         rlpTxn,
         rlpTxnRcpt,
         rlpUtils,
@@ -466,7 +465,7 @@ public final class Hub implements Module {
     checkState(chain.id.signum() >= 0, "Hub constructor: chain id must be non-negative");
     final Address l2l1ContractAddress = chain.bridgeConfiguration.contract();
     final Bytes32 l2l1Topic = chain.bridgeConfiguration.topic();
-    if (l2l1ContractAddress.equals(TEST_DEFAULT.contract())) {
+    if (l2l1ContractAddress.getBytes().equals(TEST_DEFAULT.contract().getBytes())) {
       log.info("[ZkTracer] Using default testing L2L1 contract address");
     }
     l2L1Logs = new IncrementingModule(BLOCK_L2_L1_LOGS);
@@ -478,6 +477,7 @@ public final class Hub implements Module {
     trm = new Trm(fork);
     rlpTxn = new RlpTxn(rlpUtils, trm);
     rlpAddr = new RlpAddr(this, trm, keccak);
+    rlpAuth = new RlpAuth(shakiraData, ecData);
     blockdata = new CancunBlockData(this, wcp, euc, chain, publicInputs.blobBaseFees());
     mmu = new Mmu(euc, wcp);
     mmio = new Mmio(mmu);
@@ -492,7 +492,6 @@ public final class Hub implements Module {
         Stream.concat(
                 Stream.of(
                     add,
-                    bin,
                     blakeModexpData,
                     blockhash, /* WARN: must be called BEFORE WCP (for traceEndConflation) */
                     blsData,
@@ -508,6 +507,7 @@ public final class Hub implements Module {
                     oob,
                     exp,
                     rlpAddr,
+                    rlpAuth,
                     rlpTxn,
                     rlpTxnRcpt,
                     rlpUtils,
@@ -602,23 +602,107 @@ public final class Hub implements Module {
     defers.resolvePostBlock(this);
   }
 
-  public void traceStartTransaction(final WorldView world, final Transaction tx) {
+  /**
+   * {@link #initializeAccountSnapshotMap} includes the
+   *
+   * <ul>
+   *   <li>sender
+   *   <li>recipient
+   *   <li>delegate (if appliable)
+   *   <li>coinbase
+   * </ul>
+   *
+   * Including these accounts from the start makes this map more uniform and useful downstream.
+   *
+   * <p>As a precaution we manually set the warmths as we don't know what values the frame may hold
+   * at this point. Neither the sender (that has to sign a transaction) nor the recipient (that is
+   * forbidden from being a precompile) may be precompiles. They therefore start out being cold.
+   * Both the delegate and the coinbase may be precompiles, and may therefore start out warm.
+   */
+  public Map<Address, AccountSnapshot> initializeAccountSnapshotMap(
+      final WorldView world, final TransactionProcessingMetadata txMetadata) {
+
+    Map<Address, AccountSnapshot> latestAccountSnapshots = new HashMap<>();
+
+    // include the sender
+    latestAccountSnapshots.put(
+        txMetadata.getSender(),
+        canonicalWithoutFrame(this, world, txMetadata.getSender()).setWarmthTo(false));
+
+    // include the recipient
+    if (!latestAccountSnapshots.containsKey(txMetadata.getEffectiveRecipient())) {
+      latestAccountSnapshots.put(
+          txMetadata.getEffectiveRecipient(),
+          canonicalWithoutFrame(this, world, txMetadata.getEffectiveRecipient())
+              .setWarmthTo(false));
+    }
+
+    // include the delegation, if applicable;
+    if (canonicalWithoutFrame(this, world, txMetadata.getEffectiveRecipient()).isDelegated()) {
+      AccountSnapshot recipientSnapshot =
+          canonicalWithoutFrame(this, world, txMetadata.getEffectiveRecipient());
+      if (recipientSnapshot.delegationAddress().isPresent()) {
+        Address delegationAddress = recipientSnapshot.delegationAddress().get();
+        if (!latestAccountSnapshots.containsKey(delegationAddress)) {
+          latestAccountSnapshots.put(
+              delegationAddress,
+              canonicalWithoutFrame(this, world, delegationAddress)
+                  .setWarmthTo(isPrecompile(this.fork, delegationAddress)));
+        }
+      }
+    }
+
+    // include the coinbase
+    if (!latestAccountSnapshots.containsKey(this.coinbaseAddress())) {
+      latestAccountSnapshots.put(
+          this.coinbaseAddress(),
+          canonicalWithoutFrame(this, world, this.coinbaseAddress())
+              .setWarmthTo(isPrecompile(this.fork, this.coinbaseAddress())));
+    }
+
+    return latestAccountSnapshots;
+  }
+
+  public void tracePrepareTransaction(final WorldView world, final Transaction tx) {
     state.transactionProcessingType(USER);
     pch.reset();
     txStack.enterTransaction(this, world, tx);
     final TransactionProcessingMetadata transactionProcessingMetadata = txStack.current();
     state.enterTransaction();
 
-    if (!transactionProcessingMetadata.requiresEvmExecution()) {
-      state.processingPhase(TX_SKIP);
-      new TxSkipSection(this, world, transactionProcessingMetadata, transients);
-    } else {
-      if (transactionProcessingMetadata.requiresPrewarming()) {
-        state.processingPhase(TX_WARM);
-        new TxPreWarmingMacroSection(world, this);
-      }
+    final Map<Address, AccountSnapshot> latestAccountSnapshots =
+        this.initializeAccountSnapshotMap(world, transactionProcessingMetadata);
+
+    // TX_AUTH phase if applicable
+    if (transactionProcessingMetadata.requiresAuthorizationPhase()) {
+      state.processingPhase(TX_AUTH);
+      new TxAuthorizationMacroSection(
+          this, world, transactionProcessingMetadata, latestAccountSnapshots);
+    }
+
+    /**
+     * After potentially acting on the authorization list we can determine whether the transaction
+     * requires EVM execution or not.
+     *
+     * <p><b>Note.</b> This bit is required to correctly determine <b>requiresPrewarming</b>. We
+     * must therefore compute it now.
+     */
+    transactionProcessingMetadata.computePostAuthorizationValues(
+        this, world, latestAccountSnapshots);
+
+    // TX_WARM phase if required
+    if (transactionProcessingMetadata.requiresPrewarming()) {
+      state.processingPhase(TX_WARM);
+      new TxPreWarmingMacroSection(this, world, latestAccountSnapshots);
+    }
+
+    // TX_INIT or TX_SKIP phases
+    if (transactionProcessingMetadata.requiresEvmExecution()) {
       state.processingPhase(TX_INIT);
-      new TxInitializationSection(this, world);
+      new TxInitializationSection(this, world, latestAccountSnapshots);
+    } else {
+      state.processingPhase(TX_SKIP);
+      new TxSkipSection(this, world, latestAccountSnapshots);
     }
 
     // Note: for deployment transactions the deployment number / status were updated during the
@@ -663,7 +747,7 @@ public final class Hub implements Module {
       if (state.processingPhase() == TX_SKIP) {
         checkState(
             currentTraceSection() instanceof TxSkipSection,
-            "traceContextEnter of Hub: expected a skip section");
+            "traceContextEnter of Hub: expected a TX_SKIP section");
         ((TxSkipSection) currentTraceSection()).coinbaseSnapshots(this, frame);
       }
       final TransactionProcessingMetadata currentTransaction = transients().tx();
@@ -675,10 +759,11 @@ public final class Hub implements Module {
       final Transaction tx = currentTransaction.getBesuTransaction();
 
       checkArgument(
-          recipientAddress.equals(effectiveToAddress(tx)),
+          recipientAddress.getBytes().equals(currentTransaction.getEffectiveRecipient().getBytes()),
           "Mismatch between frame and transaction recipient");
       checkArgument(
-          senderAddress.equals(tx.getSender()), "Mismatch between frame and transaction sender");
+          senderAddress.getBytes().equals(tx.getSender().getBytes()),
+          "Mismatch between frame and transaction sender");
       checkArgument(
           isDeployment == tx.getTo().isEmpty(),
           "Mismatch between frame and transaction deployment info");
@@ -697,6 +782,13 @@ public final class Hub implements Module {
             callDataContextNumber(true), currentTransaction.getBesuTransaction().getData().get());
       }
 
+      final ExecutionType recipientExecutionType =
+          ExecutionType.getExecutionType(fork, frame.getWorldUpdater(), recipientAddress);
+      final Address executionAddress =
+          currentTransaction.isDeployment()
+              ? recipientAddress
+              : recipientExecutionType.executionAddress();
+
       callStack.newRootContext(
           newChildContextNumber(),
           senderAddress,
@@ -704,7 +796,7 @@ public final class Hub implements Module {
           new Bytecode(
               currentTransaction.isDeployment()
                   ? currentTransaction.getBesuTransaction().getInit().orElse(Bytes.EMPTY)
-                  : Optional.ofNullable(frame.getWorldUpdater().get(recipientAddress))
+                  : Optional.ofNullable(frame.getWorldUpdater().get(executionAddress))
                       .map(AccountState::getCode)
                       .orElse(Bytes.EMPTY)),
           value,
@@ -712,8 +804,10 @@ public final class Hub implements Module {
           callDataContextNumber(copyTransactionCallData),
           transients.tx().getBesuTransaction().getData().orElse(Bytes.EMPTY),
           this.deploymentNumberOf(recipientAddress),
-          this.deploymentNumberOf(recipientAddress),
-          this.deploymentStatusOf(recipientAddress));
+          executionAddress,
+          this.deploymentNumberOf(executionAddress),
+          this.deploymentStatusOf(executionAddress),
+          this.delegationNumberOf(executionAddress));
 
       this.currentFrame().initializeFrame(frame);
     }
@@ -750,6 +844,12 @@ public final class Hub implements Module {
               ? new MemoryRange(currentFrame().contextNumber())
               : ((CallSection) currentTraceSection()).getReturnAtRange();
 
+      final Address contractAddress = frame.getContractAddress();
+      final ExecutionType recipientExecutionType =
+          ExecutionType.getExecutionType(fork, frame.getWorldUpdater(), contractAddress);
+      final Address executionAddress =
+          isDeployment ? contractAddress : recipientExecutionType.executionAddress();
+
       callStack.enter(
           frameType,
           newChildContextNumber(),
@@ -758,8 +858,9 @@ public final class Hub implements Module {
           frame.getRemainingGas(),
           frame.getRecipientAddress(),
           this.deploymentNumberOf(frame.getRecipientAddress()),
-          frame.getContractAddress(),
-          this.deploymentNumberOf(frame.getContractAddress()),
+          executionAddress,
+          this.deploymentNumberOf(executionAddress),
+          this.delegationNumberOf(executionAddress),
           new Bytecode(frame.getCode().getBytes()),
           frame.getSenderAddress(),
           callDataRange,
@@ -782,12 +883,16 @@ public final class Hub implements Module {
     // We take a snapshot before exiting the transaction
     if (frame.getDepth() == 0) {
       final long leftOverGas = frame.getRemainingGas();
-      final long gasRefund = frame.getGasRefund();
+      final long frameRefund = frame.getGasRefund();
+      final long successfulDelegationRefund =
+          ((long) txStack.current().getNumberOfSuccessfulDelegations())
+              * (GAS_CONST_G_PER_EMPTY_ACCOUNT_COST - GAS_CONST_PER_AUTH_BASE_COST);
+      final long fullRefund = frameRefund + successfulDelegationRefund;
 
       txStack
           .current()
           .setPreFinalisationValues(
-              leftOverGas, gasRefund, txStack.getAccumulativeGasUsedInBlockBeforeTxStart());
+              leftOverGas, fullRefund, txStack.getAccumulativeGasUsedInBlockBeforeTxStart());
 
       if (state.processingPhase() != TX_SKIP) {
         state.processingPhase(TX_FINL);
@@ -868,9 +973,17 @@ public final class Hub implements Module {
    */
   private void exitDeploymentFromDeploymentInfoPov(MessageFrame frame) {
     final Address bytecodeAddress = currentFrame().byteCodeAddress();
-    checkArgument(
-        bytecodeAddress.equals(bytecodeAddress()),
-        "bytecode address mismatch between frame / callFrame at exit from deployment");
+
+    // TODO: @Olivier: fix and re-enable
+    // ExecutionType executionType =
+    //     ExecutionType.getExecutionType(this, frame.getWorldUpdater(),
+    // frame.getContractAddress());
+    // checkArgument(
+    //     executionType.executionAddress().equals(bytecodeAddress),
+    //     "bytecode address mismatch between frame / callFrame at exit from deployment");
+    //  checkArgument(
+    //      bytecodeAddress.equals(bytecodeAddress()),
+    //      "bytecode address mismatch between frame / callFrame at exit from deployment");
 
     /**
      * Explanation: if the current address isn't under deployment there is nothing to do.
@@ -925,10 +1038,13 @@ public final class Hub implements Module {
   }
 
   public int getCodeFragmentIndexByMetaData(
-      final Address address, final int deploymentNumber, final boolean deploymentStatus) {
+      final Address address,
+      final int deploymentNumber,
+      final boolean deploymentStatus,
+      final int delegationNumber) {
     return this.romLex()
         .getCodeFragmentIndexByMetadata(
-            ContractMetadata.make(address, deploymentNumber, deploymentStatus));
+            ContractMetadata.make(address, deploymentNumber, deploymentStatus, delegationNumber));
   }
 
   public int callDataContextNumber(final boolean shouldCopyTxCallData) {
@@ -1148,36 +1264,40 @@ public final class Hub implements Module {
   }
 
   // Quality of life deployment info related functions
-  public final int deploymentNumberOf(Address address) {
+  public int deploymentNumberOf(Address address) {
     return transients.conflation().deploymentInfo().deploymentNumber(address);
   }
 
-  public final boolean deploymentStatusOf(Address address) {
+  public boolean deploymentStatusOf(Address address) {
     return transients.conflation().deploymentInfo().getDeploymentStatus(address);
+  }
+
+  public int delegationNumberOf(Address address) {
+    return transients.conflation().getDelegationNumber(address);
   }
 
   // methods related to the byte code address
   // (c in the definition of \Theta in the EYP)
-  public final Address bytecodeAddress() {
+  public Address bytecodeAddress() {
     return this.messageFrame().getContractAddress();
   }
 
-  public final int deploymentNumberOfBytecodeAddress() {
+  public int deploymentNumberOfBytecodeAddress() {
     return deploymentNumberOf(bytecodeAddress());
   }
 
-  public final boolean deploymentStatusOfBytecodeAddress() {
+  public boolean deploymentStatusOfBytecodeAddress() {
     return deploymentStatusOf(bytecodeAddress());
   }
 
   // methods related to the account address
   // (r in the definition of \Theta in the EYP)
   // (also I_a in the EYP)
-  public final Address accountAddress() {
+  public Address accountAddress() {
     return this.messageFrame().getRecipientAddress();
   }
 
-  public final int deploymentNumberOfAccountAddress() {
+  public int deploymentNumberOfAccountAddress() {
     return deploymentNumberOf(this.accountAddress());
   }
 

@@ -32,13 +32,12 @@ import {
   PREM_003,
   PREM_004,
   PREM_005,
-  PREM_006,
 } from "./helpers/scenario";
 
 const logger = createTestLogger();
 
 /**
- * Test Suite: Deny List and Premium Gas (DENY_001 to DENY_009, PREM_001 to PREM_006)
+ * Test Suite: Deny List and Premium Gas (DENY_001 to DENY_009, PREM_001 to PREM_005)
  *
  * Tests deny list functionality and premium gas bypass:
  * - Deny list addition on quota violation
@@ -543,7 +542,7 @@ describe("RLN Deny List and Premium Gas", () => {
   );
 
   // ============================================================================
-  // PREMIUM GAS TESTS (PREM_001 to PREM_006)
+  // PREMIUM GAS TESTS (PREM_001 to PREM_005)
   // ============================================================================
 
   it(
@@ -690,73 +689,4 @@ describe("RLN Deny List and Premium Gas", () => {
     RLN_CONFIG.test.timeouts.singleTx,
   );
 
-  it(
-    formatScenario(PREM_006),
-    async () => {
-      const user = getRegisteredUser();
-      const quota = RLN_CONFIG.tiers.entry.quota;
-
-      logger.info(`${PREM_006.id}: Testing gas estimate premium multiplier`, {
-        user: user.address,
-      });
-
-      // Get baseline estimate before denial (user is NOT denied)
-      const baselineEstimate = await rlnClient.lineaEstimateGas({
-        from: user.address,
-        to: TEST_RECIPIENT,
-        value: "0x0",
-      });
-
-      const baselineGasLimit = BigInt(baselineEstimate.gasLimit);
-      logger.info("Baseline gas estimate", { gasLimit: baselineGasLimit.toString() });
-
-      // Ensure enough epoch time for quota TXs + deny detection polling
-      await rlnClient.ensureEpochWindow(20000);
-
-      // Get denied
-      for (let i = 0; i < quota; i++) {
-        await rlnClient.sendGaslessTransaction(user, {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          data: uniqueTxData(`prem006-exhaust-${i}`),
-        });
-      }
-
-      // Verify user is denied by attempting another gasless TX (should be rejected)
-      // This is more reliable than polling isDenied which can miss the deny window
-      await rlnClient.waitForProverSync(2000);
-      const denyError = await rlnClient.sendGaslessTransactionExpectFailure(
-        user,
-        {
-          to: TEST_RECIPIENT,
-          value: 0n,
-          data: uniqueTxData("prem006-verify-denied"),
-        },
-        10000,
-      );
-      expect(denyError).toMatch(/quota|deny|denied|timeout|exceeded|resource/i);
-
-      // Get estimate while denied
-      const deniedEstimate = await rlnClient.lineaEstimateGas({
-        from: user.address,
-        to: TEST_RECIPIENT,
-        value: "0x0",
-      });
-
-      const deniedGasLimit = BigInt(deniedEstimate.gasLimit);
-      logger.info("Denied gas estimate", { gasLimit: deniedGasLimit.toString() });
-
-      //  Denied estimate should be significantly higher (premium multiplier)
-      // Premium multiplier is 1.5x, so denied should be at least 1.3x baseline
-      const minimumExpected = (baselineGasLimit * 130n) / 100n;
-      expect(deniedGasLimit).toBeGreaterThanOrEqual(minimumExpected);
-
-      logger.info(`${PREM_006.id}: PASSED ✓`, {
-        baseline: baselineGasLimit.toString(),
-        denied: deniedGasLimit.toString(),
-        ratio: (Number(deniedGasLimit) / Number(baselineGasLimit)).toFixed(2),
-      });
-    },
-    RLN_CONFIG.test.timeouts.denyList, // 2 gasless + deny wait + gas estimate check
-  );
 });

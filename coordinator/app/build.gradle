@@ -30,11 +30,13 @@ dependencies {
   implementation project(':coordinator:clients:traces-generator-api-client')
   implementation project(':coordinator:clients:prover-client:file-based-client')
   implementation project(':coordinator:clients:smart-contract-client')
+  implementation project(':coordinator:clients:forced-transactions-client')
   implementation project(':coordinator:ethereum:finalization-monitor')
   implementation project(':coordinator:ethereum:common')
   implementation project(':coordinator:ethereum:models-helper')
   implementation project(':coordinator:ethereum:blob-submitter')
   implementation project(':coordinator:ethereum:message-anchoring')
+  implementation project(':coordinator:ethereum:forced-transactions')
   implementation project(':coordinator:clients:web3signer-client')
   implementation project(':coordinator:persistence:blob')
   implementation project(':coordinator:persistence:aggregation')
@@ -69,6 +71,7 @@ dependencies {
   testImplementation testFixtures(project(':jvm-libs:generic:json-rpc'))
   testImplementation project(':coordinator:ethereum:test-utils')
   testImplementation "io.vertx:vertx-junit5"
+  runtimeOnly "org.hyperledger.besu:secp256k1:${libs.versions.secp.get()}"
 }
 
 application {
@@ -81,7 +84,9 @@ jar {
     attributes(
         'Class-Path': project.configurations.runtimeClasspath.collect { it.getName() }.findAll { it.endsWith('jar') }.join(' '),
         'Main-Class': 'net.consensys.zkevm.coordinator.app.CoordinatorAppMain',
-        'Multi-Release': 'true'
+        'Multi-Release': 'true',
+        // Required for Java 25+: Netty uses restricted System::loadLibrary in unnamed modules
+        'Enable-Native-Access': 'ALL-UNNAMED'
         )
   }
 }
@@ -101,8 +106,8 @@ run {
   .findAll { it.key.startsWith("config") }
   .collect { "-D${it.key}=${it.value}" }
   args = [
-    "--traces-limits-v2",
-    "config/common/traces-limits-v2.toml",
+    "--traces-limits-v5",
+    "config/common/traces-limits-v5.toml",
     "--smart-contract-errors",
     "config/common/smart-contract-errors.toml",
     "--gas-price-cap-time-of-day-multipliers",
@@ -115,16 +120,18 @@ test {
   inputs.dir("$rootDir/config/coordinator/")
 }
 
-task integrationTestAllNeeded {
-  description = "Runs integration tests of all dependencies of coordinator:app"
+tasks.register('integrationTestAllNeeded') {
+  description = "Runs integration tests of coordinator:app and all dependencies"
   group = "verification"
 
-  def projectDependencies = configurations.implementation.getAllDependencies().withType(ProjectDependency)
-  def dependentProjects = projectDependencies.dependencyProject
-  dependentProjects.each { dependency ->
-    if (dependency.project.tasks.findByName("integrationTest")) {
-      def integrationTestTask = "${dependency.path}:integrationTest"
-      dependsOn integrationTestTask
+  if (tasks.findByName("integrationTest")) {
+    dependsOn "integrationTest"
+  }
+
+  configurations.implementation.getAllDependencies().withType(ProjectDependency).each { dep ->
+    def depProject = project(dep.path)
+    if (depProject.tasks.findByName("integrationTest")) {
+      dependsOn "${dep.path}:integrationTest"
     }
   }
 }

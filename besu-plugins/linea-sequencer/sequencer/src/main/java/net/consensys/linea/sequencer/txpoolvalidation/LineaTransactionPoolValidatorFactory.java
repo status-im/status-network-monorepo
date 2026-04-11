@@ -12,9 +12,11 @@ package net.consensys.linea.sequencer.txpoolvalidation;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import net.consensys.linea.bl.TransactionProfitabilityCalculator;
 import net.consensys.linea.config.LineaNodeType;
 import net.consensys.linea.config.LineaProfitabilityConfiguration;
 import net.consensys.linea.config.LineaRlnValidatorConfiguration;
@@ -23,9 +25,10 @@ import net.consensys.linea.config.LineaTransactionPoolValidatorConfiguration;
 import net.consensys.linea.jsonrpc.JsonRpcManager;
 import net.consensys.linea.plugins.config.LineaL1L2BridgeSharedConfiguration;
 import net.consensys.linea.sequencer.txpoolvalidation.shared.SharedServiceManager;
-import net.consensys.linea.sequencer.txpoolvalidation.validators.AllowedAddressValidator;
 import net.consensys.linea.sequencer.txpoolvalidation.validators.CalldataValidator;
+import net.consensys.linea.sequencer.txpoolvalidation.validators.DeniedAddressValidator;
 import net.consensys.linea.sequencer.txpoolvalidation.validators.GasLimitValidator;
+import net.consensys.linea.sequencer.txpoolvalidation.validators.PrecompileAddressValidator;
 import net.consensys.linea.sequencer.txpoolvalidation.validators.ProfitabilityValidator;
 import net.consensys.linea.sequencer.txpoolvalidation.validators.RlnProverForwarderValidator;
 import net.consensys.linea.sequencer.txpoolvalidation.validators.RlnVerifierValidator;
@@ -68,6 +71,7 @@ public class LineaTransactionPoolValidatorFactory
   private final SharedServiceManager sharedServiceManager;
   private final boolean rlnProverForwarderEnabled;
   private final InvalidTransactionByLineCountCache invalidTransactionByLineCountCache;
+  private final TransactionProfitabilityCalculator transactionProfitabilityCalculator;
   private final LineaNodeType nodeType;
 
   private final AtomicReference<Set<Address>> deniedAddresses;
@@ -92,6 +96,7 @@ public class LineaTransactionPoolValidatorFactory
       final SharedServiceManager sharedServiceManager,
       final boolean rlnProverForwarderEnabled,
       final InvalidTransactionByLineCountCache invalidTransactionByLineCountCache,
+      final TransactionProfitabilityCalculator transactionProfitabilityCalculator,
       final LineaNodeType nodeType) {
     this.besuConfiguration = besuConfiguration;
     this.blockchainService = blockchainService;
@@ -106,6 +111,7 @@ public class LineaTransactionPoolValidatorFactory
     this.sharedServiceManager = sharedServiceManager;
     this.rlnProverForwarderEnabled = rlnProverForwarderEnabled;
     this.invalidTransactionByLineCountCache = invalidTransactionByLineCountCache;
+    this.transactionProfitabilityCalculator = transactionProfitabilityCalculator;
     this.nodeType = nodeType;
 
     this.deniedAddresses = new AtomicReference<>(txPoolValidatorConf.deniedAddresses());
@@ -157,11 +163,20 @@ public class LineaTransactionPoolValidatorFactory
     }
 
     validatorsList.add(new TraceLineLimitValidator(invalidTransactionByLineCountCache));
-    validatorsList.add(new AllowedAddressValidator(deniedAddresses));
+    validatorsList.add(new DeniedAddressValidator(deniedAddresses));
+    validatorsList.add(new PrecompileAddressValidator());
     validatorsList.add(new GasLimitValidator(txPoolValidatorConf.maxTxGasLimit()));
-    validatorsList.add(new CalldataValidator(txPoolValidatorConf.maxTxCalldataSize()));
+
+    if (txPoolValidatorConf.maxTxCalldataSize() != null) {
+      validatorsList.add(new CalldataValidator(txPoolValidatorConf.maxTxCalldataSize()));
+    }
+
     validatorsList.add(
-        new ProfitabilityValidator(besuConfiguration, blockchainService, profitabilityConf));
+        new ProfitabilityValidator(
+            besuConfiguration,
+            blockchainService,
+            profitabilityConf,
+            transactionProfitabilityCalculator));
 
     // Conditionally add RLN Validator (for proof verification)
     // Only add RlnVerifierValidator on SEQUENCER nodes, not RPC nodes

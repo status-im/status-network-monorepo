@@ -9,23 +9,29 @@
 
 package net.consensys.linea.config;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
 import jakarta.validation.constraints.Positive;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
+import kotlin.time.Instant;
+import linea.blob.BlobCompressorVersion;
 import net.consensys.linea.plugins.LineaCliOptions;
 import net.consensys.linea.sequencer.txselection.selectors.TransactionEventFilter;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.datatypes.Address;
-import org.hyperledger.besu.evm.log.LogTopic;
+import org.hyperledger.besu.datatypes.LogTopic;
 import picocli.CommandLine;
 
 /** The Linea Transaction Selector CLI options. */
@@ -33,7 +39,10 @@ public class LineaTransactionSelectorCliOptions implements LineaCliOptions {
   public static final String CONFIG_KEY = "transaction-selector-config";
 
   public static final String MAX_BLOCK_CALLDATA_SIZE = "--plugin-linea-max-block-calldata-size";
-  public static final int DEFAULT_MAX_BLOCK_CALLDATA_SIZE = 70_000;
+  public static final String BLOB_SIZE_LIMIT = "--plugin-linea-blob-size-limit";
+  public static final String COMPRESSED_BLOCK_HEADER_OVERHEAD =
+      "--plugin-linea-compressed-block-header-overhead";
+  public static final int DEFAULT_COMPRESSED_BLOCK_HEADER_OVERHEAD = 1024;
   public static final String OVER_LINE_COUNT_LIMIT_CACHE_SIZE =
       "--plugin-linea-over-line-count-limit-cache-size";
   public static final int DEFAULT_OVER_LINE_COUNT_LIMIT_CACHE_SIZE = 10_000;
@@ -49,6 +58,10 @@ public class LineaTransactionSelectorCliOptions implements LineaCliOptions {
   public static final String EVENTS_DENY_LIST_PATH = "--plugin-linea-events-deny-list-path";
   public static final String EVENTS_BUNDLE_DENY_LIST_PATH =
       "--plugin-linea-events-bundle-deny-list-path";
+  public static final String BLOB_COMPRESSOR_VERSION_TIMESTAMPS =
+      "--plugin-linea-blob-compressor-version-timestamps";
+  public static final String BLOB_COMPRESSOR_VERSION_TIMESTAMPS_DEFAULT =
+      String.format("%s=%s", BlobCompressorVersion.V2.name(), Instant.Companion.getDISTANT_PAST());
 
   public static final String PROFITABILITY_CHECK_ENABLED =
       "--plugin-linea-profitability-check-enabled";
@@ -59,8 +72,30 @@ public class LineaTransactionSelectorCliOptions implements LineaCliOptions {
       names = {MAX_BLOCK_CALLDATA_SIZE},
       hidden = true,
       paramLabel = "<INTEGER>",
-      description = "Maximum size for the calldata of a block (default: ${DEFAULT-VALUE})")
-  private int maxBlockCallDataSize = DEFAULT_MAX_BLOCK_CALLDATA_SIZE;
+      description =
+          "Maximum size for the calldata of a block. If set, the raw calldata size selector is enabled.")
+  private Integer maxBlockCallDataSize;
+
+  @Positive
+  @CommandLine.Option(
+      names = {BLOB_SIZE_LIMIT},
+      hidden = true,
+      paramLabel = "<INTEGER>",
+      description =
+          "Maximum compressed block size in bytes (block must fit in blob when compressed). "
+              + "If set, the compression-aware selector is enabled.")
+  private Integer blobSizeLimit;
+
+  @Positive
+  @CommandLine.Option(
+      names = {COMPRESSED_BLOCK_HEADER_OVERHEAD},
+      hidden = true,
+      paramLabel = "<INTEGER>",
+      description =
+          "Estimated compressed block header overhead in bytes. Subtracted from blobSizeLimit "
+              + "during the fast-path compression check to account for block header data that is "
+              + "not included in per-tx compression estimates (default: ${DEFAULT-VALUE})")
+  private int compressedBlockHeaderOverhead = DEFAULT_COMPRESSED_BLOCK_HEADER_OVERHEAD;
 
   @Positive
   @CommandLine.Option(
@@ -120,7 +155,24 @@ public class LineaTransactionSelectorCliOptions implements LineaCliOptions {
           "Enable profitability check during block selection. Disable for gasless networks. (default: ${DEFAULT-VALUE})")
   private boolean profitabilityCheckEnabled = DEFAULT_PROFITABILITY_CHECK_ENABLED;
 
-  private LineaTransactionSelectorCliOptions() {}
+  private static final class BlobCompressorVersionCandidates implements Iterable<String> {
+    @Override
+    public Iterator<String> iterator() {
+      return Arrays.stream(BlobCompressorVersion.values()).map(Enum::name).iterator();
+    }
+  }
+
+  @CommandLine.Option(
+      names = {BLOB_COMPRESSOR_VERSION_TIMESTAMPS},
+      hidden = true,
+      paramLabel = "<MAP>",
+      completionCandidates = BlobCompressorVersionCandidates.class,
+      description =
+          "Comma-separated map of BlobCompressorVersion to Instant, "
+              + "e.g. V1_2=2025-01-01T00:00:00Z,V2=2026-01-01T00:00:00Z ."
+              + "Available versions: ${COMPLETION-CANDIDATES} . "
+              + "(default: ${DEFAULT-VALUE})")
+  private String blobCompressorVersionTimestampsRaw = BLOB_COMPRESSOR_VERSION_TIMESTAMPS_DEFAULT;
 
   /**
    * Create Linea cli options.
@@ -141,6 +193,8 @@ public class LineaTransactionSelectorCliOptions implements LineaCliOptions {
       final LineaTransactionSelectorConfiguration config) {
     final LineaTransactionSelectorCliOptions options = create();
     options.maxBlockCallDataSize = config.maxBlockCallDataSize();
+    options.blobSizeLimit = config.blobSizeLimit();
+    options.compressedBlockHeaderOverhead = config.compressedBlockHeaderOverhead();
     options.overLineCountLimitCacheSize = config.overLinesLimitCacheSize();
     options.maxGasPerBlock = config.maxGasPerBlock();
     // options.unprofitableCacheSize = config.unprofitableCacheSize(); // Removed in upstream
@@ -160,6 +214,8 @@ public class LineaTransactionSelectorCliOptions implements LineaCliOptions {
   public LineaTransactionSelectorConfiguration toDomainObject() {
     return LineaTransactionSelectorConfiguration.builder()
         .maxBlockCallDataSize(maxBlockCallDataSize)
+        .blobSizeLimit(blobSizeLimit)
+        .compressedBlockHeaderOverhead(compressedBlockHeaderOverhead)
         .overLinesLimitCacheSize(overLineCountLimitCacheSize)
         .maxGasPerBlock(maxGasPerBlock)
         .maxBundleGasPerBlock(maxBundleGasPerBlock)
@@ -169,6 +225,7 @@ public class LineaTransactionSelectorCliOptions implements LineaCliOptions {
         .eventsDenyList(parseTransactionEventDenyList(eventsDenyListPath))
         .eventsBundleDenyListPath(eventsBundleDenyListPath)
         .eventsBundleDenyList(parseTransactionEventDenyList(eventsBundleDenyListPath))
+        .blobCompressorVersionActivationTimes(getBlobCompressorVersionTimestamps())
         .build();
   }
 
@@ -176,6 +233,8 @@ public class LineaTransactionSelectorCliOptions implements LineaCliOptions {
   public String toString() {
     return MoreObjects.toStringHelper(this)
         .add(MAX_BLOCK_CALLDATA_SIZE, maxBlockCallDataSize)
+        .add(BLOB_SIZE_LIMIT, blobSizeLimit)
+        .add(COMPRESSED_BLOCK_HEADER_OVERHEAD, compressedBlockHeaderOverhead)
         .add(OVER_LINE_COUNT_LIMIT_CACHE_SIZE, overLineCountLimitCacheSize)
         .add(MAX_GAS_PER_BLOCK, maxGasPerBlock)
         .add(MAX_BUNDLE_GAS_PER_BLOCK, maxBundleGasPerBlock)
@@ -183,6 +242,7 @@ public class LineaTransactionSelectorCliOptions implements LineaCliOptions {
         .add(PROFITABILITY_CHECK_ENABLED, profitabilityCheckEnabled)
         .add(EVENTS_DENY_LIST_PATH, eventsDenyListPath)
         .add(EVENTS_BUNDLE_DENY_LIST_PATH, eventsBundleDenyListPath)
+        .add(BLOB_COMPRESSOR_VERSION_TIMESTAMPS, blobCompressorVersionTimestampsRaw)
         .toString();
   }
 
@@ -219,5 +279,25 @@ public class LineaTransactionSelectorCliOptions implements LineaCliOptions {
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  @VisibleForTesting
+  Map<BlobCompressorVersion, Instant> parseBlobCompressorVersionTimestamps(String input) {
+    Map<BlobCompressorVersion, Instant> result = new HashMap<>();
+    String[] pairs = input.split(",");
+    for (String pair : pairs) {
+      String[] kv = pair.split("=");
+      if (kv.length != 2) {
+        throw new IllegalArgumentException("Invalid BlobCompressorVersion=Instant pair: " + pair);
+      }
+      BlobCompressorVersion version = BlobCompressorVersion.valueOf(kv[0]);
+      Instant instant = Instant.Companion.parse(kv[1]);
+      result.put(version, instant);
+    }
+    return result;
+  }
+
+  public Map<BlobCompressorVersion, Instant> getBlobCompressorVersionTimestamps() {
+    return parseBlobCompressorVersionTimestamps(blobCompressorVersionTimestampsRaw);
   }
 }

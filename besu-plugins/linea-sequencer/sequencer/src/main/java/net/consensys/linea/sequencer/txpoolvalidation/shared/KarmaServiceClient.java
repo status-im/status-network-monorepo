@@ -173,7 +173,7 @@ public class KarmaServiceClient implements Closeable {
     // Convert Besu Address to protobuf Address
     net.vac.prover.Address protoAddress =
         net.vac.prover.Address.newBuilder()
-            .setValue(com.google.protobuf.ByteString.copyFrom(userAddress.toArrayUnsafe()))
+            .setValue(com.google.protobuf.ByteString.copyFrom(userAddress.getBytes().toArray()))
             .build();
 
     GetUserTierInfoRequest request =

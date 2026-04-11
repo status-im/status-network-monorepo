@@ -4,7 +4,6 @@ import io.vertx.core.Vertx
 import io.vertx.junit5.VertxExtension
 import io.vertx.sqlclient.Pool
 import io.vertx.sqlclient.SqlClient
-import kotlinx.datetime.Clock
 import linea.kotlin.encodeHex
 import net.consensys.linea.async.get
 import net.consensys.zkevm.persistence.db.Db
@@ -18,6 +17,7 @@ import org.junit.jupiter.api.extension.ExtendWith
 import org.postgresql.ds.PGSimpleDataSource
 import java.util.concurrent.ExecutionException
 import javax.sql.DataSource
+import kotlin.time.Clock
 
 @ExtendWith(VertxExtension::class)
 class DbSchemaUpdatesIntTest {
@@ -57,15 +57,12 @@ class DbSchemaUpdatesIntTest {
   @AfterEach
   fun tearDown() {
     DbHelper.resetAllConnections(dataSource, databaseName)
-    pool.close { ar: io.vertx.core.AsyncResult<Void?> ->
-      if (ar.failed()) {
-        System.err.println("Error closing connection pool: " + ar.cause().message)
+    pool.close()
+      .onFailure { th ->
+        System.err.println("Error closing connection pool: " + th.message)
       }
-    }
-    sqlClient.close { ar: io.vertx.core.AsyncResult<Void?> ->
-      if (ar.failed()) {
-        System.err.println("Error closing sqlclient " + ar.cause().message)
-      }
+    sqlClient.close().onFailure { th ->
+      System.err.println("Error closing sqlclient " + th.message)
     }
   }
 
