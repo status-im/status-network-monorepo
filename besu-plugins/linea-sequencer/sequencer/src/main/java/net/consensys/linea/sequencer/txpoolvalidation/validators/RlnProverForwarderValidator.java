@@ -317,7 +317,8 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
               RemoveFromDenyListRequest.newBuilder()
                   .setAddress(
                       Address.newBuilder()
-                          .setValue(ByteString.copyFrom(transaction.getSender().getBytes().toArray()))
+                          .setValue(
+                              ByteString.copyFrom(transaction.getSender().getBytes().toArray()))
                           .build())
                   .setResetEpochCounter(true)
                   .build();
@@ -375,7 +376,8 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
       SendTransactionRequest.Builder requestBuilder = SendTransactionRequest.newBuilder();
 
       // Set transaction hash
-      requestBuilder.setTransactionHash(ByteString.copyFrom(transaction.getHash().getBytes().toArray()));
+      requestBuilder.setTransactionHash(
+          ByteString.copyFrom(transaction.getHash().getBytes().toArray()));
 
       // Set sender address
       requestBuilder.setSender(
