@@ -19,17 +19,17 @@ permissions:
 
 jobs:
   unit:
-    name: Sequencer Unit Tests (JDK 21)
+    name: Sequencer Unit Tests (JDK 25)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: gradle/actions/wrapper-validation@ac638b010cf58a27ee6c972d7336334ccaf61c96
 
-      - name: Set up Java 21 (Temurin)
+      - name: Set up Java 25 (Temurin)
         uses: actions/setup-java@8df1039502a15bceb9433410b1a100fbe190c53b
         with:
           distribution: temurin
-          java-version: 21
+          java-version: 25
 
       - name: Setup Gradle cache
         uses: gradle/actions/setup-gradle@v3

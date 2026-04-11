@@ -39,7 +39,7 @@ jobs:
         uses: "actions/setup-node@v3"
         with:
           cache: "pnpm"
-          node-version: "22.x"
+          node-version: "24.x"
 
       - name: "Install the Node.js dependencies"
         run: "pnpm install"
@@ -159,7 +159,7 @@ jobs:
         uses: "actions/setup-node@v3"
         with:
           cache: "pnpm"
-          node-version: "22.x"
+          node-version: "24.x"
 
       - name: "Install the Node.js dependencies"
         run: "pnpm install"
