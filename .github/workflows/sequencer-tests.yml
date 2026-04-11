@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: gradle/actions/wrapper-validation@ac638b010cf58a27ee6c972d7336334ccaf61c96
 
       - name: Set up Java 25 (Temurin)
@@ -30,6 +32,12 @@ jobs:
         with:
           distribution: temurin
           java-version: 25
+
+      - name: Set up Go (required by :tracer:arithmetization for go-corset)
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version: '1.24.6'
+          cache-dependency-path: "**/*.sum"
 
       - name: Setup Gradle cache
         uses: gradle/actions/setup-gradle@v3
