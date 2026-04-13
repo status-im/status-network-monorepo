@@ -9,12 +9,12 @@ use tokio::{
 use tracing::{debug, error, info, warn};
 // internal - Grpc
 use crate::common::SlashingData;
-use crate::prover_proto::RlnAggProof;
+use crate::prover_proto::RlnAggLightProofReply;
 
 pub(crate) struct ProofProcessService {
     config: ProofProcessConfig,
     db: Arc<RwLock<Db>>,
-    proof_rx: Receiver<RlnAggProof>,
+    proof_rx: Receiver<RlnAggLightProofReply>,
     current_epoch: Option<u64>,
     slashing_tx: Sender<SlashingData>,
 }
@@ -22,7 +22,7 @@ pub(crate) struct ProofProcessService {
 impl ProofProcessService {
     pub(crate) fn new(
         config: ProofProcessConfig,
-        proof_rx: Receiver<RlnAggProof>,
+        proof_rx: Receiver<RlnAggLightProofReply>,
         slashing_tx: Sender<SlashingData>,
     ) -> Self {
         Self {
@@ -62,7 +62,7 @@ impl ProofProcessService {
         Ok(())
     }
 
-    async fn proof_process(&mut self, proof: RlnAggProof) -> Result<(), ProofProcessError> {
+    async fn proof_process(&mut self, proof: RlnAggLightProofReply) -> Result<(), ProofProcessError> {
         if proof.sender.len() != Address::len_bytes() {
             warn!(
                 "Received an invalid sender address: invalid length: {}",
@@ -126,7 +126,7 @@ impl ProofProcessService {
 struct Db(HashMap<Address, DbEntry>);
 
 impl Db {
-    fn insert_proof(&mut self, addr: &Address, proof: &RlnAggProof) -> DbEntry {
+    fn insert_proof(&mut self, addr: &Address, proof: &RlnAggLightProofReply) -> DbEntry {
         let e = self
             .0
             .entry(*addr)
@@ -147,13 +147,13 @@ impl Db {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct DbEntry {
-    proof_1: Option<RlnAggProof>,
-    proof_2: Option<RlnAggProof>,
+    proof_1: Option<RlnAggLightProofReply>,
+    proof_2: Option<RlnAggLightProofReply>,
     seen_proof_count: u64,
 }
 
 impl DbEntry {
-    fn set_proof(&mut self, proof: &RlnAggProof) {
+    fn set_proof(&mut self, proof: &RlnAggLightProofReply) {
         let proof = proof.clone();
         if self.proof_1.is_none() {
             self.proof_1 = Some(proof);
@@ -197,7 +197,7 @@ mod tests {
         let mut service = ProofProcessService::new(config, proof_rx, slashing_tx);
 
         let addr_1 = Address::random();
-        let proof_1 = RlnAggProof {
+        let proof_1 = RlnAggLightProofReply {
             sender: addr_1.to_vec(),
             ..Default::default()
         };
@@ -211,7 +211,7 @@ mod tests {
             // drop(guard);
         }
 
-        let proof_2 = RlnAggProof {
+        let proof_2 = RlnAggLightProofReply {
             sender: addr_1.to_vec(),
             ..Default::default()
         };
@@ -234,14 +234,14 @@ mod tests {
         let mut service = ProofProcessService::new(config, proof_rx, slashing_tx);
 
         let addr_1 = Address::random();
-        let proof_1 = RlnAggProof {
+        let proof_1 = RlnAggLightProofReply {
             sender: addr_1.to_vec(),
             epoch: 0,
             ..Default::default()
         };
         service.proof_process(proof_1.clone()).await.unwrap();
 
-        let proof_2 = RlnAggProof {
+        let proof_2 = RlnAggLightProofReply {
             sender: addr_1.to_vec(),
             epoch: 1, // New epoch
             ..Default::default()
@@ -281,14 +281,14 @@ mod tests {
         let mut service = ProofProcessService::new(config, proof_rx, slashing_tx);
 
         let addr_1 = Address::random();
-        let proof_1 = RlnAggProof {
+        let proof_1 = RlnAggLightProofReply {
             sender: addr_1.to_vec(),
             epoch: 0,
             ..Default::default()
         };
         service.proof_process(proof_1.clone()).await.unwrap();
 
-        let proof_2 = RlnAggProof {
+        let proof_2 = RlnAggLightProofReply {
             sender: addr_1.to_vec(),
             epoch: 0,
             ..Default::default()
