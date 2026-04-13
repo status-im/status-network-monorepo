@@ -167,7 +167,6 @@ async fn main() -> anyhow::Result<()> {
                         .send(pr)
                         .await
                         .context("Failed to send proof in proof_process channel")?;
-
                 }
                 Some(Err(e)) => {
                     error!("Error has been received: {}, aborting slasher node...", e)

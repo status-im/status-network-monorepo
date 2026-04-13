@@ -47,7 +47,7 @@ impl ProofProcessService {
                         ProofProcessError::DecreasingEpoch => {
                             break;
                         }
-                        ProofProcessError::SendForSlasing(_) => {
+                        ProofProcessError::SendForSlashing(_) => {
                             error!("Cannot send to slashing_tx, aborting...");
                             break;
                         }
@@ -62,7 +62,10 @@ impl ProofProcessService {
         Ok(())
     }
 
-    async fn proof_process(&mut self, proof: RlnAggLightProofReply) -> Result<(), ProofProcessError> {
+    async fn proof_process(
+        &mut self,
+        proof: RlnAggLightProofReply,
+    ) -> Result<(), ProofProcessError> {
         if proof.sender.len() != Address::len_bytes() {
             warn!(
                 "Received an invalid sender address: invalid length: {}",
@@ -108,12 +111,13 @@ impl ProofProcessService {
                 sender: sender_addr,
             };
 
-            self.slashing_tx.send(slashing_data)
+            self.slashing_tx
+                .send(slashing_data)
                 .await
                 // .context(
                 //     format!("Failed to send proof to slashing task, db_entry: {:?}", db_entry)
                 // )
-                ?;
+                .map_err(Box::new)?;
         }
 
         drop(guard);
@@ -181,7 +185,7 @@ enum ProofProcessError {
     #[error("Received an invalid epoch")]
     DecreasingEpoch,
     #[error(transparent)]
-    SendForSlasing(#[from] tokio::sync::mpsc::error::SendError<SlashingData>),
+    SendForSlashing(#[from] Box<tokio::sync::mpsc::error::SendError<SlashingData>>),
 }
 
 #[cfg(test)]

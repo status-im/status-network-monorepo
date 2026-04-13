@@ -8,7 +8,7 @@ use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, warn};
 // RLN
 use rln::protocol::{compute_id_secret, deserialize_proof_values};
-use rln::utils::{bytes_le_to_fr, IdSecret};
+use rln::utils::{IdSecret, bytes_le_to_fr};
 use tokio::sync::TryAcquireError;
 // internal
 use crate::common::SlashingData;
@@ -101,9 +101,14 @@ fn recover(slashing_data: SlashingData) -> anyhow::Result<IdSecret> {
     // let proof_2_values_de = deserialize_proof_values(&proof_2.proof.as_slice()[128..]).0;
 
     let recovered_identity_secret_hash = compute_id_secret(
-        (bytes_le_to_fr(&proof_1.proof_x).0, bytes_le_to_fr(&proof_1.proof_y).0),
-        (bytes_le_to_fr(&proof_2.proof_x).0, bytes_le_to_fr(&proof_2.proof_y).0),
-
+        (
+            bytes_le_to_fr(&proof_1.proof_x).0,
+            bytes_le_to_fr(&proof_1.proof_y).0,
+        ),
+        (
+            bytes_le_to_fr(&proof_2.proof_x).0,
+            bytes_le_to_fr(&proof_2.proof_y).0,
+        ),
     )
     .context("Fail to recover identity secret hash")?;
 
