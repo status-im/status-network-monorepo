@@ -22,8 +22,8 @@ use tracing::{debug, error, info, warn};
 use crate::prover_proto::rln_aggregator_server::{RlnAggregator, RlnAggregatorServer};
 use crate::prover_proto::rln_proof_reply::Resp;
 use crate::prover_proto::{
-    RlnAggFilter, RlnAggProof, RlnAggProofError, RlnAggProofReply, RlnProof, RlnProofError,
-    RlnProofReply, rln_agg_proof_reply, RlnAggLightProofReply
+    RlnAggFilter, RlnAggLightProofReply, RlnAggProof, RlnAggProofError, RlnAggProofReply, RlnProof,
+    RlnProofError, RlnProofReply, rln_agg_proof_reply,
 };
 
 const DELIVERY_SERVICE_LIMIT_PER_CONNECTION: usize = 16;
@@ -35,7 +35,10 @@ const DELIVERY_SERVICE_HTTP2_MAX_FRAME_SIZE: ByteSize = ByteSize::kib(16);
 
 pub struct ProofDeliveryServer {
     config: ProofDeliveryServerConfig,
-    broadcast_channel: (Sender<RlnAggLightProofReply>, Receiver<RlnAggLightProofReply>),
+    broadcast_channel: (
+        Sender<RlnAggLightProofReply>,
+        Receiver<RlnAggLightProofReply>,
+    ),
 }
 
 pub struct ProofDeliveryServerConfig {
@@ -59,7 +62,10 @@ impl Default for ProofDeliveryServerConfig {
 impl ProofDeliveryServer {
     pub(crate) fn new(
         config: ProofDeliveryServerConfig,
-        (tx, rx): (Sender<RlnAggLightProofReply>, Receiver<RlnAggLightProofReply>),
+        (tx, rx): (
+            Sender<RlnAggLightProofReply>,
+            Receiver<RlnAggLightProofReply>,
+        ),
     ) -> Self {
         Self {
             config,
@@ -124,7 +130,10 @@ impl ProofDeliveryServer {
 }
 
 struct ProofDeliveryService {
-    broadcast_channel: (Sender<RlnAggLightProofReply>, Receiver<RlnAggLightProofReply>),
+    broadcast_channel: (
+        Sender<RlnAggLightProofReply>,
+        Receiver<RlnAggLightProofReply>,
+    ),
     client_connected_limit: Arc<tokio::sync::Semaphore>,
 }
 

@@ -1,7 +1,7 @@
 mod proof_delivery_service;
-mod proof_reduce_service;
 #[cfg(test)]
 mod proof_delivery_service_tests;
+mod proof_reduce_service;
 
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
@@ -88,7 +88,7 @@ async fn run_aggregator(app_args: AppArgs) -> anyhow::Result<()> {
 
     // proof reduce service (process incoming proofs and lighten them)
     let mut pr_service = ProofReduceService::new(rx, bcast_tx.clone());
-    set.spawn(async move { pr_service.serve().await } );
+    set.spawn(async move { pr_service.serve().await });
 
     // proof listening clients
 

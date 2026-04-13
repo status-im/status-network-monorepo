@@ -4,8 +4,8 @@ use tracing::{debug, warn};
 use rln::protocol::deserialize_proof_values;
 use rln::utils::fr_to_bytes_le;
 // internal
-use crate::prover_proto::{RlnAggLightProofReply, RlnProofReply};
 use crate::prover_proto::rln_proof_reply::Resp;
+use crate::prover_proto::{RlnAggLightProofReply, RlnProofReply};
 
 pub struct ProofReduceService {
     pub(crate) receiver: Receiver<RlnProofReply>,
@@ -13,18 +13,18 @@ pub struct ProofReduceService {
 }
 
 impl ProofReduceService {
-
-    pub(crate) fn new(receiver: Receiver<RlnProofReply>, bcast_sender: tokio::sync::broadcast::Sender<RlnAggLightProofReply>) -> Self {
+    pub(crate) fn new(
+        receiver: Receiver<RlnProofReply>,
+        bcast_sender: tokio::sync::broadcast::Sender<RlnAggLightProofReply>,
+    ) -> Self {
         Self {
             receiver,
-            bcast_sender
+            bcast_sender,
         }
     }
 
     pub(crate) async fn serve(&mut self) -> anyhow::Result<()> {
-
         loop {
-
             let res = self.receiver.recv().await;
             if res.is_none() {
                 warn!("ProofReduceService::serve: receiver closed");
@@ -37,12 +37,18 @@ impl ProofReduceService {
 
             let start = std::time::Instant::now();
             if let Err(e) = self.bcast_sender.send(light_proof) {
-                warn!("[Proof reduce service] Client disconnected during send: {}", e);
+                warn!(
+                    "[Proof reduce service] Client disconnected during send: {}",
+                    e
+                );
                 break;
             };
             let _elapsed = start.elapsed();
 
-            debug!("Sent RlnAggLightProofReply in {} secs", _elapsed.as_secs_f64());
+            debug!(
+                "Sent RlnAggLightProofReply in {} secs",
+                _elapsed.as_secs_f64()
+            );
         }
 
         Ok(())
@@ -50,15 +56,12 @@ impl ProofReduceService {
 }
 
 impl TryFrom<RlnProofReply> for RlnAggLightProofReply {
-
     type Error = ();
 
     fn try_from(pr: RlnProofReply) -> Result<Self, Self::Error> {
         match pr.resp {
             Some(r) => match r {
-
                 Resp::Proof(p) => {
-
                     // Note: First 128 bytes are the Proof<Bn254>, no need to deserialize it
                     // let _proof_1_de: Proof<Bn254> =
                     //     CanonicalDeserialize::deserialize_compressed(&proof_1.proof[..128])
@@ -72,8 +75,8 @@ impl TryFrom<RlnProofReply> for RlnAggLightProofReply {
                         external_nullifier: fr_to_bytes_le(&proof_values_de.external_nullifier),
                         epoch: p.epoch,
                     })
-                },
-                Resp::Error(_e) => Err(())
+                }
+                Resp::Error(_e) => Err(()),
             },
             None => Err(()),
         }

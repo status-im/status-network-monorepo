@@ -225,11 +225,7 @@ mod tests {
     }
 
     impl FastMockProverProof {
-        fn new(
-            id: u64,
-            url: String,
-            sender: tokio::sync::mpsc::Sender<RlnProofReply>,
-        ) -> Self {
+        fn new(id: u64, url: String, sender: tokio::sync::mpsc::Sender<RlnProofReply>) -> Self {
             Self {
                 id,
                 url: url.clone(),
@@ -285,7 +281,7 @@ mod tests {
         // tokio::time::sleep(Duration::from_secs(2)).await;
 
         let mut pr_service = ProofReduceService::new(rx, bcast_tx.clone());
-        tokio::spawn(async move { pr_service.serve().await } );
+        tokio::spawn(async move { pr_service.serve().await });
 
         let channel_2 = tonic::transport::Channel::from_shared(format!("http://{}", addr))?
             .connect()
