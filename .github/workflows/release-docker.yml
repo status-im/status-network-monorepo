@@ -7,8 +7,13 @@ on:
 
 env:
   PROVER_IMAGE: 0xnadeem/status-network-rln-prover
+  BESU_IMAGE: 0xnadeem/status-network-besu
+  BESU_PACKAGE_TAG: beta-v6-20260410083640-74d51b7
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # RLN Prover
+  # ---------------------------------------------------------------------------
   build-rln-prover:
     name: Build RLN Prover (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
@@ -54,7 +59,7 @@ jobs:
           retention-days: 1
 
   merge-prover:
-    name: Create multi-arch manifest
+    name: Create Prover multi-arch manifest
     runs-on: ubuntu-latest
     needs: build-rln-prover
     steps:
@@ -86,10 +91,143 @@ jobs:
             -t ${{ env.PROVER_IMAGE }}:latest \
             $(printf '${{ env.PROVER_IMAGE }}@sha256:%s ' *)
 
+  # ---------------------------------------------------------------------------
+  # Status Network Besu (RLN-enabled sequencer)
+  # ---------------------------------------------------------------------------
+  build-besu:
+    name: Build Status Network Besu (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java and Gradle
+        uses: ./.github/actions/setup-java-and-gradle
+
+      - name: Build sequencer plugin
+        env:
+          LINEA_DEV_ALLOW_WARNINGS: "true"
+        run: |
+          ./gradlew \
+            :besu-plugins:linea-sequencer:sequencer:jar \
+            :besu-plugins:linea-sequencer:sequencer:assembleDist \
+            -x test -x checkSpdxHeader -x spotlessJavaCheck -x spotlessGroovyGradleCheck \
+            --no-daemon --configure-on-demand
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: besu-plugins/linea-sequencer/sequencer/src/main/rust/rln_bridge
+
+      - name: Build RLN bridge native library
+        run: |
+          cd besu-plugins/linea-sequencer/sequencer/src/main/rust/rln_bridge
+          cargo build --release
+
+      - name: Prepare Docker context
+        run: |
+          mkdir -p docker-build/{plugins,native}
+
+          # Copy sequencer JAR
+          cp besu-plugins/linea-sequencer/sequencer/build/libs/linea-sequencer-*.jar docker-build/plugins/
+
+          # Copy plugin dependencies (excluding JARs already in the base image)
+          unzip -q besu-plugins/linea-sequencer/sequencer/build/distributions/linea-sequencer-*.zip -d /tmp/seq-deps
+          EXCLUDE='(tuweni|besu-|linea-sequencer-|grpc-netty|grpc-core|grpc-util|grpc-context|grpc-api|netty-|guava-|gson-|error_prone|failureaccess|perfmark|animal-sniffer|jspecify)'
+          for jar in /tmp/seq-deps/*/*.jar; do
+            jarname=$(basename "$jar")
+            if [[ ! "$jarname" =~ $EXCLUDE ]]; then
+              cp "$jar" docker-build/plugins/
+            fi
+          done
+
+          # Copy RLN native library
+          cp besu-plugins/linea-sequencer/sequencer/src/main/rust/rln_bridge/target/release/librln_bridge.so docker-build/native/
+
+          # Copy Dockerfile
+          cp docker/status-network-besu/Dockerfile docker-build/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./docker-build
+          platforms: ${{ matrix.platform }}
+          build-args: BESU_PACKAGE_TAG=${{ env.BESU_PACKAGE_TAG }}
+          outputs: type=image,name=${{ env.BESU_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests/besu
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/besu/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: besu-digest-${{ matrix.runner }}
+          path: /tmp/digests/besu/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge-besu:
+    name: Create Besu multi-arch manifest
+    runs-on: ubuntu-latest
+    needs: build-besu
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests/besu
+          pattern: besu-digest-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract tag
+        id: tag
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Create manifest and push
+        working-directory: /tmp/digests/besu
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.BESU_IMAGE }}:${{ steps.tag.outputs.version }} \
+            -t ${{ env.BESU_IMAGE }}:latest \
+            $(printf '${{ env.BESU_IMAGE }}@sha256:%s ' *)
+
+  # ---------------------------------------------------------------------------
+  # GitHub Release
+  # ---------------------------------------------------------------------------
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: merge-prover
+    needs: [merge-prover, merge-besu]
     permissions:
       contents: write
     steps:
@@ -109,9 +247,10 @@ jobs:
             ## Docker Images
 
             ```
+            docker pull 0xnadeem/status-network-besu:${{ steps.tag.outputs.version }}
             docker pull 0xnadeem/status-network-rln-prover:${{ steps.tag.outputs.version }}
             ```
 
             Multi-arch: linux/amd64 + linux/arm64
 
-            **Note:** The Besu sequencer image (`status-network-besu`) requires manual build via `scripts/build-rln-enabled-sequencer-patched.sh` due to the gasless block fix patch.
+            Base Besu package: `consensys/linea-besu-package:${{ env.BESU_PACKAGE_TAG }}`
