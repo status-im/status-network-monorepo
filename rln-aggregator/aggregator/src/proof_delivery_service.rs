@@ -23,7 +23,7 @@ use crate::prover_proto::rln_aggregator_server::{RlnAggregator, RlnAggregatorSer
 use crate::prover_proto::rln_proof_reply::Resp;
 use crate::prover_proto::{
     RlnAggFilter, RlnAggProof, RlnAggProofError, RlnAggProofReply, RlnProof, RlnProofError,
-    RlnProofReply, rln_agg_proof_reply,
+    RlnProofReply, rln_agg_proof_reply, RlnAggLightProofReply
 };
 
 const DELIVERY_SERVICE_LIMIT_PER_CONNECTION: usize = 16;
@@ -35,7 +35,7 @@ const DELIVERY_SERVICE_HTTP2_MAX_FRAME_SIZE: ByteSize = ByteSize::kib(16);
 
 pub struct ProofDeliveryServer {
     config: ProofDeliveryServerConfig,
-    broadcast_channel: (Sender<RlnProofReply>, Receiver<RlnProofReply>),
+    broadcast_channel: (Sender<RlnAggLightProofReply>, Receiver<RlnAggLightProofReply>),
 }
 
 pub struct ProofDeliveryServerConfig {
@@ -59,7 +59,7 @@ impl Default for ProofDeliveryServerConfig {
 impl ProofDeliveryServer {
     pub(crate) fn new(
         config: ProofDeliveryServerConfig,
-        (tx, rx): (Sender<RlnProofReply>, Receiver<RlnProofReply>),
+        (tx, rx): (Sender<RlnAggLightProofReply>, Receiver<RlnAggLightProofReply>),
     ) -> Self {
         Self {
             config,
@@ -124,13 +124,13 @@ impl ProofDeliveryServer {
 }
 
 struct ProofDeliveryService {
-    broadcast_channel: (Sender<RlnProofReply>, Receiver<RlnProofReply>),
+    broadcast_channel: (Sender<RlnAggLightProofReply>, Receiver<RlnAggLightProofReply>),
     client_connected_limit: Arc<tokio::sync::Semaphore>,
 }
 
 #[tonic::async_trait]
 impl RlnAggregator for ProofDeliveryService {
-    type GetProofsStream = ReceiverStream<Result<RlnAggProofReply, Status>>;
+    type GetProofsStream = ReceiverStream<Result<RlnAggLightProofReply, Status>>;
 
     // #[tracing::instrument(skip(self), err, ret)]
     #[tracing::instrument(skip(self), err)]
@@ -185,7 +185,8 @@ impl RlnAggregator for ProofDeliveryService {
                         match result {
                             Ok(rln_proof_reply) => {
 
-                                let resp = rln_proof_reply.into();
+                                // let resp = rln_proof_reply.into();
+                                let resp = rln_proof_reply;
 
                                 // println!("resp: {:?} - bcast rx2 len: {}", resp, bcast_rx.len());
 
@@ -199,7 +200,7 @@ impl RlnAggregator for ProofDeliveryService {
                                 let _elapsed = start.elapsed();
 
                                 // println!("send in {} nanos", elapsed.as_nanos());
-                                debug!("Sent RlnAggProofReply in {} secs", _elapsed.as_secs_f64());
+                                debug!("Sent RlnAggLightProofReply in {} secs", _elapsed.as_secs_f64());
 
                             },
                             Err(RecvError::Lagged(skipped_msg_count)) => {

@@ -17,6 +17,8 @@ bytesize = "2.3.1"
 rand = "0.10.0"
 tracing.workspace = true
 tracing-subscriber.workspace = true
+rln.workspace = true
+
 [build-dependencies]
 tonic-prost-build.workspace = true
 
