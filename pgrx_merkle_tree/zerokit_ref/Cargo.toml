@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# rln = { version = "0.9.0", default-features = false, features = ["fullmerkletree"] }
-# zerokit_utils = { version = "0.7.0" }
-rln = { git = "https://github.com/vacp2p/zerokit/", default-features = false, features = ["pmtree-ft"], rev = "4ef0d419914c113ec1a46e067a8dfa5ba1420a4b" }
-zerokit_utils = { git = "https://github.com/vacp2p/zerokit/", default-features = false, features = ["pmtree-ft"], rev = "4ef0d419914c113ec1a46e067a8dfa5ba1420a4b" }
+rln = { version = "2.0.1", default-features = false, features = ["fullmerkletree"] }
+zerokit_utils = { version = "1.2.0" }
+# rln = { git = "https://github.com/vacp2p/zerokit/", default-features = false, features = ["pmtree-ft"], rev = "4ef0d419914c113ec1a46e067a8dfa5ba1420a4b" }
+# zerokit_utils = { git = "https://github.com/vacp2p/zerokit/", default-features = false, features = ["pmtree-ft"], rev = "4ef0d419914c113ec1a46e067a8dfa5ba1420a4b" }
