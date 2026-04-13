@@ -105,9 +105,23 @@ impl ProofProcessService {
         if db_entry.seen_proof_count >= self.config.rln_limit {
             info!("Detected too many messages for address: {:?}", sender_addr);
 
+            if db_entry.proof_1.is_none() || db_entry.proof_2.is_none() {
+                // Note: Should never happen (unless rln_limit is less than 2)
+                error!("Db_entry has not enough proofs for slashing...");
+                return Ok(());
+            }
+
+            let proof_1 = db_entry.proof_1.unwrap();
+            let proof_2 = db_entry.proof_2.unwrap();
+
+            if proof_1.external_nullifier != proof_2.external_nullifier {
+                error!("External nullifiers do not match");
+                return Ok(());
+            }
+
             let slashing_data = SlashingData {
-                proof_1: db_entry.proof_1.unwrap(),
-                proof_2: db_entry.proof_2.unwrap(),
+                proof_1,
+                proof_2,
                 sender: sender_addr,
             };
 
@@ -270,14 +284,13 @@ mod tests {
 
         // Tokio task simulating the slashing service
         let handle = tokio::spawn(async move {
-            loop {
-                let proofs = slashing_rx.recv().await;
-                if proofs.is_none() {
-                    break;
-                }
-                let proofs = proofs.unwrap();
-                return Some(proofs);
+
+            let proofs = slashing_rx.recv().await;
+            if proofs.is_none() {
+                return None;
             }
+            let proofs = proofs.unwrap();
+            return Some(proofs);
 
             None
         });
