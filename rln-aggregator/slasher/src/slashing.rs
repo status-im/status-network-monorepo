@@ -142,11 +142,8 @@ mod tests {
         hashers::{hash_to_field_le, poseidon_hash},
         poseidon_tree::PoseidonTree,
         protocol::{
-            RLNProofValues,
-            generate_zk_proof,
-            keygen,
-            proof_values_from_witness,
-            rln_proof_values_to_bytes_le
+            RLNProofValues, generate_zk_proof, keygen, proof_values_from_witness,
+            rln_proof_values_to_bytes_le,
         },
         utils::IdSecret,
     };
