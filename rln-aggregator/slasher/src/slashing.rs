@@ -136,7 +136,6 @@ mod tests {
     use ark_bn254::Fr;
     use ark_serialize::CanonicalSerialize;
     use rln::circuit::graph_from_raw;
-    use rln::prelude::rln_proof_values_to_bytes_le;
     use rln::protocol::RLNWitnessInput;
     use rln::{
         circuit::{Curve, zkey_from_raw},
@@ -147,8 +146,7 @@ mod tests {
             generate_zk_proof,
             keygen,
             proof_values_from_witness,
-            // rln_witness_from_values,
-            // serialize_proof_values,
+            rln_proof_values_to_bytes_le
         },
         utils::IdSecret,
     };
@@ -163,7 +161,7 @@ mod tests {
         if let Err(e) = proof.serialize_compressed(&mut output_buffer) {
             panic!("Proof serialization failed with {:?}", e);
         }
-        if let Err(e) = output_buffer.write_all(&serialize_proof_values(&proof_values)) {
+        if let Err(e) = output_buffer.write_all(&rln_proof_values_to_bytes_le(&proof_values)) {
             panic!("Proof values serialization failed with {:?}", e);
         }
         output_buffer.into_inner()
