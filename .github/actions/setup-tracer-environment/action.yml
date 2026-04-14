@@ -1,17 +1,14 @@
-name: 'Setup Testing Environment'
-description: 'Checkout repository and install what is needed for building / testing'
+name: 'Setup Tracer Environment (build Besu if needed)'
+description: 'Install what is needed for building / testing, and build Besu if needed'
 inputs:
   enable-ssh:
     description: 'Enable ability to ssh into session'
     required: false
-    default: false
-  go-corset:
-    description: 'Setup Go Corset'
+    default: 'false'
+  skip-download-besu-dist:
+    description: 'Skip downloading Besu distribution from public maven'
     required: false
-    default: true
-  github-token:
-    description: 'Github token (needed for downloading corset)'
-    required: false
+    default: 'true'
 
 runs:
   using: 'composite'
@@ -23,19 +20,15 @@ runs:
       - name: Install Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          go-version: '1.23.5'
+          go-version: '1.24.6'
           cache-dependency-path: "**/*.sum"
 
-      - name: Get Submodules
+      - name: Setup Java and Gradle
+        uses: ./.github/actions/setup-java-and-gradle
+
+      - name: Build besu from source (if needed)
         shell: bash
-        run: git submodule update --init --recursive tracer/linea-constraints
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
-        with:
-          java-version: 21
-          distribution: temurin
-
-      - name: Setup Go Corset
-        if: ${{ inputs.go-corset == 'true' }}
-        uses: ./.github/actions/setup-go-corset
+        run: ./gradlew buildAndUpdateBesuVersionInLibsVersions -PskipDownloadBesuDist="$SKIP_DOWNLOAD_BESU_DIST"
+        env:
+          SKIP_DOWNLOAD_BESU_DIST: ${{ inputs.skip-download-besu-dist }}
+          JAVA_OPTS: -Xmx2g

@@ -44,6 +44,10 @@ import org.hyperledger.besu.ethereum.core.Transaction;
 import org.hyperledger.besu.ethereum.mainnet.ProtocolSpec;
 import org.hyperledger.besu.ethereum.referencetests.GeneralStateTestCaseEipSpec;
 import org.hyperledger.besu.ethereum.referencetests.ReferenceTestWorldState;
+import org.hyperledger.besu.ethereum.worldstate.DataStorageConfiguration;
+import org.hyperledger.besu.ethereum.worldstate.ImmutableDataStorageConfiguration;
+import org.hyperledger.besu.ethereum.worldstate.ImmutablePathBasedExtraStorageConfiguration;
+import org.hyperledger.besu.plugin.services.storage.DataStorageFormat;
 import org.junit.jupiter.api.TestInfo;
 
 @Builder
@@ -123,52 +127,51 @@ public class ToyExecutionEnvironmentV2 {
           zkTracerValidator,
           testInfo);
 
-      if (isPostOsaka(tracer.getHub().fork)) {
-        // This is to check that the light counter is really counting more than the full tracer
-        final ZkTracer tracer = this.tracer;
+      final ZkTracer tracer = this.tracer;
 
-        final Map<String, Integer> tracerCount = tracer.getModulesLineCount();
+      final Map<String, Integer> tracerCount = tracer.getModulesLineCount();
 
-        final ToyExecutionEnvironmentV2 copyEnvironment =
-            ToyExecutionEnvironmentV2.builder(chainConfig, testInfo)
-                .transactionProcessingResultValidator(
-                    TransactionProcessingResultValidator.EMPTY_VALIDATOR)
-                .accounts(accounts)
-                .zkTracerValidator(zkTracerValidator)
-                .transactions(transactions)
-                .build();
-        copyEnvironment.runForCounting();
-        final Map<String, Integer> lightCounterCount =
-            copyEnvironment.zkCounter.getModulesLineCount();
+      final ToyExecutionEnvironmentV2 copyEnvironment =
+          ToyExecutionEnvironmentV2.builder(chainConfig, testInfo)
+              .transactionProcessingResultValidator(
+                  TransactionProcessingResultValidator.EMPTY_VALIDATOR)
+              .accounts(accounts)
+              .zkTracerValidator(zkTracerValidator)
+              .transactions(transactions)
+              .build();
+      copyEnvironment.runForCounting();
+      final Map<String, Integer> lightCounterCount =
+          copyEnvironment.zkCounter.getModulesLineCount();
 
-        final List<String> moduleToCheck =
-            copyEnvironment.zkCounter.checkedModules().stream()
-                .map(module -> module.moduleKey().toString())
-                .toList();
+      final List<String> moduleToCheck =
+          copyEnvironment.zkCounter.checkedModules().stream()
+              .map(module -> module.moduleKey().toString())
+              .toList();
 
-        for (String module : moduleToCheck) {
-          checkArgument(
-              tracerCount.get(module) <= lightCounterCount.get(module),
-              "Module "
-                  + module
-                  + " has more lines in full tracer: "
-                  + tracerCount.get(module)
-                  + " than in light counter: "
-                  + lightCounterCount.get(module));
+      for (String module : moduleToCheck) {
+        // TODO: @OlivierBBB we need to fix this
+        checkArgument(
+            tracerCount.get(module) <= lightCounterCount.get(module),
+            "The ZkCounter under counts the "
+                + module
+                + " module: ZkTracer ≡ "
+                + tracerCount.get(module)
+                + " > "
+                + lightCounterCount.get(module)
+                + " ≡ ZkCounter");
 
-          // TODO: how to make it smart ?
+        // TODO: how to make it smart ?
 
-          // Note: we compare to twice the (tracer count +1) to not get exceptions when tracer
-          // module is empty (GAS for SKIP tx for example)
-          // checkArgument(
-          //     lightCounterCount.get(module) <= 2 * (tracerCount.get(module) + 1),
-          //     "Module "
-          //         + module
-          //         + " has more than twice line counts in light tracer: "
-          //         + lightCounterCount.get(module)
-          //         + " than in full counter: "
-          //         + tracerCount.get(module));
-        }
+        // Note: we compare to twice the (tracer count +1) to not get exceptions when tracer
+        // module is empty (GAS for SKIP tx for example)
+        // checkArgument(
+        //     lightCounterCount.get(module) <= 2 * (tracerCount.get(module) + 1),
+        //     "Module "
+        //         + module
+        //         + " has more than twice line counts in light tracer: "
+        //         + lightCounterCount.get(module)
+        //         + " than in full counter: "
+        //         + tracerCount.get(module));
       }
     }
   }
@@ -218,10 +221,19 @@ public class ToyExecutionEnvironmentV2 {
         accounts.stream()
             .collect(
                 Collectors.toMap(
-                    toyAccount -> toyAccount.getAddress().toHexString(),
+                    toyAccount -> toyAccount.getAddress().getBytes().toHexString(),
                     ToyAccount::toAccountMock));
+    final DataStorageConfiguration dataStorageConfiguration =
+        ImmutableDataStorageConfiguration.builder()
+            .dataStorageFormat(DataStorageFormat.BONSAI)
+            .pathBasedExtraStorageConfiguration(
+                ImmutablePathBasedExtraStorageConfiguration.builder()
+                    .parallelStateRootComputationEnabled(false)
+                    .build())
+            .build();
     final ReferenceTestWorldState referenceTestWorldState =
-        ReferenceTestWorldState.create(accountMockMap, protocolSpec.getEvm().getEvmConfiguration());
+        LineaBonsaiReferenceTestWorldState.create(
+            accountMockMap, protocolSpec.getEvm().getEvmConfiguration(), dataStorageConfiguration);
     final BlockHeader blockHeader =
         ExecutionEnvironment.getLineaBlockHeaderBuilder(Optional.empty())
             .number(firstBlockNumber)

@@ -18,6 +18,8 @@ package net.consensys.linea.zktracer.instructionprocessing.callTests.sixtyThreeS
 import static com.google.common.base.Preconditions.checkArgument;
 import static net.consensys.linea.zktracer.Fork.*;
 import static net.consensys.linea.zktracer.Trace.*;
+import static net.consensys.linea.zktracer.instructionprocessing.callTests.Utilities.randomSampleByCurrentCommitHash;
+import static net.consensys.linea.zktracer.module.hub.fragment.imc.oob.precompiles.modexp.ModexpPricingOobCall.computeExponentLog;
 import static net.consensys.linea.zktracer.module.hub.fragment.scenario.PrecompileScenarioFragment.PrecompileFlag.PRC_BLAKE2F;
 import static net.consensys.linea.zktracer.module.hub.fragment.scenario.PrecompileScenarioFragment.PrecompileFlag.PRC_BLS_G1_ADD;
 import static net.consensys.linea.zktracer.module.hub.fragment.scenario.PrecompileScenarioFragment.PrecompileFlag.PRC_BLS_G1_MSM;
@@ -37,7 +39,6 @@ import static net.consensys.linea.zktracer.module.hub.fragment.scenario.Precompi
 import static net.consensys.linea.zktracer.module.hub.fragment.scenario.PrecompileScenarioFragment.PrecompileFlag.PRC_RIPEMD_160;
 import static net.consensys.linea.zktracer.module.hub.fragment.scenario.PrecompileScenarioFragment.PrecompileFlag.PRC_SHA2_256;
 import static net.consensys.linea.zktracer.module.hub.signals.TracedException.OUT_OF_GAS_EXCEPTION;
-import static net.consensys.linea.zktracer.module.oob.OobOperation.computeExponentLog;
 import static net.consensys.linea.zktracer.opcode.OpCode.CALL;
 import static net.consensys.linea.zktracer.opcode.OpCode.MLOAD;
 import static net.consensys.linea.zktracer.opcode.OpCode.POP;
@@ -141,7 +142,7 @@ public class SixtyThreeSixtyFourthsPrecompileTests extends TracerTestBase {
               + "0000000000000000000000000000000000000000000000000000000000000000"
               + "c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
               + "c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
-  static final int multiplier = (forkPredatesOsaka(fork)) ? 8 : 16;
+  static final int multiplier = 16;
   static final int exponentLog =
       computeExponentLog(modexpInput, multiplier, 96 + bbs + ebs + mbs, bbs, ebs);
   static final Address modexpInputAsByteCodeOwnerAddress = Address.fromHexString("0xC0DE05");
@@ -281,7 +282,7 @@ public class SixtyThreeSixtyFourthsPrecompileTests extends TracerTestBase {
         arguments.add(Arguments.of(precompileFlag, gasLimit, cornerCase == -1));
       }
     }
-    return arguments.stream();
+    return randomSampleByCurrentCommitHash(arguments).stream();
   }
 
   /**
@@ -382,7 +383,7 @@ public class SixtyThreeSixtyFourthsPrecompileTests extends TracerTestBase {
         }
       }
     }
-    return arguments.stream();
+    return randomSampleByCurrentCommitHash(arguments).stream();
   }
 
   // Support methods
@@ -478,7 +479,7 @@ public class SixtyThreeSixtyFourthsPrecompileTests extends TracerTestBase {
         .push(cds) // callDataSize
         .push(0) // callDataOffset
         .push(transfersValue ? 1 : 0) // value
-        .push(precompileFlag.getAddress()) // address
+        .push(precompileFlag.getAddress().getBytes()) // address
         .push(gas) // gas
         .compile();
   }

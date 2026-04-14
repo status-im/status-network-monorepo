@@ -13,20 +13,14 @@ concurrency:
 
 jobs:
   run-linea-sequencer-plugins-unit-tests:
-    name: "Linea Sequencer Plugin Unit Tests"
-    runs-on: ubuntu-latest
+    name: "Sequencer Plugin Unit Tests"
+    runs-on: gha-runner-scale-set-ubuntu-22.04-amd64-large
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: Set up Java
-        uses: actions/setup-java@8df1039502a15bceb9433410b1a100fbe190c53b #v4.5.0
-        with:
-          distribution: temurin
-          java-version: 21
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@8379f6a1328ee0e06e2bb424dadb7b159856a326 # 4.4.0
+      - name: Setup Tracer Environment # configures Go, Java, and Gradle
+        uses: ./.github/actions/setup-tracer-environment
 
       - name: spotless
         run: ./gradlew --parallel besu-plugins:linea-sequencer:spotlessCheck
@@ -34,14 +28,8 @@ jobs:
       - name: Build
         run: ./gradlew besu-plugins:linea-sequencer:build
 
-      - name: Upload distribution artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: distributions
-          path: besu-plugins/linea-sequencer/sequencer/build/libs
-
       - name: Run unit tests
-        run: ./gradlew besu-plugins:linea-sequencer:sequencer:test --continue || true
+        run: ./gradlew besu-plugins:linea-sequencer:sequencer:test
 
       - name: Upload test report
         if: always()
@@ -49,7 +37,41 @@ jobs:
         with:
           name: unit-test-report
           path: besu-plugins/linea-sequencer/sequencer/build/reports/tests/test/
+      - name: Upload Jacoco execution data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-linea-sequencer-unit-exec
+          path: |
+            **/build/jacoco/*.exec
+          if-no-files-found: ignore
 
-# NOTE: Acceptance tests are disabled on CI due to resource constraints.
-# They pass locally but fail on GitHub-hosted runners.
-# Run acceptance tests locally: ./gradlew besu-plugins:linea-sequencer:acceptance-tests:acceptanceTests
+  run-linea-sequencer-plugins-acceptance-tests:
+    name: "Sequencer Plugin Acceptance Tests"
+    runs-on: gha-runner-scale-set-ubuntu-22.04-amd64-large
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Tracer Environment
+        uses: ./.github/actions/setup-tracer-environment
+
+      - name: Run acceptance tests
+        run: ./gradlew besu-plugins:linea-sequencer:acceptance-tests:acceptanceTests
+        env:
+          JAVA_OPTS: -Xmx10g -Xms2g
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-test-report
+          path: besu-plugins/linea-sequencer/acceptance-tests/build/reports/tests/
+      - name: Upload Jacoco execution data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-linea-sequencer-acceptance-exec
+          path: |
+            **/build/jacoco/*.exec
+          if-no-files-found: ignore

@@ -1,89 +1,88 @@
-# Status Network
+# Linea zkEVM
 
-<a href="https://x.com/StatusL2">
-  <img src="https://img.shields.io/badge/X-%23000000.svg?style=for-the-badge&logo=X&logoColor=white" alt="X Follow" height="20">
+<a href="https://x.com/LineaBuild">
+  <img src="https://img.shields.io/twitter/follow/LineaBuild?style=for-the-badge" alt="X (formerly Twitter) Follow" height="20">
 </a>
-<a href="https://github.com/status-im/status-network-monorepo/blob/main/LICENSE-APACHE">
+<a href="https://github.com/Consensys/linea-monorepo/blob/main/LICENSE-APACHE">
   <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="Apache 2.0 License" height="20">
 </a>
-<a href="https://github.com/status-im/status-network-monorepo/blob/main/LICENSE-MIT">
+<a href="https://github.com/Consensys/linea-monorepo/blob/main/LICENSE-MIT">
   <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT License" height="20">
 </a>
+<a href="https://codecov.io/gh/Consensys/linea-monorepo">
+  <img src="https://codecov.io/gh/Consensys/linea-monorepo/graph/badge.svg?token=2TM55P0CGJ" alt="Codecov" height="20">
+</a>
 
-This is the principal Status Network repository. 
-On top of the Linea stack, it adds the smart contracts and infrastructure for Status Network's **gasless transaction system** powered by **RLN (Rate Limiting Nullifier) technology of Vac**. 
-The additional Status Network features are optional, configurable using the CLI options (details provided under [Configuration Options](#configuration-options)).
-Open-sourced under the [Apache 2.0](LICENSE-APACHE) and the [MIT](LICENSE-MIT) licenses.
+This is the principal Linea repository. It mainly includes the smart contracts covering Linea's core functions, the prover in charge of generating ZK proofs, the coordinator responsible for multiple orchestrations, and the Postman to execute bridge messages.
 
-## What is Status Network?
+It serves developers by making the Linea tech stack open source under the [Apache 2.0](LICENSE-APACHE) and the [MIT](LICENSE-MIT) licenses.
 
-[Status Network](https://status.network) is the **first natively gasless Ethereum L2**, optimized for social apps and games, featuring sustainable public funding for developers through native yield and DEX fees. Built on the Linea zkEVM stack, it provides high-performance, gas-free transactions while ensuring economic sustainability through a novel funding model and spam prevention technology.
+## What is Linea?
 
-## Gasless Transaction System
+[Linea](https://linea.build) is a developer-ready layer 2 network scaling Ethereum. It's secured with a zero-knowledge rollup, built on lattice-based cryptography, and powered by [Consensys](https://consensys.io).
 
-Status Network introduces **gasless transactions** through a **RLN technology** and **Karma reputation system**. This allows users to submit transactions without paying gas fees while maintaining network security and preventing spam.
+Linea is compatible with the execution clients [Besu](https://github.com/besu-eth/besu/) or [Geth](https://github.com/ethereum/go-ethereum). To run a full node, an execution client is paired with the consensus client [Maru](https://github.com/Consensys/maru).
 
-### How It Works
+## Get started
 
-**Rate Limiting Nullifier**: A cryptographic system that prevents spam by limiting transaction rates through nullifier-based proofs. Implementation can be found [here](https://github.com/vacp2p/zerokit).
+If you already have an understanding of the tech stack, use our [Get Started](docs/get-started.md) guide.
 
-**火 Karma System**: A reputation-based mechanism where users earn Karma soulbound tokens through positive network participation. Users will have different levels of daily gasless transaction quota depending on their Karma amount. Contract code implementation can be found [here](https://github.com/vacp2p/staking-reward-streamer).
+For developers looking to build services locally (such as, the coordinator), see our detailed [Local Development Guide](docs/local-development-guide.md).
 
-**Premium Gas Bypass**: When users exceed their daily gasless transaction quota, they can still submit transactions by paying premium gas fees. The premium gas threshold is configurable and allows users to bypass rate limiting restrictions when needed.
+## Agent Documentation
 
-### Architecture Components
+For AI coding agents and developer tools:
 
-#### Besu Plugin Components
-- [**TxForwarder Transaction Pool Validator**](besu-plugins/linea-sequencer/sequencer/src/main/java/net/consensys/linea/sequencer/txpoolvalidation/validators/RlnProverForwarderValidator.java): Forwards incoming transaction data to the [RLN prover service](https://github.com/vacp2p/status-rln-prover) to generate RLN proofs based on the user Karma
-- [**Modified LineaEstimateGas RPC**](besu-plugins/linea-sequencer/sequencer/src/main/java/net/consensys/linea/rpc/methods/LineaEstimateGas.java): Dynamically provides zero gas or premium gas estimates based on real-time user karma and usage quotas
+- Canonical instructions: [AGENTS.md](AGENTS.md)
+- Claude Code entry point: [CLAUDE.md](CLAUDE.md)
+- GitHub Copilot entry point: [.github/copilot-instructions.md](.github/copilot-instructions.md)
+- Cursor documentation index: [.cursor/rules/documentation.mdc](.cursor/rules/documentation.mdc)
+- Cursor review/rule set: [.cursor/BUGBOT.md](.cursor/BUGBOT.md)
 
-#### Sequencer Components
-- [**RLNVerifier Transaction Pool Validator**](besu-plugins/linea-sequencer/sequencer/src/main/java/net/consensys/linea/sequencer/txpoolvalidation/validators/RlnVerifierValidator.java): Verifies incoming transactions from RPC nodes using RLN proofs received from the prover service
-- [**RLN Bridge**](besu-plugins/linea-sequencer/sequencer/src/main/rust/rln_bridge/src/lib.rs): JNI interface for RLN proof verification, providing high-performance cryptographic verification of rate limiting nullifiers
-- [**Nullifier Tracking**](besu-plugins/linea-sequencer/sequencer/src/main/java/net/consensys/linea/sequencer/txpoolvalidation/shared/NullifierTracker.java): High-performance tracking to prevent double-spending and nullifier reuse
-- [**Deny List Management**](besu-plugins/linea-sequencer/sequencer/src/main/java/net/consensys/linea/sequencer/txpoolvalidation/shared/DenyListManager.java): Shared deny list manager providing single source of truth for deny list state
+## Looking for the Linea code?
 
-#### Configuration Options
+Linea's stack is made up of multiple repositories, these include:
 
-The Status Network RLN validator system can be configured using various CLI options defined in [LineaRlnValidatorCliOptions.java](besu-plugins/linea-sequencer/sequencer/src/main/java/net/consensys/linea/config/LineaRlnValidatorCliOptions.java).
+- This repo, [linea-monorepo](https://github.com/Consensys/linea-monorepo): The main repository for the Linea stack & network
+> Also maintains a set of Linea-Besu plugins for the sequencer and RPC nodes.
+- [linea-besu-upstream](https://github.com/Consensys/linea-besu-upstream/): Besu build configured for Linea
+- [linea-tracer](https://github.com/Consensys/linea-tracer): Linea-Besu plugin which produces the traces that the constraint system applies and that serve as inputs to the prover
+- [linea-constraints](https://github.com/Consensys/linea-constraints): Implementation of the constraint system from the specification
+- [linea-specification](https://github.com/Consensys/linea-specification): Specification of the constraint system defining Linea's zkEVM
 
-- **`--plugin-linea-rln-enabled`**: Enable/disable RLN validation for gasless transactions (default: `false`)
-- **`--plugin-linea-rln-verifying-key`**: Path to the RLN verifying key file (required when RLN is enabled)
-- **`--plugin-linea-rln-proof-service`**: RLN Proof service endpoint in `host:port` format (default: `localhost:50051`)
-- **`--plugin-linea-rln-karma-service`**: Karma service endpoint in `host:port` format (default: `localhost:50052`)
-- **`--plugin-linea-rln-deny-list-path`**: Path to the gasless deny list file (default: `/var/lib/besu/gasless-deny-list.txt`)
+Linea abstracts away the complexity of this technical architecture to allow developers to:
 
-### Troubleshooting
-- If a 0-gas (gasless) transaction is accepted by the RPC but not included, check the sequencer logs for RLN proof cache timeouts or epoch mismatches and ensure `--plugin-linea-rln-epoch-mode=TEST` is used in local demos.
-- If paid transactions fail for “min gas price” or “upfront cost” locally, ensure L2 genesis has `baseFeePerGas=0` and sequencer `min-gas-price=0` in config.
-- Premium gas transactions (gas > configured threshold) bypass RLN validation by design.
+- [Bridge tokens](https://docs.linea.build/developers/guides/bridge)
+- [Deploy a contract](https://docs.linea.build/developers/quickstart/deploy-smart-contract)
+- [Run a node](https://docs.linea.build/developers/guides/run-a-node)
 
-### CI
-- GitHub Actions runs sequencer unit tests (Java 21) with Gradle caching. JNI-dependent RLN native tests are excluded from CI.
+... and more.
 
 ## How to contribute
 
 Contributions are welcome!
 
-### Guidelines for Non-Code and other Trivial Contributions
+### Guidelines for non-code and other trivial contributions
+
 Please keep in mind that we do not accept non-code contributions like fixing comments, typos or some other trivial fixes. Although we appreciate the extra help, managing lots of these small contributions is unfeasible, and puts extra pressure in our continuous delivery systems (running all tests, etc). Feel free to open an issue pointing to any of those errors, and we will batch them into a single change.
 
-1. [Create an issue](https://github.com/status-im/status-network-monorepo/issues)
+1. [Create an issue](https://github.com/Consensys/linea-monorepo/issues)
 > If the proposed update is non-trivial, also tag us for discussion.
-2. Submit the update as a pull request from your [fork of this repo](https://github.com/status-im/status-network-monorepo/fork), and tag us for review.
+2. Submit the update as a pull request from your [fork of this repo](https://github.com/Consensys/linea-monorepo/fork), and tag us for review.
 > Include the issue number in the pull request description and (optionally) in the branch name.
 
-Consider starting with a ["good first issue"](https://github.com/status-im/status-network-monorepo/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
+Consider starting with a ["good first issue"](https://github.com/Consensys/linea-monorepo/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 
 Before contributing, ensure you're familiar with:
 
 - Our [contribution guide](docs/contribute.md)
 - Our [code of conduct](docs/code-of-conduct.md)
-- Our [Security policy](docs/security.md)
+- The [Besu contribution guide](https://wiki.hyperledger.org/display/BESU/Coding+Conventions), for Besu:Linea related contributions
+- Our [security policy](docs/security.md)
 
 ### Useful links
 
-- [Status Network home](https://status.network)
-- [Status Network docs](https://docs.status.network)
-- [Telegram builder's community](https://t.me/statusl2)
-- [X](https://x.com/StatusL2)
+- [Linea docs](https://docs.linea.build) managed from a [public repo](https://github.com/Consensys/doc.linea)
+- [Linea blog](https://linea.mirror.xyz)
+- [Support](https://support.linea.build)
+- [X](https://x.com/LineaBuild)

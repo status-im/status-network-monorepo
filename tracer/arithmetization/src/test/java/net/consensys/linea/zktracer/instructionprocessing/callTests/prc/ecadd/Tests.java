@@ -14,7 +14,7 @@
  */
 package net.consensys.linea.zktracer.instructionprocessing.callTests.prc.ecadd;
 
-import static net.consensys.linea.zktracer.instructionprocessing.callTests.Utilities.randomSampleByDayOfMonth;
+import static net.consensys.linea.zktracer.instructionprocessing.callTests.Utilities.randomSampleByCurrentCommitHash;
 import static net.consensys.linea.zktracer.instructionprocessing.callTests.prc.CodeExecutionMethods.*;
 import static net.consensys.linea.zktracer.instructionprocessing.callTests.prc.GasParameter.COST_MO;
 import static net.consensys.linea.zktracer.instructionprocessing.callTests.prc.ecadd.MemoryContents.WELL_FORMED_POINTS;
@@ -31,13 +31,9 @@ import org.junit.jupiter.params.provider.Arguments;
 
 @Tag("prc-calltests")
 public class Tests extends PrecompileCallTests<CallParameters> {
-  // Set sample size with potential for override.
-  private static final int ECADD_SAMPLE_SIZE =
-      Integer.parseInt(System.getenv().getOrDefault("PRC_CALLTESTS_SAMPLE_SIZE", "1000"));
 
   public static Stream<Arguments> parameterGeneration() {
-    return randomSampleByDayOfMonth(ECADD_SAMPLE_SIZE, ParameterGeneration.parameterGeneration())
-        .stream();
+    return randomSampleByCurrentCommitHash(ParameterGeneration.parameterGeneration()).stream();
   }
 
   /** Non-parametric test to make sure things are working as expected. */

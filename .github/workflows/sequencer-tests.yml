@@ -19,20 +19,21 @@ permissions:
 
 jobs:
   unit:
-    name: Sequencer Unit Tests (JDK 21)
+    name: Sequencer Unit Tests (JDK 25)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: gradle/actions/wrapper-validation@ac638b010cf58a27ee6c972d7336334ccaf61c96
 
-      - name: Set up Java 21 (Temurin)
-        uses: actions/setup-java@8df1039502a15bceb9433410b1a100fbe190c53b
-        with:
-          distribution: temurin
-          java-version: 21
-
-      - name: Setup Gradle cache
-        uses: gradle/actions/setup-gradle@v3
+      # Installs Go 1.24.6, Java 25, Gradle, and runs
+      # `./gradlew buildAndUpdateBesuVersionInLibsVersions` which re-syncs the
+      # `besu` field in gradle/libs.versions.toml with `besuCommit`. Our
+      # pre-commit hook reverts manual `besu` edits, so this CI step is the
+      # canonical place for that sync to happen.
+      - name: Setup Tracer Environment
+        uses: ./.github/actions/setup-tracer-environment
 
       - name: Spotless check
         run: ./gradlew --no-daemon --parallel clean besu-plugins:linea-sequencer:spotlessCheck

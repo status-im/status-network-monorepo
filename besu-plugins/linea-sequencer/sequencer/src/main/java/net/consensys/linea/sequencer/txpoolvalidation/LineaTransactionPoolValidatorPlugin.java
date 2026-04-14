@@ -116,6 +116,7 @@ public class LineaTransactionPoolValidatorPlugin extends AbstractLineaRequiredPl
                   sharedServiceManager,
                   lineaRpcConfiguration().rlnProverForwarderEnabled(),
                   getInvalidTransactionByLineCountCache(),
+                  transactionProfitabilityCalculator,
                   lineaRejectedTxReportingConfiguration.lineaNodeType()));
       transactionPoolValidatorService.registerPluginTransactionValidatorFactory(
           lineaTransactionPoolValidatorFactory.get());
@@ -143,7 +144,8 @@ public class LineaTransactionPoolValidatorPlugin extends AbstractLineaRequiredPl
                 metricsSystem,
                 profitabilityConfiguration(),
                 transactionPoolService,
-                blockchainService);
+                blockchainService,
+                transactionProfitabilityCalculator);
 
         besuEventsService.addBlockAddedListener(
             addedBlockContext -> {

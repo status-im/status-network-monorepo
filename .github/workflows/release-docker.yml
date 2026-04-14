@@ -4,11 +4,28 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker image tag for manual dry-run (e.g. test-rc1). Ignored for tag-triggered runs.'
+        required: true
+        type: string
+        default: 'dryrun'
+      tag_latest:
+        description: 'Also tag images as :latest (leave off for dry-runs)'
+        required: false
+        type: boolean
+        default: false
 
 env:
   PROVER_IMAGE: 0xnadeem/status-network-rln-prover
+  BESU_IMAGE: 0xnadeem/status-network-besu
+  BESU_PACKAGE_TAG: beta-v6-20260410083640-74d51b7
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # RLN Prover
+  # ---------------------------------------------------------------------------
   build-rln-prover:
     name: Build RLN Prover (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
@@ -54,7 +71,7 @@ jobs:
           retention-days: 1
 
   merge-prover:
-    name: Create multi-arch manifest
+    name: Create Prover multi-arch manifest
     runs-on: ubuntu-latest
     needs: build-rln-prover
     steps:
@@ -76,20 +93,203 @@ jobs:
 
       - name: Extract tag
         id: tag
-        run: echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Create manifest and push
         working-directory: /tmp/digests/prover
         run: |
-          docker buildx imagetools create \
-            -t ${{ env.PROVER_IMAGE }}:${{ steps.tag.outputs.version }} \
-            -t ${{ env.PROVER_IMAGE }}:latest \
+          TAGS=(-t "${{ env.PROVER_IMAGE }}:${{ steps.tag.outputs.version }}")
+          if [[ "${GITHUB_REF}" == refs/tags/* || "${{ inputs.tag_latest }}" == "true" ]]; then
+            TAGS+=(-t "${{ env.PROVER_IMAGE }}:latest")
+          fi
+          docker buildx imagetools create "${TAGS[@]}" \
             $(printf '${{ env.PROVER_IMAGE }}@sha256:%s ' *)
 
+  # ---------------------------------------------------------------------------
+  # Status Network Besu (RLN-enabled sequencer)
+  # ---------------------------------------------------------------------------
+  build-besu:
+    name: Build Status Network Besu (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up tracer environment (Go + Java + Gradle + Besu)
+        uses: ./.github/actions/setup-tracer-environment
+
+      - name: Build sequencer plugin
+        env:
+          LINEA_DEV_ALLOW_WARNINGS: "true"
+        run: |
+          ./gradlew \
+            :besu-plugins:linea-sequencer:sequencer:jar \
+            :besu-plugins:linea-sequencer:sequencer:assembleDist \
+            -x test -x checkSpdxHeader -x spotlessJavaCheck -x spotlessGroovyGradleCheck \
+            --no-daemon --configure-on-demand
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: besu-plugins/linea-sequencer/sequencer/src/main/rust/rln_bridge
+
+      - name: Build RLN bridge native library
+        run: |
+          cd besu-plugins/linea-sequencer/sequencer/src/main/rust/rln_bridge
+          cargo build --release
+
+      - name: Prepare Docker context
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p docker-build/plugins docker-build/native
+
+          LIBS_DIR=besu-plugins/linea-sequencer/sequencer/build/libs
+          DIST_DIR=besu-plugins/linea-sequencer/sequencer/build/distributions
+
+          echo "=== Available JARs ==="
+          ls -la "$LIBS_DIR"
+          echo "=== Available distributions ==="
+          ls -la "$DIST_DIR"
+
+          # Copy sequencer JAR (there should be exactly one linea-sequencer-*.jar)
+          JARS=("$LIBS_DIR"/linea-sequencer-*.jar)
+          if [[ ${#JARS[@]} -eq 0 ]]; then
+            echo "ERROR: no linea-sequencer-*.jar found in $LIBS_DIR"; exit 1
+          fi
+          cp "${JARS[0]}" docker-build/plugins/
+          echo "Installed sequencer JAR: $(basename "${JARS[0]}")"
+
+          # Pick the distribution zip that actually contains the JAR + dependency JARs.
+          # The besu-plugin-distribution plugin produces two zips; only one is populated.
+          DIST_ZIP=""
+          for z in "$DIST_DIR"/*.zip; do
+            if unzip -l "$z" 2>/dev/null | grep -qE "\.jar( |$)"; then
+              DIST_ZIP="$z"
+              break
+            fi
+          done
+          if [[ -z "$DIST_ZIP" ]]; then
+            echo "ERROR: no populated distribution zip with jars found in $DIST_DIR"; exit 1
+          fi
+          echo "Using distribution zip: $DIST_ZIP"
+
+          rm -rf /tmp/seq-deps
+          unzip -q "$DIST_ZIP" -d /tmp/seq-deps
+
+          # Install plugin dependencies, excluding JARs already provided by the base image
+          EXCLUDE='(tuweni|besu-|linea-sequencer-|grpc-netty|grpc-core|grpc-util|grpc-context|grpc-api|netty-|guava-|gson-|error_prone|failureaccess|perfmark|animal-sniffer|jspecify)'
+          for jar in /tmp/seq-deps/*/*.jar; do
+            jarname=$(basename "$jar")
+            if [[ ! "$jarname" =~ $EXCLUDE ]]; then
+              cp "$jar" docker-build/plugins/
+            fi
+          done
+
+          # Copy RLN native library
+          cp besu-plugins/linea-sequencer/sequencer/src/main/rust/rln_bridge/target/release/librln_bridge.so docker-build/native/
+
+          # Copy Dockerfile
+          cp docker/status-network-besu/Dockerfile docker-build/
+
+          echo "=== Docker context contents ==="
+          ls -la docker-build/plugins/ docker-build/native/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./docker-build
+          platforms: ${{ matrix.platform }}
+          build-args: BESU_PACKAGE_TAG=${{ env.BESU_PACKAGE_TAG }}
+          outputs: type=image,name=${{ env.BESU_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests/besu
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/besu/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: besu-digest-${{ matrix.runner }}
+          path: /tmp/digests/besu/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge-besu:
+    name: Create Besu multi-arch manifest
+    runs-on: ubuntu-latest
+    needs: build-besu
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests/besu
+          pattern: besu-digest-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract tag
+        id: tag
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create manifest and push
+        working-directory: /tmp/digests/besu
+        run: |
+          TAGS=(-t "${{ env.BESU_IMAGE }}:${{ steps.tag.outputs.version }}")
+          if [[ "${GITHUB_REF}" == refs/tags/* || "${{ inputs.tag_latest }}" == "true" ]]; then
+            TAGS+=(-t "${{ env.BESU_IMAGE }}:latest")
+          fi
+          docker buildx imagetools create "${TAGS[@]}" \
+            $(printf '${{ env.BESU_IMAGE }}@sha256:%s ' *)
+
+  # ---------------------------------------------------------------------------
+  # GitHub Release
+  # ---------------------------------------------------------------------------
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: merge-prover
+    needs: [merge-prover, merge-besu]
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     steps:
@@ -109,9 +309,10 @@ jobs:
             ## Docker Images
 
             ```
+            docker pull 0xnadeem/status-network-besu:${{ steps.tag.outputs.version }}
             docker pull 0xnadeem/status-network-rln-prover:${{ steps.tag.outputs.version }}
             ```
 
             Multi-arch: linux/amd64 + linux/arm64
 
-            **Note:** The Besu sequencer image (`status-network-besu`) requires manual build via `scripts/build-rln-enabled-sequencer-patched.sh` due to the gasless block fix patch.
+            Base Besu package: `consensys/linea-besu-package:${{ env.BESU_PACKAGE_TAG }}`

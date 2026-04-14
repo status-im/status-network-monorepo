@@ -1,7 +1,6 @@
 package net.consensys.linea.jsonrpc.httpserver
 
 import io.vertx.core.AbstractVerticle
-import io.vertx.core.AsyncResult
 import io.vertx.core.Handler
 import io.vertx.core.Promise
 import io.vertx.core.http.HttpServer
@@ -28,22 +27,21 @@ class HttpJsonRpcServer(
 
   override fun start(startPromise: Promise<Void>) {
     val options = HttpServerOptions().setPort(port.toInt()).setReusePort(true)
-    log.debug("creating {} Http server on port {}", port)
+    log.debug("creating http server: name={} port={}", serverName, port)
     httpServer = vertx.createHttpServer(options)
     httpServer.requestHandler(buildRouter())
-    httpServer.listen { res: AsyncResult<HttpServer> ->
-      if (res.succeeded()) {
+    httpServer.listen()
+      .onSuccess { httpServer ->
         log.info(
-          "{} http server started and listening on port {}",
+          "http server started: name={} listening port={}",
           serverName,
-          res.result().actualPort(),
+          httpServer.actualPort(),
         )
         startPromise.complete()
-      } else {
-        log.error("error creating {} http server: {}", serverName, res.cause())
-        startPromise.fail(res.cause())
+      }.onFailure { th ->
+        log.error("error creating http server: name={} errorMessage={}", serverName, th.message, th)
+        startPromise.fail(th)
       }
-    }
   }
 
   private fun buildRouter(): Router {
@@ -53,7 +51,14 @@ class HttpJsonRpcServer(
   }
 
   override fun stop(endFuture: Promise<Void>) {
-    httpServer.close(endFuture)
-    super.stop(endFuture)
+    httpServer
+      .close()
+      .onSuccess {
+        super.stop(endFuture)
+      }
+      .onFailure { th ->
+        log.error("error closing http server: name={} errorMessage={}", serverName, th.message, th)
+        endFuture.fail(th)
+      }
   }
 }

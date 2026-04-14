@@ -44,6 +44,8 @@ import org.slf4j.LoggerFactory;
  * <p>All queries go directly to the prover via gRPC. When gRPC is unavailable, the manager fails
  * open (isDenied returns false) to avoid blocking transactions.
  */
+@SuppressWarnings(
+    "deprecation") // BytesHolder.toHexString() deprecated in besu 26.3; migration pending
 public class DenyListManager implements Closeable {
   private static final Logger LOG = LoggerFactory.getLogger(DenyListManager.class);
 
@@ -110,7 +112,7 @@ public class DenyListManager implements Closeable {
    * @return The Proto Address with the 20-byte value
    */
   private static Address toProtoAddress(org.hyperledger.besu.datatypes.Address address) {
-    return Address.newBuilder().setValue(ByteString.copyFrom(address.toArrayUnsafe())).build();
+    return Address.newBuilder().setValue(ByteString.copyFrom(address.getBytes().toArray())).build();
   }
 
   /** Initializes the gRPC client connection. */

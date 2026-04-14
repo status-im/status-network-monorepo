@@ -61,10 +61,6 @@ class JsonRpcMessageProcessor(
     override val name: String = "jsonrpc"
   },
 ) : JsonRpcMessageHandler {
-  init {
-    DatabindCodec.mapper().registerKotlinModule()
-  }
-
   override fun invoke(user: User?, messageJsonStr: String): Future<String> =
     handleAndMeasureRequestProcessing(user, messageJsonStr)
 
@@ -100,7 +96,7 @@ class JsonRpcMessageProcessor(
       }
     log.trace(json)
     val isBulkRequest: Boolean = json is JsonArray
-    val jsonArray = if (isBulkRequest) json as JsonArray else JsonArray().add(json)
+    val jsonArray = if (isBulkRequest) json else JsonArray().add(json)
     val requestParsingResults: List<Result<Pair<JsonRpcRequest, JsonObject>, JsonRpcErrorResponse>> =
       jsonArray.map(::measureRequestParsing)
 
@@ -167,7 +163,7 @@ class JsonRpcMessageProcessor(
     val serializedResponses =
       executionFutures.map { future -> future.map(this::encodeAndMeasureResponse) }
 
-    return Future.all(serializedResponses)
+    return Future.all<Any>(serializedResponses)
       .transform { ar: AsyncResult<CompositeFuture> ->
         val responses = ar.result().list<String>()
         val finalResponseJsonStr =
@@ -278,9 +274,10 @@ class JsonRpcMessageProcessor(
   }
 
   companion object {
-    // init {
-    //   DatabindCodec.mapper().enable(SerializationFeature.INDENT_OUTPUT)
-    // }
+    init {
+      DatabindCodec.mapper().registerKotlinModule()
+    }
+
     fun parseRequest(json: Any): Result<Pair<JsonRpcRequest, JsonObject>, JsonRpcErrorResponse> {
       try {
         json as JsonObject

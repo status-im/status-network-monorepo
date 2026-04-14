@@ -31,27 +31,23 @@ instance:
 ## Features
 
 - **Merkle Tree-Based Distribution:**
-
   - Uses cryptographic Merkle proofs to verify claim eligibility.
   - Highly gas-efficient - only the claimer pays for verification.
   - Supports large-scale distributions without excessive on-chain data.
 
 - **Flexible Merkle Root Updates:**
-
   - Configurable at deployment: allow updates or single-use only.
   - When updates are allowed, teams can refresh the Merkle root to add new claimants.
   - Epoch-based claim tracking prevents double-claiming across root updates.
   - Updates require contract to be paused to prevent front-running.
 
 - **Automatic Delegation:**
-
   - Supports optional delegation of voting power on first claim.
   - Can specify a default delegatee address at deployment.
   - Uses EIP-712 signatures for gasless delegation.
   - Only delegates if the claimer has no prior Karma balance.
 
 - **Pausable Operations:**
-
   - Owner can pause claiming to prepare for Merkle root updates.
   - Prevents front-running when transitioning between epochs.
   - Provides safety mechanism for emergency situations.
@@ -68,7 +64,6 @@ instance:
 When an application team deploys an airdrop instance:
 
 1. **Deployment**: Status deploys the KarmaAirdrop contract instances with:
-
    - The Karma token address
    - The owner address (typically the app team's multisig)
    - Whether Merkle root updates are allowed
@@ -85,7 +80,6 @@ For airdrop instances that allow updates, teams can refresh the eligible claiman
 1. **Pause**: The owner pauses the contract to prevent claims during the transition.
 
 2. **Update**: The owner calls `setMerkleRoot()` with the new Merkle root:
-
    - The epoch counter increments
    - A new claim bitmap is created for the new epoch
    - Previous epoch claims remain tracked but separate

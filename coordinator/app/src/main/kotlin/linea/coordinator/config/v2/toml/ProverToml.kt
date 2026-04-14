@@ -6,17 +6,19 @@ import net.consensys.zkevm.coordinator.clients.prover.ProversConfig
 import java.nio.file.Path
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 data class ProverToml(
-  val version: String,
   val fsInprogressRequestWritingSuffix: String = ".inprogress_coordinator_writing",
   val fsInprogressProvingSuffixPattern: String = "\\.inprogress\\.prover.*",
   val fsPollingInterval: Duration = 15.seconds,
   val fsPollingTimeout: Duration = Duration.INFINITE,
   val execution: ProverDirectoriesToml,
   val blobCompression: ProverDirectoriesToml,
+  val invalidity: ProverDirectoriesToml? = null,
   val proofAggregation: ProverDirectoriesToml,
   val switchBlockNumberInclusive: ULong? = null,
+  val switchBlockTimestamp: Instant? = null,
   val new: ProverToml? = null,
   val enableRequestFilesCleanup: Boolean = false,
 ) {
@@ -26,6 +28,11 @@ data class ProverToml(
   )
 
   fun reified(): ProversConfig {
+    val mergedSwitchBlockNumberInclusive = switchBlockNumberInclusive ?: new?.switchBlockNumberInclusive
+    val mergedSwitchBlockTimestamp = switchBlockTimestamp ?: new?.switchBlockTimestamp
+    require(!(mergedSwitchBlockNumberInclusive != null && mergedSwitchBlockTimestamp != null)) {
+      "Only one of switchBlockNumberInclusive and switchBlockTimestamp may be set in [prover] config"
+    }
     return ProversConfig(
       proverA =
       ProverConfig(
@@ -47,6 +54,16 @@ data class ProverToml(
           pollingInterval = this.fsPollingInterval,
           pollingTimeout = this.fsPollingTimeout,
         ),
+        invalidity = this.invalidity?.let {
+          FileBasedProverConfig(
+            requestsDirectory = Path.of(this.invalidity.fsRequestsDirectory),
+            responsesDirectory = Path.of(this.invalidity.fsResponsesDirectory),
+            inprogressProvingSuffixPattern = this.fsInprogressProvingSuffixPattern,
+            inprogressRequestWritingSuffix = this.fsInprogressRequestWritingSuffix,
+            pollingInterval = this.fsPollingInterval,
+            pollingTimeout = this.fsPollingTimeout,
+          )
+        },
         proofAggregation =
         FileBasedProverConfig(
           requestsDirectory = Path.of(this.proofAggregation.fsRequestsDirectory),
@@ -57,7 +74,8 @@ data class ProverToml(
           pollingTimeout = this.fsPollingTimeout,
         ),
       ),
-      switchBlockNumberInclusive = this.switchBlockNumberInclusive ?: this.new?.switchBlockNumberInclusive,
+      switchBlockNumberInclusive = mergedSwitchBlockNumberInclusive,
+      switchBlockTimestamp = mergedSwitchBlockTimestamp,
       proverB =
       this.new?.let { newProverConfig ->
         ProverConfig(
@@ -79,6 +97,16 @@ data class ProverToml(
             pollingInterval = newProverConfig.fsPollingInterval,
             pollingTimeout = newProverConfig.fsPollingTimeout,
           ),
+          invalidity = newProverConfig.invalidity?.let {
+            FileBasedProverConfig(
+              requestsDirectory = Path.of(newProverConfig.invalidity.fsRequestsDirectory),
+              responsesDirectory = Path.of(newProverConfig.invalidity.fsResponsesDirectory),
+              inprogressProvingSuffixPattern = newProverConfig.fsInprogressProvingSuffixPattern,
+              inprogressRequestWritingSuffix = newProverConfig.fsInprogressRequestWritingSuffix,
+              pollingInterval = newProverConfig.fsPollingInterval,
+              pollingTimeout = newProverConfig.fsPollingTimeout,
+            )
+          },
           proofAggregation =
           FileBasedProverConfig(
             requestsDirectory = Path.of(newProverConfig.proofAggregation.fsRequestsDirectory),

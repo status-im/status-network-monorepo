@@ -2,8 +2,8 @@ package net.consensys.zkevm.ethereum.coordination.proofcreation
 
 import build.linea.clients.GetZkEVMStateMerkleProofResponse
 import com.fasterxml.jackson.databind.node.ArrayNode
-import linea.contrat.events.createL2RollingHashUpdatedEthLogV1
-import linea.contrat.events.createMessageSentEthLogV1
+import linea.contract.events.createL2RollingHashUpdatedEthLogV1
+import linea.contract.events.createMessageSentEthLogV1
 import linea.domain.createBlock
 import linea.ethapi.FakeEthApiClient
 import linea.kotlin.ByteArrayExt
@@ -11,12 +11,12 @@ import linea.kotlin.encodeHex
 import linea.log4j.configureLoggers
 import net.consensys.linea.traces.fakeTracesCountersV2
 import net.consensys.zkevm.coordinator.clients.BatchExecutionProofRequestV1
-import net.consensys.zkevm.coordinator.clients.BatchExecutionProofResponse
 import net.consensys.zkevm.coordinator.clients.ExecutionProverClientV2
 import net.consensys.zkevm.coordinator.clients.GenerateTracesResponse
 import net.consensys.zkevm.domain.BlocksConflation
 import net.consensys.zkevm.domain.ConflationCalculationResult
 import net.consensys.zkevm.domain.ConflationTrigger
+import net.consensys.zkevm.domain.ExecutionProofIndex
 import net.consensys.zkevm.ethereum.coordination.conflation.BlocksTracesConflated
 import org.apache.logging.log4j.Level
 import org.assertj.core.api.Assertions.assertThat
@@ -83,18 +83,19 @@ class ZkProofCreationCoordinatorImplTest {
         tracesEngineVersion = "1.0.0",
       )
 
-    whenever(executionProverClient.requestProof(any()))
+    whenever(executionProverClient.createProofRequest(any()))
       .thenReturn(
         SafeFuture.completedFuture(
-          BatchExecutionProofResponse(
+          ExecutionProofIndex(
             startBlockNumber = 123UL,
             endBlockNumber = 124UL,
+            startBlockTimestamp = block1.headerSummary.timestamp,
           ),
         ),
       )
 
-    val batch =
-      zkProofCreationCoordinator.createZkProof(
+    val proofIndex =
+      zkProofCreationCoordinator.createZkProofRequest(
         blocksConflation =
         BlocksConflation(
           blocks = listOf(block1, block2),
@@ -113,10 +114,10 @@ class ZkProofCreationCoordinatorImplTest {
         ),
       ).get()
 
-    assertThat(batch.startBlockNumber).isEqualTo(123UL)
-    assertThat(batch.endBlockNumber).isEqualTo(124UL)
+    assertThat(proofIndex.startBlockNumber).isEqualTo(123UL)
+    assertThat(proofIndex.endBlockNumber).isEqualTo(124UL)
 
-    verify(executionProverClient).requestProof(
+    verify(executionProverClient).createProofRequest(
       BatchExecutionProofRequestV1(
         blocks = listOf(block1, block2),
         tracesResponse = generateTracesResponse,

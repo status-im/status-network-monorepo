@@ -1,7 +1,6 @@
 package net.consensys.zkevm.coordinator.blockcreation
 
 import io.vertx.core.Vertx
-import kotlinx.datetime.Instant
 import linea.domain.Block
 import linea.domain.BlockParameter.Companion.toBlockParameter
 import linea.ethapi.EthApiBlockClient
@@ -19,13 +18,14 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
+import kotlin.time.Instant
 
 class BlockCreationMonitor(
   private val vertx: Vertx,
   private val ethApi: EthApiBlockClient,
   private val startingBlockNumberExclusive: Long,
   private val blockCreationListener: BlockCreationListener,
-  private val lastProvenBlockNumberProviderAsync: LastProvenBlockNumberProviderAsync,
+  private val lastProvenBlockNumberProviderSync: LastProvenBlockNumberProviderSync,
   private val config: Config,
   private val log: Logger = LogManager.getLogger(BlockCreationMonitor::class.java),
 ) : VertxPeriodicPollingService(
@@ -101,8 +101,8 @@ class BlockCreationMonitor(
 
   override fun action(): SafeFuture<*> {
     log.trace("tick start: nexBlockNumberToFetch={}", nexBlockNumberToFetch)
-    return lastProvenBlockNumberProviderAsync.getLastProvenBlockNumber()
-      .thenCompose { lastProvenBlockNumber ->
+    return lastProvenBlockNumberProviderSync.getLastKnownProvenBlockNumber()
+      .let { lastProvenBlockNumber ->
         if (!nextBlockNumberWithinLimit(lastProvenBlockNumber)) {
           log.warn(
             "Gap between highest consecutive proven block and L2 block is too big: lastProvenBlock={} " +
@@ -153,8 +153,8 @@ class BlockCreationMonitor(
                 } else {
                   reorgDetected.set(true)
                   log.error(
-                    "Shooting down conflation poller, " +
-                      "chain reorg detected: block { blockNumber={} hash={} parentHash={} } should have parentHash={}",
+                    "Shooting down conflation poller, chain reorg detected: " +
+                      "block { blockNumber={} hash={} parentHash={} } should have parentHash={}",
                     block.number,
                     block.hash.encodeHex(),
                     block.parentHash.encodeHex(),

@@ -16,8 +16,8 @@
 package net.consensys.linea.zktracer.module.hub.fragment.storage;
 
 import static net.consensys.linea.zktracer.module.hub.fragment.storage.StorageFragmentPurpose.*;
-import static net.consensys.linea.zktracer.types.AddressUtils.highPart;
-import static net.consensys.linea.zktracer.types.AddressUtils.lowPart;
+import static net.consensys.linea.zktracer.types.AddressUtils.hiPart;
+import static net.consensys.linea.zktracer.types.AddressUtils.loPart;
 
 import lombok.Getter;
 import net.consensys.linea.zktracer.Trace;
@@ -87,12 +87,12 @@ public final class StorageFragment implements TraceFragment, PostBlockDefer {
   }
 
   public Trace.Hub trace(Trace.Hub trace) {
-    domSubStampsSubFragment.trace(trace);
+    domSubStampsSubFragment.traceHub(trace);
 
     return trace
         .peekAtStorage(true)
-        .pStorageAddressHi(highPart(storageSlotIdentifier.getAddress()))
-        .pStorageAddressLo(lowPart(storageSlotIdentifier.getAddress()))
+        .pStorageAddressHi(hiPart(storageSlotIdentifier.getAddress()))
+        .pStorageAddressLo(loPart(storageSlotIdentifier.getAddress()))
         .pStorageDeploymentNumber(storageSlotIdentifier.getDeploymentNumber())
         .pStorageStorageKeyHi(EWord.of(storageSlotIdentifier.getStorageKey()).hi())
         .pStorageStorageKeyLo(EWord.of(storageSlotIdentifier.getStorageKey()).lo())

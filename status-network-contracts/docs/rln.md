@@ -26,31 +26,26 @@ to slash them through a commit-reveal scheme that prevents front-running attacks
 ## Features
 
 - **Identity Registry:**
-
   - Maintains a registry of identity commitments.
   - Registrations are sequential and tracked with unique indices.
   - Prevents duplicate registrations of the same identity commitment.
   - Supports privacy by storing only cryptographic commitments, not actual identities.
 
 - **Cryptographic Foundation:**
-
   - Uses the Poseidon hash function to derive identity commitments from private keys.
 
 - **Commit-Reveal Slashing:**
-
   - Two-step slashing mechanism prevents front-running attacks.
   - Callers commit to a slash operation with a cryptographic hash.
   - Reveals must occur after a configurable reveal window, enforcing time-lock constraints.
   - Subsequent slashes on the same account are queued and scheduled for future reveal windows.
 
 - **Reveal Window Management:**
-
   - Configurable reveal window duration (default 1 hour, range 1 second to 1 day).
   - Multiple commits for the same account are automatically queued.
   - System tracks when the last reveal window started for each account.
 
 - **Karma Token Integration:**
-
   - Integrates with the Karma contract to enforce economic penalties for violations.
   - Slashing burns a percentage of the user's total Karma balance (both actual and virtual tokens).
   - [Slashing rewards](./karma.md#slashing) are minted to a recipient specified as parameter.

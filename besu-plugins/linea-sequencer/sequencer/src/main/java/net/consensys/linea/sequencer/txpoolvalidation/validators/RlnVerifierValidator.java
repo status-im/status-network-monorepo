@@ -98,6 +98,8 @@ import org.slf4j.LoggerFactory;
  * @author Status Network Development Team
  * @since 1.0
  */
+@SuppressWarnings(
+    "deprecation") // BytesHolder.toHexString() deprecated in besu 26.3; migration pending
 public class RlnVerifierValidator implements PluginTransactionPoolValidator, Closeable {
   private static final Logger LOG = LoggerFactory.getLogger(RlnVerifierValidator.class);
 
@@ -837,7 +839,7 @@ public class RlnVerifierValidator implements PluginTransactionPoolValidator, Clo
     LOG.debug("RLN proof found in cache for txHash: {}", txHashString);
 
     // Verify sender-proof binding: the proof must be for this sender
-    if (!java.util.Arrays.equals(proof.senderBytes(), sender.toArrayUnsafe())) {
+    if (!java.util.Arrays.equals(proof.senderBytes(), sender.getBytes().toArray())) {
       LOG.error(
           "SECURITY VIOLATION: RLN proof sender mismatch for tx {}. Expected: {}, Proof sender: {}",
           txHashString,

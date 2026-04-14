@@ -14,13 +14,12 @@
  */
 package net.consensys.linea.zktracer.precompiles.osakaModexpTests;
 
-import static net.consensys.linea.zktracer.Fork.forkPredatesOsaka;
 import static net.consensys.linea.zktracer.TraceOsaka.EIP_7823_MODEXP_UPPER_BYTE_SIZE_BOUND;
+import static net.consensys.linea.zktracer.instructionprocessing.callTests.Utilities.randomSampleByCurrentCommitHash;
 import static net.consensys.linea.zktracer.opcode.OpCode.*;
 import static net.consensys.linea.zktracer.precompiles.osakaModexpTests.XbsValueType.GIBBERISH;
 import static net.consensys.linea.zktracer.precompiles.osakaModexpTests.XbsValueType.getListOfInputs;
 
-import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -30,20 +29,16 @@ import org.apache.tuweni.bytes.Bytes;
 import org.hyperledger.besu.crypto.KeyPair;
 import org.hyperledger.besu.crypto.SECP256K1;
 import org.hyperledger.besu.datatypes.Address;
-import org.hyperledger.besu.datatypes.Hash;
 import org.hyperledger.besu.datatypes.Wei;
 import org.hyperledger.besu.ethereum.core.Transaction;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 public class XbsLimitsTests extends TracerTestBase {
-
   final KeyPair keyPair = new SECP256K1().generateKeyPair();
-  final Address senderAddress =
-      Address.extract(Hash.hash(keyPair.getPublicKey().getEncodedBytes()));
+  final Address senderAddress = Address.extract(keyPair.getPublicKey());
 
   final ToyAccount senderAccount =
       ToyAccount.builder().balance(Wei.fromEth(1900)).nonce(420).address(senderAddress).build();
@@ -80,21 +75,10 @@ public class XbsLimitsTests extends TracerTestBase {
           .address(Address.fromHexString("11223344aaaaffff000000000000000000000001"));
 
   @ParameterizedTest
-  @MethodSource("modexpXbsLimitTestsSource")
+  @MethodSource("sampleModexpXbsLimitTestsSource")
   public void modexpXbsLimitTests(
       XbsValueType.BbsEbsMbsScenario scenario, String bbsEbsMbsString, TestInfo testInfo) {
 
-    if (forkPredatesOsaka(fork)) return;
-    body(scenario, bbsEbsMbsString, testInfo);
-  }
-
-  @Tag("nightly")
-  @ParameterizedTest
-  @MethodSource("modexpXbsLimitsTestsNighlySource")
-  public void modexpXbsLimitTestsNightly(
-      XbsValueType.BbsEbsMbsScenario scenario, String bbsEbsMbsString, TestInfo testInfo) {
-
-    if (forkPredatesOsaka(fork)) return;
     body(scenario, bbsEbsMbsString, testInfo);
   }
 
@@ -139,8 +123,12 @@ public class XbsLimitsTests extends TracerTestBase {
                                                       bbsType, ebsType, mbsType))))))
           .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 
-  static Stream<Arguments> modexpXbsLimitsTestsNighlySource() {
+  static Stream<Arguments> sampleModexpXbsLimitTestsSource() {
+    List<Arguments> arguments = modexpXbsLimitsTestsSource();
+    return randomSampleByCurrentCommitHash(arguments).stream();
+  }
 
+  static List<Arguments> modexpXbsLimitsTestsSource() {
     List<Arguments> arguments = new ArrayList<>();
     for (Map.Entry<XbsValueType.BbsEbsMbsScenario, List<String>> entry : allParameters.entrySet()) {
       XbsValueType.BbsEbsMbsScenario scenario = entry.getKey();
@@ -151,13 +139,7 @@ public class XbsLimitsTests extends TracerTestBase {
       }
     }
 
-    return arguments.stream();
-  }
-
-  static Stream<Arguments> modexpXbsLimitTestsSource() {
-    List<Arguments> arguments = new ArrayList<>(modexpXbsLimitsTestsNighlySource().toList());
-    Collections.shuffle(arguments, new Random(LocalDate.now().toEpochDay()));
-    return arguments.stream().limit(arguments.size() / 40); // Execute 2.5 % of the tests
+    return arguments;
   }
 
   static List<String> getParameters(XbsValueType.BbsEbsMbsScenario bbsEbsMbsScenario) {

@@ -240,7 +240,7 @@ public class NullifierTracker implements Closeable {
     // Cold path: Check and record in database via gRPC
     if (blockingStub != null && !isCircuitBreakerOpen()) {
       try {
-        byte[] nullifierBytes = Bytes.fromHexString(normalizedNullifier).toArrayUnsafe();
+        byte[] nullifierBytes = Bytes.fromHexString(normalizedNullifier).toArray();
         long epoch = parseEpoch(normalizedEpoch);
 
         CheckAndRecordNullifierRequest request =

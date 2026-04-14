@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Building RLN-Enabled Sequencer"
+echo "Building RLN-Enabled Status Network Besu"
 
 # Colors for output
 RED='\033[0;31m'
@@ -15,59 +15,85 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 LINEA_SEQUENCER_DIR="${REPO_ROOT}/besu-plugins/linea-sequencer"
 STATUS_RLN_PROVER_DIR="${REPO_ROOT}/rln-prover"
-CUSTOM_BESU_DIR="${REPO_ROOT}/custom-besu-minimal"
+CUSTOM_BESU_DIR="${REPO_ROOT}/custom-besu-build"
 
-echo -e "${BLUE}📁 Working directories:${NC}"
-echo -e "  Script: ${SCRIPT_DIR}"
+echo -e "${BLUE}Working directories:${NC}"
 echo -e "  Repo Root: ${REPO_ROOT}"
 echo -e "  Sequencer: ${LINEA_SEQUENCER_DIR}"
 echo -e "  RLN Prover: ${STATUS_RLN_PROVER_DIR}"
-echo -e "  Custom Besu: ${CUSTOM_BESU_DIR}"
 
 # Use the exact same image version as the official Linea setup
-BESU_PACKAGE_TAG="beta-v4.4-rc7-20251215105212-1b78d76"
+BESU_PACKAGE_TAG="beta-v6-20260410083640-74d51b7"
 BESU_BASE_IMAGE="consensys/linea-besu-package:${BESU_PACKAGE_TAG}"
 
 # Build options
 BUILD_PROVER=${BUILD_PROVER:-false}
+BUILD_POSTGRES=${BUILD_POSTGRES:-false}
 RESTART_SERVICES=${RESTART_SERVICES:-false}
+MULTI_ARCH=${MULTI_ARCH:-false}
 
-# Publish options (can be overridden by flags or env)
+# Publish options
 PUSH_IMAGES=${PUSH_IMAGES:-false}
-REGISTRY=${REGISTRY:-}
+REGISTRY=${REGISTRY:-docker.io}
 NAMESPACE=${NAMESPACE:-}
-BESU_IMAGE_NAME=${BESU_IMAGE_NAME:-linea-besu-minimal-rln}
-RLN_PROVER_IMAGE_NAME=${RLN_PROVER_IMAGE_NAME:-status-rln-prover}
+BESU_IMAGE_NAME=${BESU_IMAGE_NAME:-status-network-besu}
+RLN_PROVER_IMAGE_NAME=${RLN_PROVER_IMAGE_NAME:-status-network-rln-prover}
+POSTGRES_IMAGE_NAME=${POSTGRES_IMAGE_NAME:-status-network-postgres}
+IMAGE_TAG=${IMAGE_TAG:-}
 IMAGE_TAG_SUFFIX=${IMAGE_TAG_SUFFIX:-}
 
 print_usage() {
     cat << USAGE
 Usage: $(basename "$0") [options]
 
+Builds the RLN-enabled Status Network Besu image.
+Extracts the official Linea Besu package, replaces the sequencer plugin with
+our custom RLN-enabled version, and adds the RLN native bridge library.
+
+Base Image: ${BESU_BASE_IMAGE}
+
 Options:
-  --all                        Build everything (Besu + RLN Prover) - default: Besu only
-  --with-prover                Same as --all
+  --all                        Build everything (Besu + RLN Prover + Postgres)
+  --with-prover                Also build the RLN Prover image
+  --with-postgres              Also build the custom PostgreSQL image (pg_merkle_tree)
   --restart                    Restart services after build
-  --push                       Push images to a registry after build (default: ${PUSH_IMAGES})
-  --registry <host>            Registry host (e.g. ghcr.io, docker.io)
-  --namespace <ns>             Namespace/org (e.g. status-im)
-  --besu-name <name>           Besu image repository name (default: ${BESU_IMAGE_NAME})
-  --prover-name <name>         RLN prover image repository name (default: ${RLN_PROVER_IMAGE_NAME})
-  --tag-suffix <suffix>        Optional tag suffix to append after timestamp (e.g. -dev)
+  --multi-arch                 Build multi-arch images (linux/amd64 + linux/arm64)
+  --push                       Push images to a registry after build
+  --registry <host>            Registry host (default: docker.io)
+  --namespace <ns>             Namespace/org (e.g. 0xnadeem, statusnetwork)
+  --besu-name <name>           Besu image name (default: ${BESU_IMAGE_NAME})
+  --prover-name <name>         RLN prover image name (default: ${RLN_PROVER_IMAGE_NAME})
+  --postgres-name <name>       Postgres image name (default: ${POSTGRES_IMAGE_NAME})
+  --tag <tag>                  Image tag (e.g. v2.0.0) - overrides auto-generated tag
+  --tag-suffix <suffix>        Optional suffix appended to auto-generated tag
   -h, --help                   Show this help
 
+Examples:
+  # Build Besu only (local ARM64)
+  $(basename "$0")
+
+  # Build and push all images to Docker Hub
+  $(basename "$0") --all --multi-arch --push --namespace 0xnadeem --tag v2.0.0
+
 Environment vars:
-  BUILD_PROVER, PUSH_IMAGES, REGISTRY, NAMESPACE, BESU_IMAGE_NAME, RLN_PROVER_IMAGE_NAME, IMAGE_TAG_SUFFIX
+  BUILD_PROVER, BUILD_POSTGRES, PUSH_IMAGES, MULTI_ARCH, REGISTRY, NAMESPACE,
+  BESU_IMAGE_NAME, RLN_PROVER_IMAGE_NAME, POSTGRES_IMAGE_NAME, IMAGE_TAG, IMAGE_TAG_SUFFIX
 USAGE
 }
 
-# Simple args parser
+# Parse arguments
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --all|--with-prover)
+        --all)
+            BUILD_PROVER=true; BUILD_POSTGRES=true; shift ;;
+        --with-prover)
             BUILD_PROVER=true; shift ;;
+        --with-postgres)
+            BUILD_POSTGRES=true; shift ;;
         --restart)
             RESTART_SERVICES=true; shift ;;
+        --multi-arch)
+            MULTI_ARCH=true; shift ;;
         --push)
             PUSH_IMAGES=true; shift ;;
         --registry)
@@ -78,6 +104,10 @@ while [[ $# -gt 0 ]]; do
             BESU_IMAGE_NAME="$2"; shift 2 ;;
         --prover-name)
             RLN_PROVER_IMAGE_NAME="$2"; shift 2 ;;
+        --postgres-name)
+            POSTGRES_IMAGE_NAME="$2"; shift 2 ;;
+        --tag)
+            IMAGE_TAG="$2"; shift 2 ;;
         --tag-suffix)
             IMAGE_TAG_SUFFIX="$2"; shift 2 ;;
         -h|--help)
@@ -87,373 +117,368 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# If pushing is requested, require both registry and namespace to avoid ambiguous pushes
-if [[ "$PUSH_IMAGES" == "true" ]]; then
-    if [[ -z "$REGISTRY" || -z "$NAMESPACE" ]]; then
-        echo -e "${RED}❌ When using --push, both --registry and --namespace are required.${NC}"
-        echo -e "${YELLOW}Example:${NC} $(basename "$0") --push --registry ghcr.io --namespace your-org"
-        exit 1
-    fi
-fi
-
-echo -e "${BLUE}🦀 Building RLN Bridge Rust Library for Linux...${NC}"
-cd "${LINEA_SEQUENCER_DIR}/sequencer/src/main/rust/rln_bridge"
-
-RLN_LIB_FILE="${LINEA_SEQUENCER_DIR}/sequencer/src/main/rust/rln_bridge/target/x86_64-unknown-linux-gnu/release/librln_bridge.so"
-
-if [[ ! -f "$RLN_LIB_FILE" ]]; then
-    echo -e "${YELLOW}🐳 Cross-compiling Rust library for Linux x86-64...${NC}"
-    docker run --rm --platform linux/amd64 \
-        -v "$(pwd)":/workspace \
-        -w /workspace \
-        rust:1.85-bookworm bash -c "
-            set -e
-            apt-get update -qq
-            apt-get install -y -qq pkg-config libssl-dev build-essential
-            rustup target add x86_64-unknown-linux-gnu
-            cargo build --release --target x86_64-unknown-linux-gnu
-        "
-fi
-
-if [[ ! -f "$RLN_LIB_FILE" ]]; then
-    echo -e "${RED}❌ Error: Linux RLN library not found: $RLN_LIB_FILE${NC}"
+if [[ "$PUSH_IMAGES" == "true" && -z "$NAMESPACE" ]]; then
+    echo -e "${RED}When using --push, --namespace is required.${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}✅ RLN Bridge library ready: $RLN_LIB_FILE${NC}"
+if [[ "$MULTI_ARCH" == "true" ]]; then
+    if ! docker buildx version &>/dev/null; then
+        echo -e "${RED}Docker buildx is required for multi-arch builds.${NC}"
+        exit 1
+    fi
+    echo -e "${BLUE}Multi-arch mode: building for linux/amd64 + linux/arm64${NC}"
+fi
 
-echo -e "${BLUE}☕ Building Custom Sequencer JAR with Dependencies...${NC}"
+###############################################################################
+# Step 1: Build RLN Bridge native library
+###############################################################################
+cd "${LINEA_SEQUENCER_DIR}/sequencer/src/main/rust/rln_bridge"
+
+if [[ "$MULTI_ARCH" == "true" ]]; then
+    echo -e "${BLUE}Step 1: Building RLN Bridge for ARM64 + AMD64...${NC}"
+    RLN_ARCHS=("arm64" "amd64")
+else
+    echo -e "${BLUE}Step 1: Building RLN Bridge for ARM64...${NC}"
+    RLN_ARCHS=("arm64")
+fi
+
+RLN_LIB_ARM64="${LINEA_SEQUENCER_DIR}/sequencer/src/main/rust/rln_bridge/target/aarch64-unknown-linux-gnu/release/librln_bridge.so"
+RLN_LIB_AMD64="${LINEA_SEQUENCER_DIR}/sequencer/src/main/rust/rln_bridge/target/x86_64-unknown-linux-gnu/release/librln_bridge.so"
+
+# Temporary Dockerfile for native Rust builds
+cat > Dockerfile.rln-build << 'DOCKEREOF'
+FROM rust:1.85-bookworm
+RUN apt-get update && apt-get install -y build-essential pkg-config libssl-dev clang llvm && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+COPY Cargo.toml Cargo.lock* ./
+COPY src ./src
+COPY resources ./resources
+RUN cargo build --release
+RUN ls -la target/release/librln_bridge.so
+DOCKEREOF
+
+for arch in "${RLN_ARCHS[@]}"; do
+    if [[ "$arch" == "arm64" ]]; then
+        RLN_LIB_FILE="$RLN_LIB_ARM64"
+        TARGET_DIR="target/aarch64-unknown-linux-gnu/release"
+        PLATFORM="linux/arm64"
+    else
+        RLN_LIB_FILE="$RLN_LIB_AMD64"
+        TARGET_DIR="target/x86_64-unknown-linux-gnu/release"
+        PLATFORM="linux/amd64"
+    fi
+
+    if [[ ! -f "$RLN_LIB_FILE" ]]; then
+        echo -e "${YELLOW}Building ${arch} library via Docker...${NC}"
+        docker build --platform "$PLATFORM" -t "rln-bridge-${arch}-builder" -f Dockerfile.rln-build .
+        mkdir -p "$TARGET_DIR"
+        docker rm -f "rln-extract-${arch}" 2>/dev/null || true
+        docker create --name "rln-extract-${arch}" "rln-bridge-${arch}-builder"
+        docker cp "rln-extract-${arch}:/build/target/release/librln_bridge.so" "$TARGET_DIR/"
+        docker rm "rln-extract-${arch}"
+        file "$RLN_LIB_FILE"
+    else
+        echo -e "${GREEN}RLN library already exists for ${arch}${NC}"
+    fi
+
+    if [[ ! -f "$RLN_LIB_FILE" ]]; then
+        echo -e "${RED}Error: ${arch} RLN library not found: $RLN_LIB_FILE${NC}"
+        exit 1
+    fi
+done
+
+rm -f Dockerfile.rln-build
+echo -e "${GREEN}RLN Bridge ready for: ${RLN_ARCHS[*]}${NC}"
+
+###############################################################################
+# Step 2: Build custom sequencer JAR
+###############################################################################
+echo -e "${BLUE}Step 2: Building custom sequencer JAR...${NC}"
 cd "$REPO_ROOT"
 
-# Build the sequencer plugin with all dependencies using the artifacts task
-# Note: Removed 'clean' task to avoid re-downloading Besu tarball every build
-# Gradle's incremental build handles changes automatically
-./gradlew :besu-plugins:linea-sequencer:sequencer:artifacts -x test -x checkSpdxHeader -x spotlessJavaCheck -x spotlessGroovyGradleCheck --no-daemon
+LINEA_DEV_ALLOW_WARNINGS=true ./gradlew \
+    :besu-plugins:linea-sequencer:sequencer:jar \
+    :besu-plugins:linea-sequencer:sequencer:assembleDist \
+    -x test -x checkSpdxHeader -x spotlessJavaCheck -x spotlessGroovyGradleCheck \
+    --no-daemon --configure-on-demand
 
-# Look for both JAR and ZIP files from artifacts task
-# Sort by modification time to get the most recently built JAR (newest first) - portable way
 SEQUENCER_JAR=$(ls -t "${LINEA_SEQUENCER_DIR}/sequencer/build/libs"/linea-sequencer-*.jar 2>/dev/null | head -1)
 SEQUENCER_DIST=$(ls -t "${LINEA_SEQUENCER_DIR}/sequencer/build/distributions"/linea-sequencer-*.zip 2>/dev/null | head -1)
 
-echo -e "${YELLOW}  Found JAR: $SEQUENCER_JAR${NC}"
-echo -e "${YELLOW}  Found Distribution: $SEQUENCER_DIST${NC}"
 if [[ ! -f "$SEQUENCER_JAR" ]]; then
-    echo -e "${RED}❌ Error: Sequencer JAR not found!${NC}"
+    echo -e "${RED}Error: Sequencer JAR not found!${NC}"
     exit 1
 fi
-echo -e "${GREEN}✅ Custom Sequencer JAR built: $SEQUENCER_JAR${NC}"
+echo -e "${GREEN}Sequencer JAR: $(basename "$SEQUENCER_JAR")${NC}"
 
+###############################################################################
+# Step 3: Build RLN Prover (optional)
+###############################################################################
 if [[ "$BUILD_PROVER" == "true" ]]; then
-    echo -e "${BLUE}🦀 Building RLN Prover Service...${NC}"
+    echo -e "${BLUE}Step 3: Building RLN Prover...${NC}"
     cd "$STATUS_RLN_PROVER_DIR"
     cargo build --release
-
-    PROVER_BINARY="${STATUS_RLN_PROVER_DIR}/target/release/prover_cli"
-    if [[ ! -f "$PROVER_BINARY" ]]; then
-        echo -e "${RED}❌ Error: RLN Prover binary not found!${NC}"
+    if [[ ! -f "${STATUS_RLN_PROVER_DIR}/target/release/prover_cli" ]]; then
+        echo -e "${RED}Error: RLN Prover binary not found!${NC}"
         exit 1
     fi
-    echo -e "${GREEN}✅ RLN Prover service built: $PROVER_BINARY${NC}"
+    echo -e "${GREEN}RLN Prover built${NC}"
 else
-    echo -e "${YELLOW}⏭️  Skipping RLN Prover build (use --all to include)${NC}"
+    echo -e "${YELLOW}Skipping RLN Prover (use --all or --with-prover)${NC}"
 fi
 
-echo -e "${BLUE}🐳 Building Minimal Custom Besu Image...${NC}"
+###############################################################################
+# Step 4: Assemble Docker image
+###############################################################################
+echo -e "${BLUE}Step 4: Assembling Docker image...${NC}"
 mkdir -p "$CUSTOM_BESU_DIR"
 cd "$CUSTOM_BESU_DIR"
 
-# Copy the files we need to the build directory first
-cp "$SEQUENCER_JAR" .
-cp "$RLN_LIB_FILE" .
-
-# Extract dependencies to the current build directory (MOVED HERE!)
-if [[ -f "$SEQUENCER_DIST" ]]; then
-    echo -e "${YELLOW}  📦 Extracting dependencies from distribution ZIP...${NC}"
-    unzip -q "$SEQUENCER_DIST" -d extracted-deps/
-    # Copy dependency JARs (excluding the main sequencer JAR) to current directory
-    find extracted-deps/ -name "*.jar" -not -name "linea-sequencer-*" -exec cp {} . \;
-    DEPS_COUNT=$(find extracted-deps/ -name "*.jar" -not -name "linea-sequencer-*" | wc -l)
-    echo -e "${YELLOW}  ✅ Extracted $DEPS_COUNT dependency JARs to build directory${NC}"
-    rm -rf extracted-deps/
-    
-    # List what we extracted for debugging
-    echo -e "${YELLOW}  Dependencies extracted:${NC}"
-    ls -la *.jar | grep -v "$(basename "$SEQUENCER_JAR")" | head -5
-else
-    echo -e "${YELLOW}  ⚠️  No distribution ZIP found - dependencies may be missing${NC}"
-fi
-
-# Extract the entire Besu distribution from official image (like your working script)
-echo -e "${YELLOW}📥 Extracting base Besu from official image...${NC}"
+# Extract base Besu from official Linea image
+echo -e "${YELLOW}Extracting base Besu from ${BESU_BASE_IMAGE}...${NC}"
 docker rm temp-besu-extract 2>/dev/null || true
 docker create --name temp-besu-extract "${BESU_BASE_IMAGE}"
 docker cp temp-besu-extract:/opt/besu/ ./besu/
 docker rm temp-besu-extract
 
-# Verify all required Linea plugins are present
-echo -e "${YELLOW}🔍 Verifying Linea plugins...${NC}"
-echo -e "  Current plugins in extracted image:"
-ls -la ./besu/plugins/
-
-# Replace ONLY the sequencer plugin, keep all other Linea plugins
-echo -e "${YELLOW}🔄 Installing custom sequencer (keeping other plugins)...${NC}"
-echo -e "  Existing plugins before replacement:"
-ls -1 ./besu/plugins/ | grep -E "\.(jar|JAR)$" || true
-
-# Remove only the old sequencer plugin(s)
+# Replace sequencer plugin (keep all other Linea plugins)
+echo -e "${YELLOW}Installing custom sequencer plugin...${NC}"
 rm -f ./besu/plugins/linea-sequencer*.jar
-
-# Install our custom sequencer
 cp "$SEQUENCER_JAR" ./besu/plugins/
-echo -e "  ✅ Replaced sequencer with: $(basename "$SEQUENCER_JAR")"
-echo -e "  Final plugins:"
-ls -1 ./besu/plugins/ | grep -E "\.(jar|JAR)$" || true
+echo -e "  Installed: $(basename "$SEQUENCER_JAR")"
 
-# Install plugin dependencies in a separate directory to avoid version conflicts
-# This keeps plugin deps (gRPC 1.70.0) separate from base Besu (gRPC 1.75.0)
+# Install plugin dependencies in separate directory to avoid version conflicts
 if [[ -f "$SEQUENCER_DIST" ]]; then
-    echo -e "${YELLOW}📦 Installing plugin dependencies in plugins/lib/...${NC}"
+    echo -e "${YELLOW}Installing plugin dependencies...${NC}"
     mkdir -p ./besu/plugins/lib
     unzip -q "$SEQUENCER_DIST" -d extracted-deps/
-
-    # Copy ALL dependencies except the main sequencer JAR
-    # Exclude JARs that should come from base Besu (tuweni, besu-specific)
-    EXCLUDE_PATTERN="(tuweni|besu-|linea-sequencer-)"
+    # Exclude JARs already provided by the base Besu image to avoid version conflicts.
+    # NOTE: grpc-stub and grpc-protobuf are NOT in the base image — they must be included.
+    # We exclude grpc-netty, grpc-core, grpc-api, grpc-context, grpc-util (all in base).
+    # Only exclude JARs that are KNOWN to exist in the base Besu lib/ directory.
+    # Check the base image lib/ to see what's already provided.
+    EXCLUDE_PATTERN="(tuweni|besu-|linea-sequencer-|grpc-netty|grpc-core|grpc-util|grpc-context|grpc-api|netty-|guava-|gson-|error_prone|failureaccess|perfmark|animal-sniffer|jspecify)"
     for jar in extracted-deps/*/*.jar; do
         jarname=$(basename "$jar")
         if [[ ! "$jarname" =~ $EXCLUDE_PATTERN ]]; then
             cp "$jar" ./besu/plugins/lib/
-            echo -e "  ✅ Installed: $jarname"
         fi
     done
     rm -rf extracted-deps/
-
-    echo -e "${YELLOW}  📋 Plugin dependencies summary:${NC}"
-    ls -la ./besu/plugins/lib/ | wc -l | xargs -I {} echo "  Total JARs: {}"
-else
-    echo -e "${YELLOW}⚠️  No distribution ZIP found - plugin may be missing dependencies${NC}"
+    echo -e "${GREEN}  Plugin dependencies installed${NC}"
 fi
 
-# Copy RLN native library  
-echo -e "${YELLOW}📚 Installing RLN native library...${NC}"
-mkdir -p ./besu/lib/native
-cp "$RLN_LIB_FILE" ./besu/lib/native/
-echo -e "  ✅ Installed: librln_bridge.so"
+# Install RLN native libraries
+echo -e "${YELLOW}Installing RLN native libraries...${NC}"
+mkdir -p ./besu/lib/native-arm64 ./besu/lib/native-amd64
 
-# Update Besu startup scripts to include plugins and plugins/lib in classpath (critical!)
-echo -e "${YELLOW}⚙️ Updating Besu startup scripts...${NC}"
-for script in besu besu.bat besu-untuned besu-untuned.bat; do
-    if [[ -f "./besu/bin/$script" ]]; then
-        # Create backup
-        cp "./besu/bin/$script" "./besu/bin/$script.backup"
+if [[ -f "$RLN_LIB_ARM64" ]]; then
+    cp "$RLN_LIB_ARM64" ./besu/lib/native-arm64/librln_bridge.so
+    echo -e "${GREEN}  Installed: librln_bridge.so (arm64)${NC}"
+fi
+if [[ -f "$RLN_LIB_AMD64" ]]; then
+    cp "$RLN_LIB_AMD64" ./besu/lib/native-amd64/librln_bridge.so
+    echo -e "${GREEN}  Installed: librln_bridge.so (amd64)${NC}"
+fi
 
-        if [[ "$script" == *.bat ]]; then
-            # Windows batch files - plugin deps FIRST to take precedence
-            sed -i.tmp 's|CLASSPATH=%APP_HOME%\\lib\\*|CLASSPATH=%APP_HOME%\\plugins\\lib\\*;%APP_HOME%\\plugins\\*;%APP_HOME%\\lib\\*|g' "./besu/bin/$script"
-        else
-            # Unix shell scripts - match the actual format: CLASSPATH=/opt/besu/lib/*:/opt/besu/plugins/*
-            # Plugin deps FIRST so they take precedence over base Besu versions
-            sed -i.tmp 's|CLASSPATH=/opt/besu/lib/\*:/opt/besu/plugins/\*|CLASSPATH=/opt/besu/plugins/lib/*:/opt/besu/plugins/*:/opt/besu/lib/*|g' "./besu/bin/$script"
-        fi
-        rm -f "./besu/bin/$script.tmp"
-        echo -e "  ✅ Updated classpath in $script"
-    else
-        echo -e "  ⚠️  Script not found: $script"
-    fi
-done
+# For single-arch builds, also create the standard path
+if [[ "$MULTI_ARCH" != "true" ]] && [[ -f "$RLN_LIB_ARM64" ]]; then
+    mkdir -p ./besu/lib/native
+    cp "$RLN_LIB_ARM64" ./besu/lib/native/librln_bridge.so
+fi
 
-# Verify final plugin structure
-echo -e "${YELLOW}📋 Final plugin inventory:${NC}"
-ls -la ./besu/plugins/ | grep -E "\.(jar|JAR)$" | while read -r line; do
-    echo -e "  📦 $line"
-done
+# Copy plugin dependency JARs into the main plugins dir so they're on the classpath
+# (beta-v6 uses explicit classpath, plugins/* is included but not plugins/lib/*)
+if [[ -d "./besu/plugins/lib" ]]; then
+    echo -e "${YELLOW}Moving plugin deps into plugins dir...${NC}"
+    mv ./besu/plugins/lib/*.jar ./besu/plugins/ 2>/dev/null || true
+    rmdir ./besu/plugins/lib 2>/dev/null || true
+fi
 
-# Create Dockerfile like your working script
-cat > Dockerfile << 'EOF'
+# Create Dockerfile
+if [[ "$MULTI_ARCH" == "true" ]]; then
+    cat > Dockerfile << 'EOF'
 FROM ubuntu:24.04
-
+ARG TARGETARCH
 RUN apt-get update && \
-    apt-get install -y openjdk-21-jre-headless libjemalloc-dev && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
+    apt-get install -y openjdk-25-jre-headless libjemalloc-dev && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
     (groupadd -g 1000 besu || true) && \
     useradd -u 1000 -g 1000 -m -s /bin/bash besu || \
     (userdel -r besu 2>/dev/null || true && groupdel besu 2>/dev/null || true && \
      groupadd -g 1001 besu && useradd -u 1001 -g besu -m -s /bin/bash besu)
-
 USER besu
 WORKDIR /opt/besu
-
-# Copy entire Besu distribution with custom sequencer
 COPY --chown=besu:besu besu/ /opt/besu/
-
-# Set library paths for RLN
+COPY --chown=besu:besu besu/lib/native-${TARGETARCH}/librln_bridge.so /opt/besu/lib/native/librln_bridge.so
 ENV LD_LIBRARY_PATH="/opt/besu/lib/native:/usr/local/lib:/usr/lib"
 ENV JAVA_LIBRARY_PATH="/opt/besu/lib/native"
 ENV PATH="/opt/besu/bin:${PATH}"
-
 EXPOSE 8545 8546 8547 8550 8551 30303
-
 ENTRYPOINT ["besu"]
 HEALTHCHECK --start-period=5s --interval=5s --timeout=1s --retries=10 CMD bash -c "[ -f /tmp/pid ]"
 EOF
+else
+    cat > Dockerfile << 'EOF'
+FROM ubuntu:24.04
+RUN apt-get update && \
+    apt-get install -y openjdk-25-jre-headless libjemalloc-dev && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    (groupadd -g 1000 besu || true) && \
+    useradd -u 1000 -g 1000 -m -s /bin/bash besu || \
+    (userdel -r besu 2>/dev/null || true && groupdel besu 2>/dev/null || true && \
+     groupadd -g 1001 besu && useradd -u 1001 -g besu -m -s /bin/bash besu)
+USER besu
+WORKDIR /opt/besu
+COPY --chown=besu:besu besu/ /opt/besu/
+ENV LD_LIBRARY_PATH="/opt/besu/lib/native:/usr/local/lib:/usr/lib"
+ENV JAVA_LIBRARY_PATH="/opt/besu/lib/native"
+ENV PATH="/opt/besu/bin:${PATH}"
+EXPOSE 8545 8546 8547 8550 8551 30303
+ENTRYPOINT ["besu"]
+HEALTHCHECK --start-period=5s --interval=5s --timeout=1s --retries=10 CMD bash -c "[ -f /tmp/pid ]"
+EOF
+fi
 
-# Remove old extract script - not needed with this approach
-rm -f extract-deps.sh
+###############################################################################
+# Step 5: Build and push Docker images
+###############################################################################
 
-# Build the minimal custom image
-TIMESTAMP=$(date +%Y%m%d%H%M%S)
-TAG_WITH_TIME="${TIMESTAMP}${IMAGE_TAG_SUFFIX}"
-BESU_IMAGE_TAG="${BESU_IMAGE_NAME}:${TAG_WITH_TIME}"
+# Determine image tag
+if [[ -n "$IMAGE_TAG" ]]; then
+    FINAL_TAG="$IMAGE_TAG"
+else
+    TIMESTAMP=$(date +%Y%m%d%H%M%S)
+    FINAL_TAG="${TIMESTAMP}${IMAGE_TAG_SUFFIX}"
+fi
 
-echo -e "${YELLOW}🔨 Building Docker image...${NC}"
-docker build --platform linux/amd64 -t "$BESU_IMAGE_TAG" .
+# Image names
+if [[ -n "$NAMESPACE" ]]; then
+    BESU_IMAGE_REMOTE="${REGISTRY}/${NAMESPACE}/${BESU_IMAGE_NAME}:${FINAL_TAG}"
+    RLN_PROVER_IMAGE_REMOTE="${REGISTRY}/${NAMESPACE}/${RLN_PROVER_IMAGE_NAME}:${FINAL_TAG}"
+    POSTGRES_IMAGE_REMOTE="${REGISTRY}/${NAMESPACE}/${POSTGRES_IMAGE_NAME}:${FINAL_TAG}"
+else
+    BESU_IMAGE_REMOTE="${BESU_IMAGE_NAME}:${FINAL_TAG}"
+    RLN_PROVER_IMAGE_REMOTE="${RLN_PROVER_IMAGE_NAME}:${FINAL_TAG}"
+    POSTGRES_IMAGE_REMOTE="${POSTGRES_IMAGE_NAME}:${FINAL_TAG}"
+fi
 
-echo -e "${GREEN}✅ Minimal custom Besu image built: $BESU_IMAGE_TAG${NC}"
+BESU_IMAGE_LOCAL="${BESU_IMAGE_NAME}:${FINAL_TAG}"
 
-RLN_PROVER_TAG=""
+echo -e "${BLUE}Step 5: Building Docker image...${NC}"
+
+if [[ "$MULTI_ARCH" == "true" ]]; then
+    BUILDER_NAME="sn-multi-arch-builder"
+    if ! docker buildx inspect "$BUILDER_NAME" &>/dev/null; then
+        docker buildx create --name "$BUILDER_NAME" --driver docker-container --use
+    else
+        docker buildx use "$BUILDER_NAME"
+    fi
+
+    if [[ "$PUSH_IMAGES" == "true" ]]; then
+        echo -e "${YELLOW}Building and pushing multi-arch: ${BESU_IMAGE_REMOTE}${NC}"
+        docker buildx build --platform linux/amd64,linux/arm64 --push -t "$BESU_IMAGE_REMOTE" .
+    else
+        docker buildx build --platform linux/amd64 --load -t "${BESU_IMAGE_LOCAL}-amd64" .
+        docker buildx build --platform linux/arm64 --load -t "${BESU_IMAGE_LOCAL}-arm64" .
+    fi
+else
+    echo -e "${YELLOW}Building: ${BESU_IMAGE_LOCAL}${NC}"
+    docker build --platform linux/arm64 -t "$BESU_IMAGE_LOCAL" .
+
+    if [[ "$PUSH_IMAGES" == "true" ]]; then
+        docker tag "$BESU_IMAGE_LOCAL" "$BESU_IMAGE_REMOTE"
+        docker push "$BESU_IMAGE_REMOTE"
+    fi
+fi
+
+echo -e "${GREEN}Besu image ready: ${BESU_IMAGE_REMOTE:-$BESU_IMAGE_LOCAL}${NC}"
+
+# Build RLN Prover image
 if [[ "$BUILD_PROVER" == "true" ]]; then
-    echo -e "${BLUE}🐳 Building RLN Prover Docker image...${NC}"
+    echo -e "${BLUE}Building RLN Prover Docker image...${NC}"
     cd "$STATUS_RLN_PROVER_DIR"
-    RLN_PROVER_TAG="${RLN_PROVER_IMAGE_NAME}:${TAG_WITH_TIME}"
-    docker build --platform linux/amd64 -t "$RLN_PROVER_TAG" .
-    echo -e "${GREEN}✅ RLN Prover image built: $RLN_PROVER_TAG${NC}"
-fi
+    RLN_PROVER_LOCAL="${RLN_PROVER_IMAGE_NAME}:${FINAL_TAG}"
 
-###############################################
-# Optional: Push images to a registry
-###############################################
-
-BESU_IMAGE_REMOTE="$BESU_IMAGE_TAG"
-RLN_PROVER_IMAGE_REMOTE="$RLN_PROVER_TAG"
-
-if [[ -n "$REGISTRY" || -n "$NAMESPACE" ]]; then
-    BESU_IMAGE_REMOTE="${REGISTRY:+${REGISTRY}/}${NAMESPACE:+${NAMESPACE}/}${BESU_IMAGE_NAME}:${TAG_WITH_TIME}"
-    RLN_PROVER_IMAGE_REMOTE="${REGISTRY:+${REGISTRY}/}${NAMESPACE:+${NAMESPACE}/}${RLN_PROVER_IMAGE_NAME}:${TAG_WITH_TIME}"
-fi
-
-if [[ "$PUSH_IMAGES" == "true" ]]; then
-    echo -e "${BLUE}📤 Pushing images to registry...${NC}"
-    echo -e "  Besu: ${BESU_IMAGE_REMOTE}"
-    docker tag "$BESU_IMAGE_TAG" "$BESU_IMAGE_REMOTE"
-    docker push "$BESU_IMAGE_REMOTE"
-    
-    if [[ -n "$RLN_PROVER_TAG" ]]; then
-        echo -e "  RLN Prover: ${RLN_PROVER_IMAGE_REMOTE}"
-        docker tag "$RLN_PROVER_TAG" "$RLN_PROVER_IMAGE_REMOTE"
-        docker push "$RLN_PROVER_IMAGE_REMOTE"
-    fi
-    echo -e "${GREEN}✅ Images pushed successfully${NC}"
-
-    # Post-push: print convenient pull commands and (where possible) web links
-    echo -e "${BLUE}🔗 Published image references:${NC}"
-    echo -e "  • Besu: ${GREEN}${BESU_IMAGE_REMOTE}${NC}"
-    echo -e "    docker pull ${BESU_IMAGE_REMOTE}"
-    if [[ -n "$RLN_PROVER_TAG" ]]; then
-        echo -e "  • RLN Prover: ${GREEN}${RLN_PROVER_IMAGE_REMOTE}${NC}"
-        echo -e "    docker pull ${RLN_PROVER_IMAGE_REMOTE}"
-    fi
-
-    # Best-effort clickable links for common registries
-    if [[ "$REGISTRY" == "docker.io" ]]; then
-        echo -e "  🌐 Besu (Docker Hub): https://hub.docker.com/r/${NAMESPACE}/${BESU_IMAGE_NAME}/tags?name=${TAG_WITH_TIME}"
-        if [[ -n "$RLN_PROVER_TAG" ]]; then
-            echo -e "  🌐 RLN  (Docker Hub): https://hub.docker.com/r/${NAMESPACE}/${RLN_PROVER_IMAGE_NAME}/tags?name=${TAG_WITH_TIME}"
+    if [[ "$MULTI_ARCH" == "true" ]]; then
+        if [[ "$PUSH_IMAGES" == "true" ]]; then
+            docker buildx build --platform linux/amd64,linux/arm64 --push -t "$RLN_PROVER_IMAGE_REMOTE" .
+        else
+            docker buildx build --platform linux/amd64 --load -t "${RLN_PROVER_LOCAL}-amd64" .
+            docker buildx build --platform linux/arm64 --load -t "${RLN_PROVER_LOCAL}-arm64" .
         fi
-    elif [[ "$REGISTRY" == "ghcr.io" ]]; then
-        # GitHub Container Registry doesn't have a stable per-tag public URL; point to package page
-        echo -e "  🌐 Besu (GHCR package page): https://github.com/${NAMESPACE}/packages/container/${BESU_IMAGE_NAME}"
-        if [[ -n "$RLN_PROVER_TAG" ]]; then
-            echo -e "  🌐 RLN  (GHCR package page): https://github.com/${NAMESPACE}/packages/container/${RLN_PROVER_IMAGE_NAME}"
+    else
+        docker build --platform linux/arm64 -t "$RLN_PROVER_LOCAL" .
+        if [[ "$PUSH_IMAGES" == "true" ]]; then
+            docker tag "$RLN_PROVER_LOCAL" "$RLN_PROVER_IMAGE_REMOTE"
+            docker push "$RLN_PROVER_IMAGE_REMOTE"
         fi
     fi
+    echo -e "${GREEN}RLN Prover ready: ${RLN_PROVER_IMAGE_REMOTE:-$RLN_PROVER_LOCAL}${NC}"
 fi
 
-echo -e "${BLUE}📝 Updating Docker Compose...${NC}"
+# Build PostgreSQL image
+if [[ "$BUILD_POSTGRES" == "true" ]]; then
+    echo -e "${BLUE}Building custom PostgreSQL image...${NC}"
+    POSTGRES_DOCKERFILE="${REPO_ROOT}/pgrx_merkle_tree/docker/Dockerfile"
+    POSTGRES_LOCAL="${POSTGRES_IMAGE_NAME}:${FINAL_TAG}"
+
+    if [[ "$MULTI_ARCH" == "true" ]]; then
+        if [[ "$PUSH_IMAGES" == "true" ]]; then
+            docker buildx build --platform linux/amd64,linux/arm64 --push -t "$POSTGRES_IMAGE_REMOTE" -f "$POSTGRES_DOCKERFILE" "$REPO_ROOT"
+        else
+            docker buildx build --platform linux/amd64 --load -t "${POSTGRES_LOCAL}-amd64" -f "$POSTGRES_DOCKERFILE" "$REPO_ROOT"
+            docker buildx build --platform linux/arm64 --load -t "${POSTGRES_LOCAL}-arm64" -f "$POSTGRES_DOCKERFILE" "$REPO_ROOT"
+        fi
+    else
+        docker build -t "$POSTGRES_LOCAL" -f "$POSTGRES_DOCKERFILE" "$REPO_ROOT"
+        if [[ "$PUSH_IMAGES" == "true" ]]; then
+            docker tag "$POSTGRES_LOCAL" "$POSTGRES_IMAGE_REMOTE"
+            docker push "$POSTGRES_IMAGE_REMOTE"
+        fi
+    fi
+    echo -e "${GREEN}PostgreSQL ready: ${POSTGRES_IMAGE_REMOTE:-$POSTGRES_LOCAL}${NC}"
+fi
+
+###############################################################################
+# Step 6: Update Docker Compose
+###############################################################################
+echo -e "${BLUE}Step 6: Updating Docker Compose...${NC}"
 COMPOSE_FILE="${REPO_ROOT}/docker/compose-spec-l2-services-rln.yml"
 if [[ -f "$COMPOSE_FILE" ]]; then
-    # Create backup
     cp "$COMPOSE_FILE" "${COMPOSE_FILE}.backup.$(date +%Y%m%d%H%M%S)"
 
-    # Update image lines for specific services only
-    # Only update prover images if we built them
-    if [[ -n "$RLN_PROVER_TAG" ]]; then
-        awk -v besu_img="$BESU_IMAGE_REMOTE" -v rln_img="$RLN_PROVER_IMAGE_REMOTE" '
-            /^[[:space:]]*container_name:[[:space:]]*sequencer$/ { tgt = "besu" }
-            /^[[:space:]]*container_name:[[:space:]]*l2-node-besu$/ { tgt = "besu" }
-            /^[[:space:]]*container_name:[[:space:]]*rln-prover$/ { tgt = "rln" }
-            /^[[:space:]]*container_name:[[:space:]]*karma-service$/ { tgt = "rln" }
-            {
-              if (tgt != "" && $0 ~ /^[[:space:]]*image:[[:space:]]*/) {
-                match($0, /^[[:space:]]*/); lead = substr($0, 1, RLENGTH);
-                if (tgt == "besu") {
-                  print lead "image: " besu_img;
-                } else {
-                  print lead "image: " rln_img;
-                }
-                tgt = "";
-                next;
-              }
-              print $0;
-            }
-        ' "$COMPOSE_FILE" > "${COMPOSE_FILE}.tmp" && mv "${COMPOSE_FILE}.tmp" "$COMPOSE_FILE"
-        echo -e "${GREEN}✅ Updated Docker Compose with images:${NC}"
-        echo -e "  sequencer, l2-node-besu -> ${BESU_IMAGE_REMOTE}"
-        echo -e "  rln-prover, karma-service -> ${RLN_PROVER_IMAGE_REMOTE}"
-    else
-        # Only update Besu images
-        awk -v besu_img="$BESU_IMAGE_REMOTE" '
-            /^[[:space:]]*container_name:[[:space:]]*sequencer$/ { tgt = "besu" }
-            /^[[:space:]]*container_name:[[:space:]]*l2-node-besu$/ { tgt = "besu" }
-            {
-              if (tgt == "besu" && $0 ~ /^[[:space:]]*image:[[:space:]]*/) {
-                match($0, /^[[:space:]]*/); lead = substr($0, 1, RLENGTH);
-                print lead "image: " besu_img;
-                tgt = "";
-                next;
-              }
-              print $0;
-            }
-        ' "$COMPOSE_FILE" > "${COMPOSE_FILE}.tmp" && mv "${COMPOSE_FILE}.tmp" "$COMPOSE_FILE"
-        echo -e "${GREEN}✅ Updated Docker Compose with Besu image:${NC}"
-        echo -e "  sequencer, l2-node-besu -> ${BESU_IMAGE_REMOTE}"
-    fi
+    # Update Besu image for sequencer, l2-node-besu, l2-node-besu-follower
+    BESU_IMG="${BESU_IMAGE_REMOTE:-$BESU_IMAGE_LOCAL}"
+    awk -v besu_img="$BESU_IMG" '
+        /^[[:space:]]*container_name:[[:space:]]*(sequencer|l2-node-besu|l2-node-besu-follower)$/ { tgt = "besu" }
+        {
+          if (tgt == "besu" && $0 ~ /^[[:space:]]*image:[[:space:]]*/) {
+            match($0, /^[[:space:]]*/); lead = substr($0, 1, RLENGTH);
+            print lead "image: " besu_img;
+            tgt = "";
+            next;
+          }
+          print $0;
+        }
+    ' "$COMPOSE_FILE" > "${COMPOSE_FILE}.tmp" && mv "${COMPOSE_FILE}.tmp" "$COMPOSE_FILE"
+    echo -e "${GREEN}Updated compose with: $BESU_IMG${NC}"
 fi
 
-# Clean up build directory
+# Cleanup
 cd "$REPO_ROOT"
 rm -rf "$CUSTOM_BESU_DIR"
 
-echo -e "${GREEN}🎉 Build Complete!${NC}"
-echo -e "${BLUE}📋 Built Components:${NC}"
-echo -e "  Custom Sequencer JAR: $(basename "$SEQUENCER_JAR")"
-echo -e "  RLN Library: librln_bridge.so (Linux x86-64)"
-echo -e "  Besu Image: $BESU_IMAGE_REMOTE"
-if [[ -n "$RLN_PROVER_TAG" ]]; then
-    echo -e "  RLN Prover Image: $RLN_PROVER_IMAGE_REMOTE"
-fi
+echo -e "${GREEN}Build complete!${NC}"
+echo -e "  Besu: ${BESU_IMAGE_REMOTE:-$BESU_IMAGE_LOCAL}"
+[[ "$BUILD_PROVER" == "true" ]] && echo -e "  RLN Prover: ${RLN_PROVER_IMAGE_REMOTE:-$RLN_PROVER_LOCAL}"
+[[ "$BUILD_POSTGRES" == "true" ]] && echo -e "  PostgreSQL: ${POSTGRES_IMAGE_REMOTE:-$POSTGRES_LOCAL}"
 
 # Restart services if requested
 if [[ "$RESTART_SERVICES" == "true" ]]; then
-    echo -e "${BLUE}🔄 Restarting services...${NC}"
+    echo -e "${BLUE}Restarting services...${NC}"
     cd "$REPO_ROOT"
-    docker compose -f "$COMPOSE_FILE" up -d --force-recreate sequencer l2-node-besu
-    if [[ -n "$RLN_PROVER_TAG" ]]; then
-        docker compose -f "$COMPOSE_FILE" up -d --force-recreate rln-prover karma-service
-    fi
-    echo -e "${GREEN}✅ Services restarted${NC}"
-fi
-
-echo
-echo -e "${YELLOW}🚀 Next Steps:${NC}"
-if [[ "$RESTART_SERVICES" != "true" ]]; then
-    echo -e "  1. Restart services: ${GREEN}cd $REPO_ROOT && docker compose -f docker/compose-spec-l2-services-rln.yml up -d --force-recreate sequencer l2-node-besu${NC}"
-fi
-echo -e "  Test gasless transactions"
-echo -e "  Check logs: ${GREEN}docker logs sequencer${NC}"
-echo
-echo -e "${BLUE}🔧 Environment Variables:${NC}"
-echo -e "  export BESU_IMAGE_REF=${BESU_IMAGE_REMOTE}"
-if [[ -n "$RLN_PROVER_TAG" ]]; then
-    echo -e "  export RLN_PROVER_IMAGE_REF=${RLN_PROVER_IMAGE_REMOTE}"
+    docker compose -f "$COMPOSE_FILE" up -d --force-recreate sequencer l2-node-besu l2-node-besu-follower
+    echo -e "${GREEN}Services restarted${NC}"
 fi

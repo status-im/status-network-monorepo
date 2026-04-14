@@ -52,6 +52,8 @@ import org.slf4j.LoggerFactory;
  * @author Status Network Development Team
  * @since 1.0
  */
+@SuppressWarnings(
+    "deprecation") // BytesHolder.toHexString() deprecated in besu 26.3; migration pending
 public class KarmaServiceClient implements Closeable {
   private static final Logger LOG = LoggerFactory.getLogger(KarmaServiceClient.class);
 
@@ -173,7 +175,7 @@ public class KarmaServiceClient implements Closeable {
     // Convert Besu Address to protobuf Address
     net.vac.prover.Address protoAddress =
         net.vac.prover.Address.newBuilder()
-            .setValue(com.google.protobuf.ByteString.copyFrom(userAddress.toArrayUnsafe()))
+            .setValue(com.google.protobuf.ByteString.copyFrom(userAddress.getBytes().toArray()))
             .build();
 
     GetUserTierInfoRequest request =

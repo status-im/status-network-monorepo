@@ -192,6 +192,9 @@ describe("RLN Integration and Error Handling", () => {
       }
       logger.info(`Step 3: Sent ${quota} gasless transactions`);
 
+      // Wait for prover to sync quota state before expecting rejection
+      await rlnClient.waitForProverSync();
+
       // Step 4: Verify quota is exhausted (prover rejects proof request)
       const errorMessage = await rlnClient.sendGaslessTransactionExpectFailure(user, {
         to: TEST_RECIPIENT,

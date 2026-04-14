@@ -20,19 +20,16 @@ The simplest way to participate in the system is to stake tokens without a lock-
 ### What happens when you stake without lock-up:
 
 1. Initial stake:
-
    - You transfer tokens to your stake vault
    - You receive 1:1 initial MP (e.g., staking 100 tokens gives you 100 MP)
    - Your maximum MP is set to 5x your stake (e.g., for 100 tokens, max MP = 500)
 
 2. Over time:
-
    - You earn additional MP linearly at a rate of 100% APY
    - For example, after 6 months, you'll have earned ~50% more MP
    - MP continue accruing until reaching your maximum MP
 
 3. Rewards:
-
    - You earn rewards based on your total weight (stake + MP)
    - Rewards accrue in real-time
    - No action needed to "claim" rewards; they're tracked automatically
@@ -66,14 +63,12 @@ Locking up tokens provides additional MP bonuses, increasing your earning potent
 ### What happens when you stake with lock-up:
 
 1. Initial stake with lock:
-
    - You transfer tokens to your stake vault
    - You receive 1:1 initial MP
    - You receive bonus MP based on lock duration
    - Your maximum MP includes the lock-up bonus
 
 2. During lock period:
-
    - Tokens cannot be unstaked
    - MP continue accruing as normal
    - Rewards continue based on total weight
@@ -108,7 +103,6 @@ Users can create multiple vaults with different configurations.
 ### What happens with multiple vaults:
 
 1. Creating vaults:
-
    - Each vault is independent
    - Different lock-up periods possible
    - Separate MP tracking per vault
@@ -200,13 +194,11 @@ During contract upgrades:
 ## Best Practices
 
 1. Lock-up Strategy:
-
    - Consider lock-up for long-term positions
    - Balance higher rewards vs flexibility
    - Use multiple vaults for different strategies
 
 2. Monitoring:
-
    - Track your MP growth
    - Monitor your reward share
    - Watch total system weight
