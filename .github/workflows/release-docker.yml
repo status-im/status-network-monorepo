@@ -153,14 +153,46 @@ jobs:
           cargo build --release
 
       - name: Prepare Docker context
+        shell: bash
         run: |
-          mkdir -p docker-build/{plugins,native}
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p docker-build/plugins docker-build/native
 
-          # Copy sequencer JAR
-          cp besu-plugins/linea-sequencer/sequencer/build/libs/linea-sequencer-*.jar docker-build/plugins/
+          LIBS_DIR=besu-plugins/linea-sequencer/sequencer/build/libs
+          DIST_DIR=besu-plugins/linea-sequencer/sequencer/build/distributions
 
-          # Copy plugin dependencies (excluding JARs already in the base image)
-          unzip -q besu-plugins/linea-sequencer/sequencer/build/distributions/linea-sequencer-*.zip -d /tmp/seq-deps
+          echo "=== Available JARs ==="
+          ls -la "$LIBS_DIR"
+          echo "=== Available distributions ==="
+          ls -la "$DIST_DIR"
+
+          # Copy sequencer JAR (there should be exactly one linea-sequencer-*.jar)
+          JARS=("$LIBS_DIR"/linea-sequencer-*.jar)
+          if [[ ${#JARS[@]} -eq 0 ]]; then
+            echo "ERROR: no linea-sequencer-*.jar found in $LIBS_DIR"; exit 1
+          fi
+          cp "${JARS[0]}" docker-build/plugins/
+          echo "Installed sequencer JAR: $(basename "${JARS[0]}")"
+
+          # Pick the distribution zip that actually contains the JAR + dependency JARs.
+          # The besu-plugin-distribution plugin produces two zips; only one is populated.
+          DIST_ZIP=""
+          for z in "$DIST_DIR"/*.zip; do
+            if unzip -l "$z" 2>/dev/null | grep -qE "\.jar( |$)"; then
+              DIST_ZIP="$z"
+              break
+            fi
+          done
+          if [[ -z "$DIST_ZIP" ]]; then
+            echo "ERROR: no populated distribution zip with jars found in $DIST_DIR"; exit 1
+          fi
+          echo "Using distribution zip: $DIST_ZIP"
+
+          rm -rf /tmp/seq-deps
+          unzip -q "$DIST_ZIP" -d /tmp/seq-deps
+
+          # Install plugin dependencies, excluding JARs already provided by the base image
           EXCLUDE='(tuweni|besu-|linea-sequencer-|grpc-netty|grpc-core|grpc-util|grpc-context|grpc-api|netty-|guava-|gson-|error_prone|failureaccess|perfmark|animal-sniffer|jspecify)'
           for jar in /tmp/seq-deps/*/*.jar; do
             jarname=$(basename "$jar")
@@ -174,6 +206,9 @@ jobs:
 
           # Copy Dockerfile
           cp docker/status-network-besu/Dockerfile docker-build/
+
+          echo "=== Docker context contents ==="
+          ls -la docker-build/plugins/ docker-build/native/
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
