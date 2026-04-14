@@ -130,8 +130,8 @@ start-env-with-rln-production:
 		$$KARMA_ADDR "mint(address,uint256)" \
 		0x1B9AbEeC3215D8AdE8a33607f2cF0f4F60e5F0D0 $$(cast --to-wei 100000 ether) || true) && \
 	echo "Step 4: Setting up prover account permissions..." && \
-	(cd e2e && NODE_PATH=node_modules KARMA_CONTRACT_ADDRESS=$$KARMA_ADDR RLN_CONTRACT_ADDRESS=$$RLN_ADDR node ../scripts/setup-prover-account.js || true) && \
-	(cd e2e && NODE_PATH=node_modules KARMA_CONTRACT_ADDRESS=$$KARMA_ADDR node ../scripts/grant-operator-role.js || true) && \
+	(cd e2e && NODE_PATH=../contracts/node_modules KARMA_CONTRACT_ADDRESS=$$KARMA_ADDR RLN_CONTRACT_ADDRESS=$$RLN_ADDR node ../scripts/setup-prover-account.js || true) && \
+	(cd e2e && NODE_PATH=../contracts/node_modules KARMA_CONTRACT_ADDRESS=$$KARMA_ADDR node ../scripts/grant-operator-role.js || true) && \
 	echo "Step 5: Restarting RLN prover in production mode (via docker compose)..." && \
 	RLN_PROVER_CMD="--no-config --ip 0.0.0.0 --port 50051 --ws-rpc-url ws://sequencer:8546 --ksc $$KARMA_ADDR --rlnsc $$RLN_ADDR --tsc $$TIERS_ADDR --registration-min 1 --db postgres://postgres:postgres@postgres:5432/prover_db --registration-gas-price-gwei 12 --spam-limit 1000000 --epoch-duration-secs 60" \
 	RLN_PROVER_PRIVATE_KEY=0x8f5a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a \
