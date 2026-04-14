@@ -50,7 +50,7 @@ jobs:
 
       - name: Build and push by digest
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./rln-prover
           platforms: ${{ matrix.platform }}
@@ -221,7 +221,7 @@ jobs:
 
       - name: Build and push by digest
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./docker-build
           platforms: ${{ matrix.platform }}
