@@ -23,8 +23,11 @@ echo -e "  Sequencer: ${LINEA_SEQUENCER_DIR}"
 echo -e "  RLN Prover: ${STATUS_RLN_PROVER_DIR}"
 
 # Use the exact same image version as the official Linea setup
-BESU_PACKAGE_TAG="beta-v6-20260410083640-74d51b7"
+BESU_PACKAGE_TAG="beta-v6.2-20260413130658-9cb6f11"
 BESU_BASE_IMAGE="consensys/linea-besu-package:${BESU_PACKAGE_TAG}"
+
+# Shomei plugin version to upgrade to (base image ships an older version)
+SHOMEI_PLUGIN_VERSION="1.0.3"
 
 # Build options
 BUILD_PROVER=${BUILD_PROVER:-false}
@@ -48,9 +51,11 @@ Usage: $(basename "$0") [options]
 
 Builds the RLN-enabled Status Network Besu image.
 Extracts the official Linea Besu package, replaces the sequencer plugin with
-our custom RLN-enabled version, and adds the RLN native bridge library.
+our custom RLN-enabled version, upgrades besu-shomei-plugin, and adds the RLN
+native bridge library.
 
-Base Image: ${BESU_BASE_IMAGE}
+Base Image:    ${BESU_BASE_IMAGE}
+Shomei Plugin: v${SHOMEI_PLUGIN_VERSION}
 
 Options:
   --all                        Build everything (Besu + RLN Prover + Postgres)
@@ -197,20 +202,38 @@ echo -e "${GREEN}RLN Bridge ready for: ${RLN_ARCHS[*]}${NC}"
 echo -e "${BLUE}Step 2: Building custom sequencer JAR...${NC}"
 cd "$REPO_ROOT"
 
+# Wipe build/libs and build/distributions so stale artifacts from older
+# branches (e.g. linea-sequencer-beta-v4.4-rc7-dev-*.jar) cannot be picked up
+# by the globs below. Those shadow ours at runtime and cause NoSuchMethodError.
+rm -rf "${LINEA_SEQUENCER_DIR}/sequencer/build/libs" \
+       "${LINEA_SEQUENCER_DIR}/sequencer/build/distributions" \
+       "${REPO_ROOT}/tracer/plugins/build/libs" \
+       "${REPO_ROOT}/tracer/plugins/build/distributions"
+
 LINEA_DEV_ALLOW_WARNINGS=true ./gradlew \
     :besu-plugins:linea-sequencer:sequencer:jar \
     :besu-plugins:linea-sequencer:sequencer:assembleDist \
+    :tracer:plugins:jar \
+    :tracer:plugins:assembleDist \
     -x test -x checkSpdxHeader -x spotlessJavaCheck -x spotlessGroovyGradleCheck \
     --no-daemon --configure-on-demand
 
 SEQUENCER_JAR=$(ls -t "${LINEA_SEQUENCER_DIR}/sequencer/build/libs"/linea-sequencer-*.jar 2>/dev/null | head -1)
-SEQUENCER_DIST=$(ls -t "${LINEA_SEQUENCER_DIR}/sequencer/build/distributions"/linea-sequencer-*.zip 2>/dev/null | head -1)
+# Dist zip is named after the project (sequencer-*), not the jar archiveBaseName.
+SEQUENCER_DIST=$(ls -t "${LINEA_SEQUENCER_DIR}/sequencer/build/distributions"/sequencer-*.zip 2>/dev/null | head -1)
+TRACER_PLUGIN_JAR=$(ls -t "${REPO_ROOT}/tracer/plugins/build/libs"/linea-tracer-*.jar 2>/dev/null | head -1)
+TRACER_PLUGIN_DIST=$(ls -t "${REPO_ROOT}/tracer/plugins/build/distributions"/linea-tracer-*.zip 2>/dev/null | head -1)
 
 if [[ ! -f "$SEQUENCER_JAR" ]]; then
     echo -e "${RED}Error: Sequencer JAR not found!${NC}"
     exit 1
 fi
+if [[ ! -f "$TRACER_PLUGIN_JAR" ]]; then
+    echo -e "${RED}Error: Tracer plugin JAR not found!${NC}"
+    exit 1
+fi
 echo -e "${GREEN}Sequencer JAR: $(basename "$SEQUENCER_JAR")${NC}"
+echo -e "${GREEN}Tracer JAR: $(basename "$TRACER_PLUGIN_JAR")${NC}"
 
 ###############################################################################
 # Step 3: Build RLN Prover (optional)
@@ -242,17 +265,35 @@ docker create --name temp-besu-extract "${BESU_BASE_IMAGE}"
 docker cp temp-besu-extract:/opt/besu/ ./besu/
 docker rm temp-besu-extract
 
-# Replace sequencer plugin (keep all other Linea plugins)
-echo -e "${YELLOW}Installing custom sequencer plugin...${NC}"
-rm -f ./besu/plugins/linea-sequencer*.jar
+# Upgrade shomei plugin to the pinned version (base image may ship an older build)
+echo -e "${YELLOW}Upgrading besu-shomei-plugin to v${SHOMEI_PLUGIN_VERSION}...${NC}"
+SHOMEI_ZIP="besu-shomei-plugin-v${SHOMEI_PLUGIN_VERSION}.zip"
+SHOMEI_URL="https://github.com/Consensys/besu-shomei-plugin/releases/download/v${SHOMEI_PLUGIN_VERSION}/${SHOMEI_ZIP}"
+rm -f ./besu/plugins/besu-shomei-plugin-*.jar
+curl -fsSL -o "./${SHOMEI_ZIP}" "$SHOMEI_URL"
+unzip -j -o "./${SHOMEI_ZIP}" -d ./besu/plugins/
+rm -f "./${SHOMEI_ZIP}"
+echo -e "${GREEN}  Installed: besu-shomei-plugin-v${SHOMEI_PLUGIN_VERSION}${NC}"
+
+# Replace sequencer AND tracer plugins — both must come from the same source
+# tree so the bundled linea-plugins-common / arithmetization versions match
+# (mixing stock linea-tracer-*.jar with our sequencer causes NoSuchMethodError
+#  at startup due to shadowed AbstractLineaOptionsPlugin classes).
+echo -e "${YELLOW}Installing custom sequencer + tracer plugins...${NC}"
+rm -f ./besu/plugins/linea-sequencer*.jar \
+      ./besu/plugins/linea-tracer*.jar \
+      ./besu/plugins/arithmetization-*.jar
 cp "$SEQUENCER_JAR" ./besu/plugins/
+cp "$TRACER_PLUGIN_JAR" ./besu/plugins/
 echo -e "  Installed: $(basename "$SEQUENCER_JAR")"
+echo -e "  Installed: $(basename "$TRACER_PLUGIN_JAR")"
 
 # Install plugin dependencies in separate directory to avoid version conflicts
-if [[ -f "$SEQUENCER_DIST" ]]; then
+if [[ -f "$SEQUENCER_DIST" || -f "$TRACER_PLUGIN_DIST" ]]; then
     echo -e "${YELLOW}Installing plugin dependencies...${NC}"
     mkdir -p ./besu/plugins/lib
-    unzip -q "$SEQUENCER_DIST" -d extracted-deps/
+    [[ -f "$SEQUENCER_DIST" ]] && unzip -q "$SEQUENCER_DIST" -d extracted-deps/
+    [[ -f "$TRACER_PLUGIN_DIST" ]] && unzip -q -o "$TRACER_PLUGIN_DIST" -d extracted-deps/
     # Exclude JARs already provided by the base Besu image to avoid version conflicts.
     # NOTE: grpc-stub and grpc-protobuf are NOT in the base image — they must be included.
     # We exclude grpc-netty, grpc-core, grpc-api, grpc-context, grpc-util (all in base).
