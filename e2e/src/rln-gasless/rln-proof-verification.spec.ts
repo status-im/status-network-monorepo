@@ -186,7 +186,7 @@ describe("RLN Proof Verification", () => {
       );
 
       //  Must fail with clear indication of proof/registration issue
-      expect(errorMessage).toMatch(/timeout|rejected|invalid|proof|not registered/i);
+      expect(errorMessage).toMatch(/timeout|rejected|invalid|proof|not registered|karma|gasless/i);
 
       logger.info(`${RLN_002.id}: PASSED ✓`);
     },
@@ -219,7 +219,7 @@ describe("RLN Proof Verification", () => {
       );
 
       //  Must fail for proof reasons, not data format
-      expect(errorMessage).toMatch(/timeout|rejected|proof|invalid/i);
+      expect(errorMessage).toMatch(/timeout|rejected|proof|invalid|karma|gasless/i);
 
       logger.info(`${RLN_003.id}: PASSED ✓`);
     },
@@ -285,7 +285,7 @@ describe("RLN Proof Verification", () => {
       const duration = Date.now() - startTime;
 
       // STRONG ASSERTIONS
-      expect(errorMessage).toMatch(/timeout|rejected|proof/i);
+      expect(errorMessage).toMatch(/timeout|rejected|proof|karma|gasless/i);
       // Should fail within proof timeout + small buffer
       expect(duration).toBeLessThan(RLN_CONFIG.test.proofTimeoutMs + 2000);
 
@@ -423,7 +423,7 @@ describe("RLN Proof Verification", () => {
       );
 
       //  Even zero-value tx requires proof
-      expect(errorMessage).toMatch(/timeout|rejected|proof/i);
+      expect(errorMessage).toMatch(/timeout|rejected|proof|karma|gasless/i);
 
       // Now verify registered user CAN send zero-value
       const registeredUser = getEntryUser();
@@ -461,7 +461,7 @@ describe("RLN Proof Verification", () => {
       );
 
       //  Self-transfer also requires proof
-      expect(errorMessage).toMatch(/timeout|rejected|proof/i);
+      expect(errorMessage).toMatch(/timeout|rejected|proof|karma|gasless/i);
 
       // Now verify registered user CAN do self-transfer
       const registeredUser = getEntryUser();

@@ -185,7 +185,7 @@ class RlnProverForwarderValidatorAuditFixTest {
 
       Optional<String> result = ksValidator.validateTransaction(gaslessTx, true, false);
       assertThat(result).isPresent();
-      assertThat(result.get()).contains("kill switch");
+      assertThat(result.get()).contains("Gasless transactions are temporarily disabled");
 
       // Premium tx should be allowed even with kill switch
       org.hyperledger.besu.ethereum.core.Transaction premiumTx =
