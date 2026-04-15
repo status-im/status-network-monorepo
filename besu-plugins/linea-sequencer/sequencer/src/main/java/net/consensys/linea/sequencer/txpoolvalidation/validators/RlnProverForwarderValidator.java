@@ -286,7 +286,7 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
           killSwitchGasPrice,
           premiumThreshold);
       return Optional.of(
-          "Gas kill switch is active. Gasless transactions are temporarily disabled.");
+          "Gasless transactions are temporarily disabled. Please pay premium gas to proceed.");
     }
 
     // Only validate local transactions via gRPC
@@ -368,8 +368,7 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
             consecutiveGrpcFailures.get(),
             timeSinceLastFailure,
             transaction.getHash().toHexString());
-        return Optional.of(
-            "RLN prover service unavailable (circuit breaker open). Please try again later.");
+        return Optional.of(SERVICE_UNAVAILABLE_MESSAGE);
       }
     }
 
@@ -438,27 +437,32 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
         grpcFailureCount.incrementAndGet();
         consecutiveGrpcFailures.set(0); // Rejection is a successful response, reset breaker
         LOG.warn("RLN prover rejected transaction {}", transaction.getHash());
-        return Optional.of("RLN prover rejected transaction");
+        return Optional.of(userFriendlyRejection(Status.Code.UNKNOWN, null));
       }
 
     } catch (final StatusRuntimeException sre) {
       // gRPC status-based responses: distinguish intentional rejections from transient errors
       Status.Code code = sre.getStatus().getCode();
+      String description = sre.getStatus().getDescription();
+      boolean killSwitchActive =
+          code == Status.Code.UNAVAILABLE
+              && description != null
+              && description.toLowerCase().contains("kill switch");
       if (code == Status.Code.RESOURCE_EXHAUSTED
           || code == Status.Code.NOT_FOUND
           || code == Status.Code.INVALID_ARGUMENT
           || code == Status.Code.PERMISSION_DENIED
-          || code == Status.Code.ALREADY_EXISTS) {
+          || code == Status.Code.ALREADY_EXISTS
+          || killSwitchActive) {
         // Intentional rejection by the prover (quota exceeded, unregistered user, bad input,
-        // duplicate tx)
+        // duplicate tx, kill switch). Kill-switch UNAVAILABLE is not a transient failure.
         consecutiveGrpcFailures.set(0); // Not a failure, reset circuit breaker
         LOG.warn(
             "RLN prover rejected transaction {} ({}): {}",
             transaction.getHash(),
             code,
-            sre.getStatus().getDescription());
-        return Optional.of(
-            "RLN prover rejected transaction (" + code + "): " + sre.getStatus().getDescription());
+            description);
+        return Optional.of(userFriendlyRejection(code, description));
       }
       // Transient gRPC error (UNAVAILABLE, DEADLINE_EXCEEDED, etc.)
       grpcFailureCount.incrementAndGet();
@@ -475,7 +479,7 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
             "Circuit breaker OPENING after {} consecutive gRPC failures. Will auto-recover after {} ms.",
             failures,
             circuitBreakerRecoveryMs);
-        return Optional.of("RLN prover service unavailable. Please try again later.");
+        return Optional.of(SERVICE_UNAVAILABLE_MESSAGE);
       }
       // Below threshold: graceful fallback - accept the transaction
       return Optional.empty();
@@ -494,11 +498,34 @@ public class RlnProverForwarderValidator implements PluginTransactionPoolValidat
             "Circuit breaker OPENING after {} consecutive gRPC failures. Will auto-recover after {} ms.",
             failures,
             circuitBreakerRecoveryMs);
-        return Optional.of("RLN prover service unavailable. Please try again later.");
+        return Optional.of(SERVICE_UNAVAILABLE_MESSAGE);
       }
       // Below threshold: graceful fallback - accept the transaction
       return Optional.empty();
     }
+  }
+
+  private static final String SERVICE_UNAVAILABLE_MESSAGE =
+      "Gasless transaction service is temporarily unavailable. Please try again shortly, or pay premium gas to proceed.";
+
+  // Messages below correspond 1:1 to statuses emitted by the prover's send_transaction
+  // (rln-prover/prover/src/grpc_service.rs).
+  private static String userFriendlyRejection(final Status.Code code, final String description) {
+    return switch (code) {
+      case NOT_FOUND ->
+          "Gasless transactions require Karma. Receive or earn Karma to your address first, then try again.";
+      case RESOURCE_EXHAUSTED ->
+          "Free transaction limit reached for your current Karma tier. Earn more Karma to upgrade your tier, or pay premium gas to proceed.";
+      case ALREADY_EXISTS ->
+          "This transaction is already being processed. Please wait before resubmitting.";
+      case INVALID_ARGUMENT -> "Transaction rejected: invalid transaction data.";
+      case UNAVAILABLE ->
+          description != null && description.toLowerCase().contains("kill switch")
+              ? "Gasless transactions are temporarily disabled. Please pay premium gas to proceed."
+              : SERVICE_UNAVAILABLE_MESSAGE;
+      default ->
+          "Gasless transaction rejected. Please try again shortly, or pay premium gas to proceed.";
+    };
   }
 
   /**

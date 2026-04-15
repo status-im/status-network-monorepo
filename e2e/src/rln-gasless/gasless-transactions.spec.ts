@@ -214,7 +214,7 @@ describe("RLN Gasless Transactions", () => {
         data: uniqueTxData("gas002-exceed"),
       });
 
-      expect(errorMessage).toMatch(/quota|exceeded|deny|denied|timeout|resource.*exhausted/i);
+      expect(errorMessage).toMatch(/quota|exceeded|deny|denied|timeout|resource.*exhausted|karma|limit/i);
       logger.info(`${GAS_002.id}: Transaction rejected as expected (quota exhausted)`, { error: errorMessage });
 
       logger.info(`${GAS_002.id}: PASSED ✓`);
@@ -260,7 +260,7 @@ describe("RLN Gasless Transactions", () => {
       );
 
       // Error should indicate quota exhaustion or denial
-      expect(errorMessage).toMatch(/quota|deny|denied|timeout|exceeded|resource/i);
+      expect(errorMessage).toMatch(/quota|deny|denied|timeout|exceeded|resource|karma|limit/i);
 
       logger.info(`${GAS_003.id}: PASSED ✓`);
     },
@@ -297,7 +297,7 @@ describe("RLN Gasless Transactions", () => {
       );
 
       //  Must fail for proof/registration reason
-      expect(errorMessage).toMatch(/timeout|rejected|not registered|invalid|proof/i);
+      expect(errorMessage).toMatch(/timeout|rejected|not registered|invalid|proof|karma|gasless/i);
       logger.info(`${GAS_004.id}: Transaction rejected as expected`, { error: errorMessage });
 
       logger.info(`${GAS_004.id}: PASSED ✓`);
@@ -377,7 +377,7 @@ describe("RLN Gasless Transactions", () => {
         },
         10000, // 10s timeout for failure expectation
       );
-      expect(preEpochError).toMatch(/quota|exceeded|deny|denied|timeout|resource.*exhausted/i);
+      expect(preEpochError).toMatch(/quota|exceeded|deny|denied|timeout|resource.*exhausted|karma|limit/i);
 
       // Wait for next epoch (short epochs make this practical)
       logger.info(`Waiting for next epoch (max ${epochDuration + 2}s)...`);
@@ -454,7 +454,7 @@ describe("RLN Gasless Transactions", () => {
           10000, // 10s timeout for failure expectation
         );
         // Quota exceeded manifests as resource_exhausted error from prover
-        expect(error).toMatch(/quota|exceeded|deny|denied|timeout|resource.*exhausted/i);
+        expect(error).toMatch(/quota|exceeded|deny|denied|timeout|resource.*exhausted|karma|limit/i);
       }
 
       logger.info(`${GAS_007.id}: PASSED ✓`);
@@ -496,7 +496,7 @@ describe("RLN Gasless Transactions", () => {
         value: 0n,
         data: uniqueTxData("gas008-entry-exceed"),
       });
-      expect(entryError).toMatch(/quota|exceeded|deny|denied|timeout|resource.*exhausted/i);
+      expect(entryError).toMatch(/quota|exceeded|deny|denied|timeout|resource.*exhausted|karma|limit/i);
 
       // Verify Newbie user can send more than Entry tier
       // Send 4 to prove they have higher quota than Entry (4 < newbie quota of 6)
@@ -539,7 +539,7 @@ describe("RLN Gasless Transactions", () => {
 
       const elapsed = Date.now() - startTime;
 
-      expect(errorMessage).toMatch(/timeout|proof|rejected/i);
+      expect(errorMessage).toMatch(/timeout|proof|rejected|karma|gasless/i);
       //  Should timeout within proof timeout + buffer
       expect(elapsed).toBeLessThan(RLN_CONFIG.test.proofTimeoutMs + 2000);
 

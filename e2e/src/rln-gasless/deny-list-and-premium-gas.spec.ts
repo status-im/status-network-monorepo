@@ -176,7 +176,7 @@ describe("RLN Deny List and Premium Gas", () => {
         },
         10000,
       );
-      expect(error).toMatch(/quota|deny|denied|timeout|exceeded|resource/i);
+      expect(error).toMatch(/quota|deny|denied|timeout|exceeded|resource|karma|limit/i);
 
       logger.info(`${DENY_001.id}: PASSED ✓`);
     },
@@ -212,7 +212,7 @@ describe("RLN Deny List and Premium Gas", () => {
       });
 
       // Must be rejected - either denied (if deny list synced) or resource_exhausted (quota check)
-      expect(errorMessage).toMatch(/deny|denied|reject|quota|timeout|resource.*exhausted/i);
+      expect(errorMessage).toMatch(/deny|denied|reject|quota|timeout|resource.*exhausted|karma|limit/i);
 
       logger.info(`${DENY_002.id}: PASSED ✓`);
     },
@@ -245,7 +245,7 @@ describe("RLN Deny List and Premium Gas", () => {
         { to: TEST_RECIPIENT, value: 0n, data: uniqueTxData("deny003-verify-denied") },
         10000,
       );
-      expect(denyError).toMatch(/quota|deny|denied|timeout|exceeded|resource/i);
+      expect(denyError).toMatch(/quota|deny|denied|timeout|exceeded|resource|karma|limit/i);
 
       // Pay premium gas (transaction succeeds even while denied)
       // Premium gas now removes from deny list AND resets epoch counter (quota refresh)
@@ -334,7 +334,7 @@ describe("RLN Deny List and Premium Gas", () => {
         { to: TEST_RECIPIENT, value: 0n, data: uniqueTxData("deny005-verify-denied") },
         10000,
       );
-      expect(denyError).toMatch(/quota|deny|denied|timeout|exceeded|resource/i);
+      expect(denyError).toMatch(/quota|deny|denied|timeout|exceeded|resource|karma|limit/i);
 
       // Pay premium gas (succeeds even while denied)
       // Premium gas now removes from deny list AND resets epoch counter (quota refresh)
@@ -441,7 +441,7 @@ describe("RLN Deny List and Premium Gas", () => {
           },
           10000,
         );
-        expect(error).toMatch(/quota|deny|denied|timeout|exceeded|resource/i);
+        expect(error).toMatch(/quota|deny|denied|timeout|exceeded|resource|karma|limit/i);
       }
 
       logger.info(`${DENY_007.id}: PASSED ✓`);
@@ -533,7 +533,7 @@ describe("RLN Deny List and Premium Gas", () => {
           },
           10000,
         );
-        expect(error).toMatch(/quota|deny|denied|timeout|exceeded|resource/i);
+        expect(error).toMatch(/quota|deny|denied|timeout|exceeded|resource|karma|limit/i);
       }
 
       logger.info(`${DENY_009.id}: PASSED ✓`);
@@ -595,7 +595,7 @@ describe("RLN Deny List and Premium Gas", () => {
       );
 
       //  Must fail for proof/timeout reason
-      expect(errorMessage).toMatch(/timeout|rejected|proof|invalid/i);
+      expect(errorMessage).toMatch(/timeout|rejected|proof|invalid|karma|gasless/i);
 
       logger.info(`${PREM_002.id}: PASSED ✓`);
     },
