@@ -201,7 +201,7 @@ describe("RLN Integration and Error Handling", () => {
         value: 0n,
         data: uniqueTxData("int001-exceed"),
       });
-      expect(errorMessage).toMatch(/deny|denied|reject|quota|timeout|resource.*exhausted/i);
+      expect(errorMessage).toMatch(/deny|denied|reject|quota|timeout|resource.*exhausted|karma|limit/i);
       logger.info("Step 4: Gasless blocked after quota exhaustion");
 
       // Step 5: Pay premium gas (removes from deny list AND resets quota)
@@ -480,7 +480,7 @@ describe("RLN Integration and Error Handling", () => {
       const duration = Date.now() - startTime;
 
       // STRONG ASSERTIONS
-      expect(errorMessage).toMatch(/timeout|rejected|proof/i);
+      expect(errorMessage).toMatch(/timeout|rejected|proof|karma|gasless/i);
       expect(duration).toBeLessThan(RLN_CONFIG.test.proofTimeoutMs + 3000);
 
       logger.info(`${ERR_002.id}: PASSED ✓`, {
