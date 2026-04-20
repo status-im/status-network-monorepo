@@ -1,6 +1,7 @@
 mod proof_delivery_service;
 #[cfg(test)]
 mod proof_delivery_service_tests;
+mod proof_reduce_service;
 
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
@@ -14,6 +15,7 @@ use tracing::{debug, error, info, level_filters::LevelFilter};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 // internal
 use crate::proof_delivery_service::{ProofDeliveryServer, ProofDeliveryServerConfig};
+use crate::proof_reduce_service::ProofReduceService;
 
 pub mod prover_proto {
     // Include generated code (see build.rs)
@@ -68,6 +70,8 @@ async fn main() -> anyhow::Result<()> {
 async fn run_aggregator(app_args: AppArgs) -> anyhow::Result<()> {
     // queue
     // Used to send proof from "proof listening clients" to "proof delivery service"
+    let (tx, rx) = tokio::sync::mpsc::channel(128);
+    // Used to send reduced proof values
     let (bcast_tx, bcast_rx) = tokio::sync::broadcast::channel(2);
 
     let mut set = JoinSet::new();
@@ -82,17 +86,21 @@ async fn run_aggregator(app_args: AppArgs) -> anyhow::Result<()> {
 
     set.spawn(async move { delivery_server.serve_with(listener).await });
 
+    // proof reduce service (process incoming proofs and lighten them)
+    let mut pr_service = ProofReduceService::new(rx, bcast_tx.clone());
+    set.spawn(async move { pr_service.serve().await });
+
     // proof listening clients
 
     let mock_prover_proof = app_args.mock_prover_proof.unwrap_or(false);
 
     if mock_prover_proof {
         info!("Using mock prover proof...");
-        let mut mock = MockProverProof::new(0, "Mock prover proof".to_string(), bcast_tx);
+        let mut mock = MockProverProof::new(0, "Mock prover proof".to_string(), tx);
         set.spawn(async move { mock.serve().await });
     } else {
         for (id, url) in app_args.urls.into_iter().enumerate() {
-            let tx = bcast_tx.clone();
+            let tx = tx.clone();
 
             // rln-prover clients
             set.spawn(async move {
@@ -123,14 +131,14 @@ struct ProverClient {
     id: u64,
     url: String,
     client: RlnProverClient<Channel>,
-    sender: tokio::sync::broadcast::Sender<RlnProofReply>,
+    sender: tokio::sync::mpsc::Sender<RlnProofReply>,
 }
 
 impl ProverClient {
     async fn new(
         id: u64,
         url: String,
-        sender: tokio::sync::broadcast::Sender<RlnProofReply>,
+        sender: tokio::sync::mpsc::Sender<RlnProofReply>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             id,
@@ -153,7 +161,7 @@ impl ProverClient {
                 match r {
                     Ok(proof_reply) => {
                         debug!("Received: {:?}", proof_reply);
-                        self.sender.send(proof_reply).context(format!(
+                        self.sender.send(proof_reply).await.context(format!(
                             "[client {} {}] failed to send proof to channel",
                             self.id, self.url
                         ))?;
@@ -178,11 +186,11 @@ impl ProverClient {
 struct MockProverProof {
     id: u64,
     url: String,
-    sender: tokio::sync::broadcast::Sender<RlnProofReply>,
+    sender: tokio::sync::mpsc::Sender<RlnProofReply>,
 }
 
 impl MockProverProof {
-    fn new(id: u64, url: String, sender: tokio::sync::broadcast::Sender<RlnProofReply>) -> Self {
+    fn new(id: u64, url: String, sender: tokio::sync::mpsc::Sender<RlnProofReply>) -> Self {
         Self {
             id,
             url: url.clone(),
@@ -208,7 +216,7 @@ impl MockProverProof {
                 })),
             };
 
-            self.sender.send(proof_reply).context(format!(
+            self.sender.send(proof_reply).await.context(format!(
                 "[client {} {}] failed to send proof to channel",
                 self.id, self.url
             ))?;

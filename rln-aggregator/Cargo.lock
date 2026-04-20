@@ -12,6 +12,7 @@ dependencies = [
  "futures",
  "prost",
  "rand 0.10.0",
+ "rln",
  "tokio",
  "tonic",
  "tonic-prost",

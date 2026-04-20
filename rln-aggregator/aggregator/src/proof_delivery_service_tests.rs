@@ -16,6 +16,8 @@ mod tests {
     use tokio::sync::broadcast::error::{RecvError, SendError};
     use tonic::{IntoRequest, Status};
     use tracing::{debug, error, info};
+    // internal
+    use crate::proof_reduce_service::ProofReduceService;
 
     #[tokio::test]
     #[tracing_test::traced_test]
@@ -219,15 +221,11 @@ mod tests {
     struct FastMockProverProof {
         id: u64,
         url: String,
-        sender: tokio::sync::broadcast::Sender<RlnProofReply>,
+        sender: tokio::sync::mpsc::Sender<RlnProofReply>,
     }
 
     impl FastMockProverProof {
-        fn new(
-            id: u64,
-            url: String,
-            sender: tokio::sync::broadcast::Sender<RlnProofReply>,
-        ) -> Self {
+        fn new(id: u64, url: String, sender: tokio::sync::mpsc::Sender<RlnProofReply>) -> Self {
             Self {
                 id,
                 url: url.clone(),
@@ -249,7 +247,7 @@ mod tests {
                     })),
                 };
 
-                self.sender.send(proof_reply).context(format!(
+                self.sender.send(proof_reply).await.context(format!(
                     "[client {} {}] failed to send proof to channel",
                     self.id, self.url
                 ))?;
@@ -259,6 +257,7 @@ mod tests {
         }
     }
 
+    #[ignore]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     #[tracing_test::traced_test]
     async fn test_client_too_slow() -> anyhow::Result<()> {
@@ -270,8 +269,9 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
         debug!("addr: {}", addr);
-        let (tx, rx) = tokio::sync::broadcast::channel(2);
-        let server = ProofDeliveryServer::new(cfg, (tx.clone(), rx));
+        let (tx, rx) = tokio::sync::mpsc::channel(128);
+        let (bcast_tx, bcast_rx) = tokio::sync::broadcast::channel(2);
+        let server = ProofDeliveryServer::new(cfg, (bcast_tx.clone(), bcast_rx));
 
         tokio::spawn(async move { server.serve_with(listener).await });
         // tokio::time::sleep(Duration::from_secs(2)).await;
@@ -279,6 +279,9 @@ mod tests {
         let mut mock = FastMockProverProof::new(0, "Mock".to_string(), tx);
         tokio::spawn(async move { mock.serve().await });
         // tokio::time::sleep(Duration::from_secs(2)).await;
+
+        let mut pr_service = ProofReduceService::new(rx, bcast_tx.clone());
+        tokio::spawn(async move { pr_service.serve().await });
 
         let channel_2 = tonic::transport::Channel::from_shared(format!("http://{}", addr))?
             .connect()

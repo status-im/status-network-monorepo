@@ -6,7 +6,7 @@ import "google/protobuf/descriptor.proto";
 service RlnAggregator {
 
   // Server side streaming RPC: 1 request -> X responses (stream)
-  rpc GetProofs(RlnAggFilter) returns (stream RlnAggProofReply);
+  rpc GetProofs(RlnAggFilter) returns (stream RlnAggLightProofReply);
 }
 
 message RlnAggFilter {
@@ -32,4 +32,12 @@ message RlnAggProof {
 
 message RlnAggProofError {
   string error = 2;
+}
+
+message RlnAggLightProofReply {
+  bytes sender = 1;             // Address (20 bytes)
+  bytes proof_x = 2;            // Fr (32 bytes)
+  bytes proof_y = 3;            // Fr
+  bytes external_nullifier = 4; // Fr
+  uint64 epoch = 5;    // 8 bytes - Total: 20 + 3*32 + 8 => 124 bytes (RlnAggProof => 20 + 32 + 288 + 8 = 348 bytes)
 }
