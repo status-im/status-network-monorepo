@@ -3,10 +3,16 @@ FROM consensys/linea-besu-package:${BESU_PACKAGE_TAG}
 
 USER root
 
-# Remove stock sequencer plugin (replaced by RLN-enabled version)
-RUN rm -f /opt/besu/plugins/linea-sequencer*.jar
+# Remove stock Linea plugins that we replace with versions built from this repo
+# (sequencer + tracer + their bundled arithmetization) and the shomei plugin
+# that we upgrade. Keeping the stock jars alongside ours causes classpath
+# conflicts (NoSuchMethodError on AbstractLineaOptionsPlugin).
+RUN rm -f /opt/besu/plugins/linea-sequencer*.jar \
+          /opt/besu/plugins/linea-tracer*.jar \
+          /opt/besu/plugins/arithmetization-*.jar \
+          /opt/besu/plugins/besu-shomei-plugin-*.jar
 
-# Install custom RLN-enabled sequencer plugin and its dependencies
+# Install custom RLN-enabled sequencer + tracer plugins, upgraded shomei, and deps
 COPY plugins/ /opt/besu/plugins/
 
 # Install RLN native library

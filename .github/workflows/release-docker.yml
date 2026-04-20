@@ -20,7 +20,8 @@ on:
 env:
   PROVER_IMAGE: 0xnadeem/status-network-rln-prover
   BESU_IMAGE: 0xnadeem/status-network-besu
-  BESU_PACKAGE_TAG: beta-v6-20260410083640-74d51b7
+  BESU_PACKAGE_TAG: beta-v6.2-20260413130658-9cb6f11
+  SHOMEI_PLUGIN_VERSION: "1.0.3"
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -129,13 +130,15 @@ jobs:
       - name: Set up tracer environment (Go + Java + Gradle + Besu)
         uses: ./.github/actions/setup-tracer-environment
 
-      - name: Build sequencer plugin
+      - name: Build sequencer + tracer plugins
         env:
           LINEA_DEV_ALLOW_WARNINGS: "true"
         run: |
           ./gradlew \
             :besu-plugins:linea-sequencer:sequencer:jar \
             :besu-plugins:linea-sequencer:sequencer:assembleDist \
+            :tracer:plugins:jar \
+            :tracer:plugins:assembleDist \
             -x test -x checkSpdxHeader -x spotlessJavaCheck -x spotlessGroovyGradleCheck \
             --no-daemon --configure-on-demand
 
@@ -159,50 +162,67 @@ jobs:
           shopt -s nullglob
           mkdir -p docker-build/plugins docker-build/native
 
-          LIBS_DIR=besu-plugins/linea-sequencer/sequencer/build/libs
-          DIST_DIR=besu-plugins/linea-sequencer/sequencer/build/distributions
+          SEQ_LIBS=besu-plugins/linea-sequencer/sequencer/build/libs
+          SEQ_DIST=besu-plugins/linea-sequencer/sequencer/build/distributions
+          TRACER_LIBS=tracer/plugins/build/libs
+          TRACER_DIST=tracer/plugins/build/distributions
 
-          echo "=== Available JARs ==="
-          ls -la "$LIBS_DIR"
-          echo "=== Available distributions ==="
-          ls -la "$DIST_DIR"
+          echo "=== Sequencer JARs ==="; ls -la "$SEQ_LIBS"
+          echo "=== Sequencer distributions ==="; ls -la "$SEQ_DIST"
+          echo "=== Tracer JARs ==="; ls -la "$TRACER_LIBS"
+          echo "=== Tracer distributions ==="; ls -la "$TRACER_DIST"
 
-          # Copy sequencer JAR (there should be exactly one linea-sequencer-*.jar)
-          JARS=("$LIBS_DIR"/linea-sequencer-*.jar)
-          if [[ ${#JARS[@]} -eq 0 ]]; then
-            echo "ERROR: no linea-sequencer-*.jar found in $LIBS_DIR"; exit 1
+          # Copy sequencer JAR
+          SEQ_JARS=("$SEQ_LIBS"/linea-sequencer-*.jar)
+          if [[ ${#SEQ_JARS[@]} -eq 0 ]]; then
+            echo "ERROR: no linea-sequencer-*.jar found in $SEQ_LIBS"; exit 1
           fi
-          cp "${JARS[0]}" docker-build/plugins/
-          echo "Installed sequencer JAR: $(basename "${JARS[0]}")"
+          cp "${SEQ_JARS[0]}" docker-build/plugins/
+          echo "Installed sequencer JAR: $(basename "${SEQ_JARS[0]}")"
 
-          # Pick the distribution zip that actually contains the JAR + dependency JARs.
-          # The besu-plugin-distribution plugin produces two zips; only one is populated.
-          DIST_ZIP=""
-          for z in "$DIST_DIR"/*.zip; do
-            if unzip -l "$z" 2>/dev/null | grep -qE "\.jar( |$)"; then
-              DIST_ZIP="$z"
-              break
-            fi
+          # Copy tracer plugin JAR — must come from the same source tree as
+          # sequencer so the bundled AbstractLineaOptionsPlugin / arithmetization
+          # classes match (otherwise NoSuchMethodError at plugin startup).
+          TRACER_JARS=("$TRACER_LIBS"/linea-tracer-*.jar)
+          if [[ ${#TRACER_JARS[@]} -eq 0 ]]; then
+            echo "ERROR: no linea-tracer-*.jar found in $TRACER_LIBS"; exit 1
+          fi
+          cp "${TRACER_JARS[0]}" docker-build/plugins/
+          echo "Installed tracer JAR: $(basename "${TRACER_JARS[0]}")"
+
+          # Extract both dist zips to collect dependency JARs. The besu-plugin-distribution
+          # plugin produces two zips per module; only one is populated.
+          rm -rf /tmp/plugin-deps
+          mkdir -p /tmp/plugin-deps
+          for zip_dir in "$SEQ_DIST" "$TRACER_DIST"; do
+            for z in "$zip_dir"/*.zip; do
+              if unzip -l "$z" 2>/dev/null | grep -qE "\.jar( |$)"; then
+                echo "Using distribution zip: $z"
+                unzip -q -o "$z" -d /tmp/plugin-deps
+              fi
+            done
           done
-          if [[ -z "$DIST_ZIP" ]]; then
-            echo "ERROR: no populated distribution zip with jars found in $DIST_DIR"; exit 1
-          fi
-          echo "Using distribution zip: $DIST_ZIP"
-
-          rm -rf /tmp/seq-deps
-          unzip -q "$DIST_ZIP" -d /tmp/seq-deps
 
           # Install plugin dependencies, excluding JARs already provided by the base image
-          EXCLUDE='(tuweni|besu-|linea-sequencer-|grpc-netty|grpc-core|grpc-util|grpc-context|grpc-api|netty-|guava-|gson-|error_prone|failureaccess|perfmark|animal-sniffer|jspecify)'
-          for jar in /tmp/seq-deps/*/*.jar; do
+          # and the plugin JARs themselves (already copied above).
+          EXCLUDE='(tuweni|besu-|linea-sequencer-|linea-tracer-|grpc-netty|grpc-core|grpc-util|grpc-context|grpc-api|netty-|guava-|gson-|error_prone|failureaccess|perfmark|animal-sniffer|jspecify)'
+          for jar in /tmp/plugin-deps/*/*.jar; do
             jarname=$(basename "$jar")
             if [[ ! "$jarname" =~ $EXCLUDE ]]; then
-              cp "$jar" docker-build/plugins/
+              cp -n "$jar" docker-build/plugins/
             fi
           done
 
           # Copy RLN native library
           cp besu-plugins/linea-sequencer/sequencer/src/main/rust/rln_bridge/target/release/librln_bridge.so docker-build/native/
+
+          # Upgrade shomei plugin (base image ships an older version)
+          SHOMEI_ZIP="besu-shomei-plugin-v${SHOMEI_PLUGIN_VERSION}.zip"
+          curl -fsSL -o "/tmp/${SHOMEI_ZIP}" \
+            "https://github.com/Consensys/besu-shomei-plugin/releases/download/v${SHOMEI_PLUGIN_VERSION}/${SHOMEI_ZIP}"
+          unzip -j -o "/tmp/${SHOMEI_ZIP}" -d docker-build/plugins/
+          rm -f "/tmp/${SHOMEI_ZIP}"
+          echo "Installed shomei plugin v${SHOMEI_PLUGIN_VERSION}"
 
           # Copy Dockerfile
           cp docker/status-network-besu/Dockerfile docker-build/
@@ -316,3 +336,4 @@ jobs:
             Multi-arch: linux/amd64 + linux/arm64
 
             Base Besu package: `consensys/linea-besu-package:${{ env.BESU_PACKAGE_TAG }}`
+            Shomei plugin: `v${{ env.SHOMEI_PLUGIN_VERSION }}`
