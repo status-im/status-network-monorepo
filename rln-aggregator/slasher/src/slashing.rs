@@ -7,8 +7,8 @@ use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, warn};
 // RLN
-use rln::protocol::{compute_id_secret, deserialize_proof_values};
-use rln::utils::IdSecret;
+use rln::protocol::bytes_le_to_rln_proof_values;
+use rln::{protocol::compute_id_secret, utils::IdSecret};
 use tokio::sync::TryAcquireError;
 // internal
 use crate::common::SlashingData;
@@ -93,16 +93,16 @@ fn recover(slashing_data: SlashingData) -> anyhow::Result<IdSecret> {
     let _proof_1_de: Proof<Bn254> =
         CanonicalDeserialize::deserialize_compressed(&proof_1.proof[..128])
             .context("Failed to deserialize proof 1")?;
-    let proof_1_values_de = deserialize_proof_values(&proof_1.proof.as_slice()[128..]).0;
+    let proof_1_values_de = bytes_le_to_rln_proof_values(&proof_1.proof.as_slice()[128..])?.0;
 
     let _proof_2_de: Proof<Bn254> =
         CanonicalDeserialize::deserialize_compressed(&proof_2.proof[..128])
             .context("Failed to deserialize proof 2")?;
-    let proof_2_values_de = deserialize_proof_values(&proof_2.proof.as_slice()[128..]).0;
+    let proof_2_values_de = bytes_le_to_rln_proof_values(&proof_2.proof.as_slice()[128..])?.0;
 
     let recovered_identity_secret_hash = compute_id_secret(
-        (proof_1_values_de.x, proof_1_values_de.y),
-        (proof_2_values_de.x, proof_2_values_de.y),
+        (*proof_1_values_de.x(), *proof_1_values_de.y()),
+        (*proof_2_values_de.x(), *proof_2_values_de.y()),
     )
     .context("Fail to recover identity secret hash")?;
 
@@ -135,15 +135,20 @@ mod tests {
     use alloy::primitives::address;
     use ark_bn254::Fr;
     use ark_serialize::CanonicalSerialize;
-    use rln::circuit::{Curve, zkey_from_raw};
-    use rln::hashers::{hash_to_field_le, poseidon_hash};
-    use rln::poseidon_tree::PoseidonTree;
-    use rln::protocol::{
-        RLNProofValues, generate_proof, keygen, proof_values_from_witness, rln_witness_from_values,
-        serialize_proof_values,
+    use rln::circuit::graph_from_raw;
+    use rln::protocol::RLNWitnessInput;
+    use rln::{
+        circuit::{Curve, zkey_from_raw},
+        hashers::{hash_to_field_le, poseidon_hash},
+        poseidon_tree::PoseidonTree,
+        protocol::{
+            RLNProofValues, generate_zk_proof, keygen, proof_values_from_witness,
+            rln_proof_values_to_bytes_le,
+        },
+        utils::IdSecret,
     };
     use std::io::{Cursor, Write};
-    use zerokit_utils::{ZerokitMerkleProof, ZerokitMerkleTree};
+    use zerokit_utils::merkle_tree::{ZerokitMerkleProof, ZerokitMerkleTree};
 
     const ADDR_ALICE: Address = address!("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
     const ADDR_BOB: Address = address!("0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
@@ -153,7 +158,7 @@ mod tests {
         if let Err(e) = proof.serialize_compressed(&mut output_buffer) {
             panic!("Proof serialization failed with {:?}", e);
         }
-        if let Err(e) = output_buffer.write_all(&serialize_proof_values(&proof_values)) {
+        if let Err(e) = output_buffer.write_all(&rln_proof_values_to_bytes_le(&proof_values)) {
             panic!("Proof values serialization failed with {:?}", e);
         }
         output_buffer.into_inner()
@@ -170,18 +175,19 @@ mod tests {
         tree.set(0, spam_limit).unwrap();
         let m_proof = tree.proof(0).unwrap();
 
-        let (rln_identifier, pk, matrices, graph_bytes) = {
+        let (rln_identifier, pk, matrices, graph) = {
             // Use custom circuit with LIMIT_BIT_SIZE=20 (supports ~1M message limit)
             let arkzkey_bytes = include_bytes!("../resources/rln_final.arkzkey");
             let (pk, matrices) =
                 zkey_from_raw(arkzkey_bytes).expect("Failed to load custom RLN circuit");
             let graph_bytes = include_bytes!("../resources/graph.bin");
+            let graph = graph_from_raw(graph_bytes, Some(20)).unwrap();
 
             (
                 hash_to_field_le(b"rln id test"),
                 pk.clone(),
                 matrices.clone(),
-                graph_bytes,
+                graph,
             )
         };
 
@@ -189,45 +195,45 @@ mod tests {
 
         let (proof_0, proof_values_0) = {
             let external_nullifier = poseidon_hash(&[rln_identifier, epoch]);
-            let witness = rln_witness_from_values(
+            let witness = RLNWitnessInput::new(
                 user_secret.clone(),
+                spam_limit,
+                message_id,
                 m_proof.get_path_elements(),
                 m_proof.get_path_index(),
                 hash_to_field_le(b"sig"),
                 external_nullifier,
-                spam_limit,
-                message_id,
             )
             .unwrap();
 
-            let proof_values = proof_values_from_witness(&witness).unwrap();
+            let proof_values = proof_values_from_witness(&witness);
             let proof =
-                generate_proof(&(pk.clone(), matrices.clone()), &witness, graph_bytes).unwrap();
+                generate_zk_proof(&(pk.clone(), matrices.clone()), &witness, &graph).unwrap();
 
             (proof, proof_values)
         };
 
         let (proof_1, proof_values_1) = {
             let external_nullifier = poseidon_hash(&[rln_identifier, epoch]);
-            let witness = rln_witness_from_values(
+            let witness = RLNWitnessInput::new(
                 user_secret.clone(),
+                spam_limit,
+                message_id,
                 m_proof.get_path_elements(),
                 m_proof.get_path_index(),
                 hash_to_field_le(b"sig 2"),
                 external_nullifier,
-                spam_limit,
-                message_id,
             )
             .unwrap();
 
-            let proof_values = proof_values_from_witness(&witness).unwrap();
-            let proof = generate_proof(&(pk, matrices), &witness, graph_bytes).unwrap();
+            let proof_values = proof_values_from_witness(&witness);
+            let proof = generate_zk_proof(&(pk, matrices), &witness, &graph).unwrap();
 
             (proof, proof_values)
         };
 
-        let share1 = (proof_values_0.x, proof_values_0.y);
-        let share2 = (proof_values_1.x, proof_values_1.y);
+        let share1 = (*proof_values_0.x(), *proof_values_0.y());
+        let share2 = (*proof_values_1.x(), *proof_values_1.y());
         let recovered_identity_secret_hash = compute_id_secret(share1, share2).unwrap();
         assert_eq!(user_secret, recovered_identity_secret_hash);
 

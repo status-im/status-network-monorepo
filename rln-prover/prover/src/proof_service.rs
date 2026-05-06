@@ -8,7 +8,7 @@ use metrics::{counter, histogram};
 use parking_lot::RwLock;
 use rln::hashers::hash_to_field_le;
 use rln::poseidon_tree::MerkleProof;
-use rln::protocol::serialize_proof_values;
+use rln::protocol::rln_proof_values_to_bytes_le;
 use tracing::{Instrument, debug, debug_span, error, info, warn};
 // use zerokit_utils::pmtree::tree::MerkleProof;
 // use zerokit_utils::pmtree::tree::MerkleProof;
@@ -175,7 +175,7 @@ impl ProofService {
                 ) {
                     Ok((proof, proof_values)) => (proof, proof_values),
                     Err(e) => {
-                        let _ = send.send(Err(ProofGenerationError::Proof(e)));
+                        let _ = send.send(Err(ProofGenerationError::Protocol(e)));
                         return;
                     }
                 };
@@ -189,7 +189,10 @@ impl ProofService {
                     let _ = send.send(Err(ProofGenerationError::Serialization(e)));
                     return;
                 }
-                if let Err(e) = output_buffer.write_all(&serialize_proof_values(&proof_values)) {
+
+                if let Err(e) =
+                    output_buffer.write_all(&rln_proof_values_to_bytes_le(&proof_values))
+                {
                     let _ = send.send(Err(ProofGenerationError::SerializationWrite(e)));
                     return;
                 }
@@ -291,10 +294,10 @@ mod tests {
     use tokio::sync::broadcast;
     use tracing::{debug, info};
     // third-party: zerokit
-    use rln::{
-        circuit::{Curve, zkey_from_raw},
-        protocol::{deserialize_proof_values, verify_proof},
-    };
+    use rln::circuit::{Curve, zkey_from_raw};
+    use rln::error::ProtocolError;
+    use rln::prelude::bytes_le_to_rln_proof_values;
+    use rln::protocol::verify_zk_proof;
     // internal
     use crate::tests_common::create_database_connection;
     use crate::user_db_2::{MERKLE_TREE_HEIGHT, UserDb2Config};
@@ -316,6 +319,8 @@ mod tests {
         ProofGeneration(#[from] ProofGenerationStringError),
         #[error("Proof verification failed")]
         ProofVerification,
+        #[error(transparent)]
+        Protocol(#[from] ProtocolError),
         #[error("Exiting...")]
         Exit,
     }
@@ -373,11 +378,11 @@ mod tests {
         let proof = ArkProof::deserialize_compressed(&mut proof_cursor).unwrap();
         let position = proof_cursor.position() as usize;
         let proof_cursor_2 = &proof_cursor.get_ref().as_slice()[position..];
-        let (proof_values, _) = deserialize_proof_values(proof_cursor_2);
+        let (proof_values, _) = bytes_le_to_rln_proof_values(proof_cursor_2)?;
         debug!("[proof verifier] proof: {:?}", proof);
         debug!("[proof verifier] proof_values: {:?}", proof_values);
 
-        let verified = verify_proof(verifying_key, &proof, &proof_values)
+        let verified = verify_zk_proof(verifying_key, &proof, &proof_values)
             .map_err(|_e| AppErrorExt::ProofVerification)?;
 
         debug!("verified: {:?}", verified);

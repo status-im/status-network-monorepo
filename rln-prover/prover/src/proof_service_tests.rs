@@ -11,12 +11,15 @@ mod tests {
     use claims::assert_matches;
     use futures::TryFutureExt;
     use parking_lot::RwLock;
-    use rln::circuit::{Curve, zkey_from_raw};
-    use rln::error::ComputeIdSecretError;
-    use rln::protocol::{compute_id_secret, deserialize_proof_values, verify_proof};
-    use rln::utils::IdSecret;
-    // use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
+    use rln::error::{ProtocolError, RecoverSecretError};
+    use rln::prelude::verify_zk_proof;
+    use rln::{
+        circuit::{Curve, zkey_from_raw},
+        protocol::{bytes_le_to_rln_proof_values, compute_id_secret},
+        utils::IdSecret,
+    };
     use tokio::sync::broadcast;
+    use tonic::service::RecoverError;
     use tracing::{debug, info};
     // internal
     use crate::epoch_service::{Epoch, EpochSlice};
@@ -44,14 +47,16 @@ mod tests {
         AppError(#[from] AppError2),
         #[error("Future timeout")]
         Elapsed,
+        #[error(transparent)]
+        Protocol(#[from] ProtocolError),
+        #[error(transparent)]
+        Recover(#[from] RecoverSecretError),
         #[error("Proof generation failed: {0}")]
         ProofGeneration(#[from] ProofGenerationStringError),
         #[error("Proof verification failed")]
         ProofVerification,
         #[error("Exiting...")]
         Exit,
-        #[error(transparent)]
-        RecoverSecretFailed(ComputeIdSecretError),
         #[error("Recovered secret")]
         RecoveredSecret(IdSecret),
     }
@@ -110,11 +115,11 @@ mod tests {
         let proof = ArkProof::deserialize_compressed(&mut proof_cursor).unwrap();
         let position = proof_cursor.position() as usize;
         let proof_cursor_2 = &proof_cursor.get_ref().as_slice()[position..];
-        let (proof_values, _) = deserialize_proof_values(proof_cursor_2);
+        let proof_values = bytes_le_to_rln_proof_values(proof_cursor_2)?.0;
         debug!("[proof verifier] proof: {:?}", proof);
         debug!("[proof verifier] proof_values: {:?}", proof_values);
 
-        let verified = verify_proof(verifying_key, &proof, &proof_values)
+        let verified = verify_zk_proof(verifying_key, &proof, &proof_values)
             .map_err(|_e| AppErrorExt::ProofVerification)?;
 
         debug!("verified: {:?}", verified);
@@ -228,7 +233,7 @@ mod tests {
             let _proof: Proof<Curve> = ArkProof::deserialize_compressed(&mut proof_cursor).unwrap();
             let position = proof_cursor.position() as usize;
             let proof_cursor_2 = &proof_cursor.get_ref().as_slice()[position..];
-            let (proof_values, _) = deserialize_proof_values(proof_cursor_2);
+            let (proof_values, _) = bytes_le_to_rln_proof_values(proof_cursor_2)?;
             proof_values_store.push(proof_values);
             if proof_values_store.len() >= 2 {
                 break;
@@ -240,12 +245,11 @@ mod tests {
         let proof_values_1 = proof_values_store.get(1).unwrap();
         println!("proof_values_0: {proof_values_0:?}");
         println!("proof_values_1: {proof_values_1:?}");
-        let share1 = (proof_values_0.x, proof_values_0.y);
-        let share2 = (proof_values_1.x, proof_values_1.y);
+        let share1 = (*proof_values_0.x(), *proof_values_0.y());
+        let share2 = (*proof_values_1.x(), *proof_values_1.y());
 
         // Note: if not in test, should check for external nullifier
-        let recovered_identity_secret_hash =
-            compute_id_secret(share1, share2).map_err(AppErrorExt::RecoverSecretFailed)?;
+        let recovered_identity_secret_hash = compute_id_secret(share1, share2)?;
 
         debug!(
             "recovered_identity_secret_hash: {:?}",
@@ -459,6 +463,9 @@ mod tests {
             ),
         );
 
-        assert_matches!(res, Err(AppErrorExt::RecoverSecretFailed(_)));
+        assert_matches!(
+            res,
+            Err(AppErrorExt::Recover(RecoverSecretError::DivisionByZero))
+        );
     }
 }

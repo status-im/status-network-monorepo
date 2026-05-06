@@ -1,4 +1,3 @@
-/*
 use std::hint::black_box;
 // std
 use std::io::{Cursor, Write};
@@ -7,9 +6,12 @@ use criterion::{Criterion, criterion_group, criterion_main};
 // third-party
 use ark_bn254::Fr;
 use ark_serialize::CanonicalSerialize;
-use rln::hashers::{hash_to_field_le, poseidon_hash};
-use rln::poseidon_tree::PoseidonTree;
-use rln::protocol::{keygen, serialize_proof_values};
+use rln::{
+    hashers::{hash_to_field_le, poseidon_hash},
+    poseidon_tree::PoseidonTree,
+    protocol::{keygen, rln_proof_values_to_bytes_le},
+};
+use zerokit_utils::merkle_tree::ZerokitMerkleProof;
 // internal
 use rln_proof::{
     RlnData, RlnIdentifier, RlnUserIdentity, ZerokitMerkleTree, compute_rln_proof_and_values,
@@ -46,14 +48,15 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             &rln_identifier,
             rln_data.clone(),
             epoch,
-            &merkle_proof,
+            merkle_proof.get_path_elements(),
+            merkle_proof.get_path_index(),
         )
         .unwrap();
 
         let mut output_buffer = Cursor::new(Vec::new());
         proof.serialize_compressed(&mut output_buffer).unwrap();
         output_buffer
-            .write_all(&serialize_proof_values(&proof_values))
+            .write_all(&rln_proof_values_to_bytes_le(&proof_values))
             .unwrap();
 
         println!(
@@ -75,7 +78,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                     black_box(&rln_identifier),
                     black_box(data),
                     black_box(epoch),
-                    black_box(&merkle_proof),
+                    black_box(merkle_proof.get_path_elements()),
+                    black_box(merkle_proof.get_path_index()),
                 )
             },
             criterion::BatchSize::SmallInput,
@@ -91,7 +95,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                     black_box(&rln_identifier),
                     black_box(rln_data.clone()),
                     black_box(epoch),
-                    black_box(&merkle_proof),
+                    black_box(merkle_proof.get_path_elements()),
+                    black_box(merkle_proof.get_path_index()),
                 )
                 .unwrap()
             },
@@ -101,7 +106,9 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                     .serialize_compressed(black_box(&mut output_buffer))
                     .unwrap();
                 output_buffer
-                    .write_all(black_box(&serialize_proof_values(black_box(&proof_values))))
+                    .write_all(black_box(&rln_proof_values_to_bytes_le(black_box(
+                        &proof_values,
+                    ))))
                     .unwrap();
             },
             criterion::BatchSize::SmallInput,
@@ -116,4 +123,3 @@ criterion_group! {
     targets = criterion_benchmark
 }
 criterion_main!(benches);
-*/

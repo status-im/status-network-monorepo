@@ -1,3 +1,4 @@
+#[allow(clippy::bool_assert_comparison)]
 #[cfg(feature = "postgres")]
 #[cfg(test)]
 mod tests {
@@ -568,9 +569,9 @@ mod tests {
         )
         .await?;
 
-        let nullifier_1 = vec![1; 32];
+        let nullifier_1 = [1; 32];
         let epoch_1 = 1;
-        let nullifier_2 = vec![1; 32];
+        let nullifier_2 = [1; 32];
         let epoch_2 = 42;
 
         assert_eq!(

@@ -829,6 +829,7 @@ impl UserDb2 {
     }
 }
 
+#[allow(clippy::bool_assert_comparison)]
 #[cfg(feature = "postgres")]
 #[cfg(test)]
 mod tests {

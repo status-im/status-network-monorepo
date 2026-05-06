@@ -12,9 +12,9 @@ ark-groth16.workspace = true
 ark-serialize.workspace = true
 serde.workspace = true
 
-# [dev-dependencies]
-# criterion.workspace = true
+[dev-dependencies]
+criterion.workspace = true
 
-# [[bench]]
-# name = "generate_proof"
-# harness = false
+[[bench]]
+name = "generate_proof"
+harness = false

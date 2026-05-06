@@ -1,19 +1,13 @@
 use alloy::signers::local::LocalSignerError;
 use alloy::transports::{RpcError, TransportErrorKind};
 use ark_serialize::SerializationError;
-use rln::error::ProofError;
+use rln::error::ProtocolError;
 use smart_contract::{KarmaScError, KarmaTiersError, RlnScError};
 // internal
 use crate::epoch_service::WaitUntilError;
 use crate::tier::ValidateTierLimitsError;
 use crate::user_db_error::{
-    GetMerkleTreeProofError2,
-    // RegisterError,
-    RegisterError2,
-    // TxCounterError,
-    TxCounterError2,
-    UserDb2OpenError,
-    // UserDbOpenError, UserMerkleTreeIndexError,
+    GetMerkleTreeProofError2, RegisterError2, TxCounterError2, UserDb2OpenError,
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -88,8 +82,8 @@ pub enum AppError2 {
 
 #[derive(thiserror::Error, Debug)]
 pub enum ProofGenerationError {
-    #[error("Proof generation failed: {0}")]
-    Proof(#[from] ProofError),
+    #[error(transparent)]
+    Protocol(#[from] ProtocolError),
     #[error("Proof serialization failed: {0}")]
     Serialization(#[from] SerializationError),
     #[error("Proof serialization failed: {0}")]
@@ -102,7 +96,7 @@ pub enum ProofGenerationError {
 #[derive(thiserror::Error, Debug, Clone)]
 pub enum ProofGenerationStringError {
     #[error("Proof generation failed: {0}")]
-    Proof(String),
+    Protocol(String),
     #[error("Proof serialization failed: {0}")]
     Serialization(String),
     #[error("Proof serialization failed: {0}")]
@@ -114,7 +108,9 @@ pub enum ProofGenerationStringError {
 impl From<ProofGenerationError> for ProofGenerationStringError {
     fn from(value: ProofGenerationError) -> Self {
         match value {
-            ProofGenerationError::Proof(e) => ProofGenerationStringError::Proof(e.to_string()),
+            ProofGenerationError::Protocol(e) => {
+                ProofGenerationStringError::Protocol(e.to_string())
+            }
             ProofGenerationError::Serialization(e) => Self::Serialization(e.to_string()),
             ProofGenerationError::SerializationWrite(e) => Self::SerializationWrite(e.to_string()),
             ProofGenerationError::MerkleProofError(e) => Self::MerkleProofError(e.to_string()),
