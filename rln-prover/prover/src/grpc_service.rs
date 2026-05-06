@@ -889,37 +889,11 @@ impl<P: Provider + Clone + Send + Sync + 'static> GrpcProverService<P> {
     }
 }
 
-/*
-/// UserTierInfo to UserTierInfoResult (Grpc message) conversion
-impl From<UserTierInfo> for UserTierInfoResult {
-    fn from(tier_info: UserTierInfo) -> Self {
-        let mut res = UserTierInfoResult {
-            current_epoch: tier_info.current_epoch.into(),
-            current_epoch_slice: tier_info.current_epoch_slice.into(),
-            tx_count: tier_info.epoch_tx_count,
-            tier: None,
-        };
-
-        if let Some(tier_name) = tier_info.tier_name
-            && let Some(tier_limit) = tier_info.tier_limit
-        {
-            res.tier = Some(Tier {
-                name: tier_name.into(),
-                quota: tier_limit.into(),
-            })
-        }
-
-        res
-    }
-}
-*/
-
 /// UserTierInfo2 to UserTierInfoResult (Grpc message) conversion
 impl From<UserTierInfo2> for UserTierInfoResult {
     fn from(tier_info: UserTierInfo2) -> Self {
         let mut res = UserTierInfoResult {
             current_epoch: tier_info.current_epoch.into(),
-            // current_epoch_slice: tier_info.current_epoch_slice.into(),
             current_epoch_slice: 0,
             tx_count: tier_info.epoch_tx_count,
             tier: None,

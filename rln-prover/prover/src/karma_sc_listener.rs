@@ -366,8 +366,7 @@ mod tests {
     #[function_name::named]
     async fn test_handle_transfer_event() {
         let epoch = Epoch::from(11);
-        let epoch_slice = EpochSlice::from(42);
-        let epoch_store = Arc::new(RwLock::new((epoch, epoch_slice)));
+        let epoch_store = Arc::new(RwLock::new(epoch));
         let config = UserDb2Config {
             tree_count: 1,
             max_tree_count: 1,

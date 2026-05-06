@@ -36,7 +36,6 @@ const TIER_LIMITS_NEXT_KEY: &str = "NEXT";
 #[derive(Debug, PartialEq)]
 pub struct UserTierInfo2 {
     pub(crate) current_epoch: Epoch,
-    pub(crate) current_epoch_slice: EpochSlice,
     pub(crate) epoch_tx_count: u64,
     pub(crate) karma_amount: U256,
     pub(crate) tier_name: Option<TierName>,
@@ -55,7 +54,7 @@ pub(crate) struct UserDb2 {
     db: Pool<Postgres>,
     config: UserDb2Config,
     rate_limit: RateLimit,
-    pub(crate) epoch_store: Arc<RwLock<(Epoch, EpochSlice)>>,
+    pub(crate) epoch_store: Arc<RwLock<Epoch>>,
 }
 
 impl std::fmt::Debug for UserDb2 {
@@ -73,7 +72,7 @@ impl UserDb2 {
     pub async fn new(
         db: Pool<Postgres>,
         config: UserDb2Config,
-        epoch_store: Arc<RwLock<(Epoch, EpochSlice)>>,
+        epoch_store: Arc<RwLock<Epoch>>,
         tier_limits: TierLimits,
         rate_limit: RateLimit,
     ) -> Result<Self, SqlxError> {
@@ -206,7 +205,7 @@ impl UserDb2 {
         incr_value: Option<i64>,
     ) -> Result<(EpochCounter, QuotaBonus), SqlxError> {
         let incr_value = incr_value.unwrap_or(1);
-        let (epoch, _epoch_slice) = *self.epoch_store.read();
+        let epoch = *self.epoch_store.read();
         tracing::info!(
             address = %address,
             incr_value = incr_value,
@@ -273,7 +272,7 @@ impl UserDb2 {
         address: &Address,
         bonus: QuotaBonus,
     ) -> Result<(), SqlxError> {
-        let (epoch, _) = *self.epoch_store.read();
+        let epoch = *self.epoch_store.read();
         sqlx::query(
             "UPDATE tx_counter SET epoch = $1, quota_bonus = quota_bonus + $2 WHERE address = $3",
         )
@@ -302,7 +301,7 @@ impl UserDb2 {
     }
 
     fn counters_from_key(&self, model: TxCounterSqlx) -> (EpochCounter, QuotaBonus) {
-        let (epoch, _epoch_slice) = *self.epoch_store.read();
+        let epoch = *self.epoch_store.read();
         let cmp = model.epoch == i64::from(epoch);
 
         let address = Address::from_slice(model.address.as_slice());
@@ -544,12 +543,10 @@ impl UserDb2 {
         let tier_match = tier_limits.get_tier_by_karma(&karma_amount);
 
         let user_tier_info = {
-            let (current_epoch, current_epoch_slice) = *self.epoch_store.read();
+            let current_epoch = *self.epoch_store.read();
             let mut t = UserTierInfo2 {
                 current_epoch,
-                current_epoch_slice,
                 epoch_tx_count: epoch_tx_count.into(),
-                // epoch_slice_tx_count: epoch_slice_tx_count.into(),
                 karma_amount,
                 tier_name: None,
                 tier_limit: None,
@@ -598,7 +595,7 @@ impl UserDb2 {
     ///
     /// Returns true if the address is denied in the current epoch, false otherwise
     pub async fn is_denied(&self, address: &Address) -> Result<bool, SqlxError> {
-        let (current_epoch, _) = *self.epoch_store.read();
+        let current_epoch = *self.epoch_store.read();
         let current_epoch_i64 = i64::from(current_epoch);
 
         let res: i64 =
@@ -623,7 +620,7 @@ impl UserDb2 {
         address: &Address,
         reason: Option<String>,
     ) -> Result<bool, SqlxError> {
-        let (current_epoch, _) = *self.epoch_store.read();
+        let current_epoch = *self.epoch_store.read();
         let current_epoch_i64 = i64::from(current_epoch);
         let now_ = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -678,7 +675,7 @@ impl UserDb2 {
         &self,
         address: &Address,
     ) -> Result<Option<DenyListSqlx>, SqlxError> {
-        let (current_epoch, _) = *self.epoch_store.read();
+        let current_epoch = *self.epoch_store.read();
         let current_epoch_i64 = i64::from(current_epoch);
 
         let result: Option<DenyListSqlx> =
@@ -1008,7 +1005,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(tier_info.epoch_tx_count, 1);
-        // assert_eq!(tier_info.epoch_slice_tx_count, 1);
     }
 
     #[tokio::test]

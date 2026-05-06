@@ -29,8 +29,7 @@ mod tests {
 
         let epoch_store = Arc::new(RwLock::new(Default::default()));
         let epoch = 1;
-        let epoch_slice = 42;
-        *epoch_store.write() = (Epoch::from(epoch), EpochSlice::from(epoch_slice));
+        *epoch_store.write() = Epoch::from(epoch);
 
         let config = UserDb2Config {
             tree_count: 1,
@@ -399,7 +398,7 @@ mod tests {
         .await?;
 
         // Set epoch to 1
-        *epoch_store.write() = (Epoch::from(1i64), EpochSlice::from(0i64));
+        *epoch_store.write() = Epoch::from(1i64);
 
         assert_eq!(user_db.is_denied(&ADDR_1).await?, false);
         assert_eq!(user_db.is_denied(&ADDR_2).await?, false);
@@ -409,11 +408,11 @@ mod tests {
 
         assert_eq!(user_db.is_denied(&ADDR_3).await?, true);
         // Check that in a future epoch, ADDR_3 is not denied anymore
-        *epoch_store.write() = (Epoch::from(2i64), EpochSlice::from(0i64));
+        *epoch_store.write() = Epoch::from(2i64);
         assert_eq!(user_db.is_denied(&ADDR_3).await?, false);
 
         // Go back to epoch 1
-        *epoch_store.write() = (Epoch::from(1i64), EpochSlice::from(0i64));
+        *epoch_store.write() = Epoch::from(1i64);
         assert_eq!(user_db.is_denied(&ADDR_1).await?, false);
         assert_eq!(user_db.is_denied(&ADDR_2).await?, false);
 
@@ -466,7 +465,7 @@ mod tests {
         .await?;
 
         // Set epoch to 1
-        *epoch_store.write() = (Epoch::from(1i64), EpochSlice::from(0i64));
+        *epoch_store.write() = Epoch::from(1i64);
         user_db.register_user(ADDR_3).await.unwrap();
         // Check this is an INSERT
         assert_eq!(user_db.add_to_deny_list(&ADDR_3, None).await?, true);
@@ -509,33 +508,33 @@ mod tests {
         user_db.register_user(ADDR_1).await.unwrap();
 
         // Add ADDR_3 to deny list at epoch 1
-        *epoch_store.write() = (Epoch::from(1i64), EpochSlice::from(0i64));
+        *epoch_store.write() = Epoch::from(1i64);
         user_db.add_to_deny_list(&ADDR_3, None).await?;
 
         // Add ADDR_1 to deny list at epoch 2
-        *epoch_store.write() = (Epoch::from(2i64), EpochSlice::from(0i64));
+        *epoch_store.write() = Epoch::from(2i64);
         user_db.add_to_deny_list(&ADDR_1, None).await?;
 
         // clear_deny_list with epoch 1 will clean nothing (no entries with epoch < 1)
         user_db.clear_deny_list(1).await?;
         // Both entries still visible at epoch 1
-        *epoch_store.write() = (Epoch::from(1i64), EpochSlice::from(0i64));
+        *epoch_store.write() = Epoch::from(1i64);
         assert!(user_db.get_deny_list_entry(&ADDR_3).await?.is_some());
         assert!(user_db.get_deny_list_entry(&ADDR_1).await?.is_some());
 
         // clear_deny_list with epoch 2 removes entries with epoch < 2 (i.e. ADDR_3 at epoch 1)
         user_db.clear_deny_list(2).await?;
-        *epoch_store.write() = (Epoch::from(1i64), EpochSlice::from(0i64));
+        *epoch_store.write() = Epoch::from(1i64);
         assert!(user_db.get_deny_list_entry(&ADDR_3).await?.is_none());
         assert!(user_db.get_raw_deny_list_entry(&ADDR_3).await?.is_none());
         // ADDR_1 at epoch 2 is still present
-        *epoch_store.write() = (Epoch::from(2i64), EpochSlice::from(0i64));
+        *epoch_store.write() = Epoch::from(2i64);
         assert!(user_db.get_deny_list_entry(&ADDR_1).await?.is_some());
         assert!(user_db.get_raw_deny_list_entry(&ADDR_1).await?.is_some());
 
         // clear_deny_list with epoch 3 removes entries with epoch < 3 (i.e. ADDR_1 at epoch 2)
         user_db.clear_deny_list(3).await?;
-        *epoch_store.write() = (Epoch::from(2i64), EpochSlice::from(0i64));
+        *epoch_store.write() = Epoch::from(2i64);
         assert!(user_db.get_deny_list_entry(&ADDR_1).await?.is_none());
         assert!(user_db.get_raw_deny_list_entry(&ADDR_1).await?.is_none());
 
