@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import { Karma } from "../../src/Karma.sol";
+import { KarmaTiers } from "../../src/KarmaTiers.sol";
 import { KarmaTest } from "./Karma.t.sol";
 
 contract SlashTest is KarmaTest {
@@ -193,5 +194,98 @@ contract SlashTest is KarmaTest {
 
         // Verify reward recipient received the slash reward
         assertEq(karma.balanceOf(rewardRecipient), rewardAmount, "Reward recipient should receive slash reward");
+    }
+
+    function _setupKarmaTiers() internal returns (KarmaTiers) {
+        vm.prank(owner);
+        KarmaTiers karmaTiers = new KarmaTiers();
+        KarmaTiers.Tier[] memory tiers = new KarmaTiers.Tier[](3);
+        tiers[0] = KarmaTiers.Tier({ minKarma: 0, maxKarma: 100 ether - 1, name: "Bronze", txPerEpoch: 10 });
+        tiers[1] = KarmaTiers.Tier({ minKarma: 100 ether, maxKarma: 1000 ether - 1, name: "Silver", txPerEpoch: 50 });
+        tiers[2] =
+            KarmaTiers.Tier({ minKarma: 1000 ether, maxKarma: type(uint256).max, name: "Gold", txPerEpoch: 100 });
+        vm.prank(owner);
+        karmaTiers.updateTiers(tiers);
+        return karmaTiers;
+    }
+
+    function test_RevertWhen_SlasherTierBelowRequirement() public {
+        KarmaTiers karmaTiers = _setupKarmaTiers();
+
+        vm.startPrank(owner);
+        karma.setKarmaTiers(address(karmaTiers));
+        karma.setSlashTierRequirement(1); // require Silver tier
+        vm.stopPrank();
+
+        // slasher has no karma (tier 0 = Bronze), but Silver (tier 1) is required
+        _mintKarmaToAccount(alice, 100 ether);
+
+        vm.prank(slasher);
+        vm.expectRevert(Karma.Karma__SlashTierRequirementNotMet.selector);
+        karma.slash(alice, address(0), slasher);
+    }
+
+    function test_SlashSucceedsWhenSlasherMeetsTierRequirement() public {
+        KarmaTiers karmaTiers = _setupKarmaTiers();
+
+        vm.startPrank(owner);
+        karma.setKarmaTiers(address(karmaTiers));
+        karma.setSlashTierRequirement(1); // require Silver tier
+        vm.stopPrank();
+
+        // give slasher enough karma to meet Silver tier
+        _mintKarmaToAccount(slasher, 100 ether);
+        _mintKarmaToAccount(alice, 100 ether);
+
+        vm.prank(slasher);
+        karma.slash(alice, address(0), slasher);
+
+        assertLt(karma.balanceOf(alice), 100 ether);
+    }
+
+    function test_RevertWhen_AdminTierBelowRequirement() public {
+        KarmaTiers karmaTiers = _setupKarmaTiers();
+
+        vm.startPrank(owner);
+        karma.setKarmaTiers(address(karmaTiers));
+        karma.setSlashTierRequirement(2); // require Gold tier
+        vm.stopPrank();
+
+        // owner has no karma (tier 0), so even admin must be rejected
+        _mintKarmaToAccount(alice, 100 ether);
+
+        vm.prank(owner);
+        vm.expectRevert(Karma.Karma__SlashTierRequirementNotMet.selector);
+        karma.slash(alice, address(0), owner);
+    }
+
+    function test_TierCheckSkippedWhenKarmaTiersNotSet() public {
+        // karmaTiers is address(0) by default — tier check must be skipped
+        _mintKarmaToAccount(alice, 100 ether);
+
+        vm.prank(slasher);
+        karma.slash(alice, address(0), slasher);
+
+        assertLt(karma.balanceOf(alice), 100 ether);
+    }
+
+    function test_SetSlashTierRequirementEmitsEvent() public {
+        vm.prank(owner);
+        vm.expectEmit(true, true, true, true);
+        emit Karma.SlashTierRequirementUpdated(0, 2);
+        karma.setSlashTierRequirement(2);
+
+        assertEq(karma.slashTierRequirement(), 2);
+    }
+
+    function test_SetKarmaTiersEmitsEvent() public {
+        KarmaTiers karmaTiers = _setupKarmaTiers();
+
+        vm.prank(owner);
+        vm.expectEmit(true, true, true, true);
+        emit Karma.KarmaTiersUpdated(address(0), address(karmaTiers));
+        karma.setKarmaTiers(address(karmaTiers));
+
+        assertEq(address(karma.karmaTiers()), address(karmaTiers));
     }
 }

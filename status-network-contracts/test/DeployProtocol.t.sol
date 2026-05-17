@@ -10,6 +10,7 @@ import { MockToken } from "./mocks/MockToken.sol";
 
 import { Karma } from "../src/Karma.sol";
 import { KarmaNFT } from "../src/KarmaNFT.sol";
+import { KarmaTiers } from "../src/KarmaTiers.sol";
 import { StakeManager } from "../src/StakeManager.sol";
 import { VaultFactory } from "../src/VaultFactory.sol";
 import { INFTMetadataGenerator } from "../src/interfaces/INFTMetadataGenerator.sol";
@@ -98,6 +99,10 @@ contract DeployProtocolTest is Test {
 
     function testKarmaRewardDistributorSetup() public view {
         assertTrue(karma.allowedToTransfer(address(stakeManager)), "StakeManager should be allowed to transfer");
+    }
+
+    function testKarmaTiersConfiguration() public view {
+        assertTrue(address(karma.karmaTiers()) != address(0), "Karma should have KarmaTiers set");
     }
 
     function testContractInitialization() public view {

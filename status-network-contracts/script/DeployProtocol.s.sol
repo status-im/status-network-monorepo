@@ -226,6 +226,10 @@ contract DeployProtocolScript is BaseScript {
         // whitelist StakeVault proxy clone codehash in StakeManager
         stakeManager.setTrustedCodehash(vaultProxyClone.codehash, true);
         console.log("Set trusted codehash for StakeVault proxy clone:", vaultProxyClone);
+
+        // link KarmaTiers to Karma
+        karma.setKarmaTiers(address(karmaTiers));
+        console.log("Set KarmaTiers for Karma", address(karmaTiers));
         vm.stopBroadcast();
     }
 }

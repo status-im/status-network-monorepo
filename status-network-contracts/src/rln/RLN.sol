@@ -214,7 +214,7 @@ contract RLN is Initializable, UUPSUpgradeable, AccessControlUpgradeable {
             revert RLN__InvalidCommitment();
         }
 
-        karma.slash(member.userAddress, rewardRecipient);
+        karma.slash(member.userAddress, rewardRecipient, msg.sender);
         delete members[identityCommitment];
 
         emit MemberSlashed(member.index, msg.sender);

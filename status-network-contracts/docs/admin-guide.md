@@ -11,6 +11,8 @@ For an overview of the system architecture, see the [System Overview](system-ove
 - [Updating Tiers](#updating-tiers)
 - [Whitelisting Transfers](#whitelisting-transfers)
 - [Configuring Slashing](#configuring-slashing)
+  - [Setting the KarmaTiers contract on Karma](#setting-the-karmatiers-contract-on-karma)
+  - [Setting the minimum slash tier requirement](#setting-the-minimum-slash-tier-requirement)
 - [Upgrading Contracts](#upgrading-contracts)
 - [Pausing the System](#pausing-the-system)
 - [Enabling Emergency Mode](#enabling-emergency-mode)
@@ -295,6 +297,33 @@ Value is in basis points. Default: 1000 (10%).
 cast send <KARMA_ADDRESS> \
   "setSlashRewardPercentage(uint256)" \
   <PERCENTAGE_BPS> \
+  --rpc-url <RPC_URL> \
+  --account <ADMIN_ACCOUNT>
+```
+
+### Setting the KarmaTiers contract on Karma
+
+Requires `DEFAULT_ADMIN_ROLE` on Karma. Links the `KarmaTiers` contract so that the tier requirement check can look up a
+slasher's tier. Set to the zero address to disable the tier check entirely.
+
+```bash
+cast send <KARMA_PROXY_ADDRESS> \
+  "setKarmaTiers(address)" \
+  <KARMA_TIERS_ADDRESS> \
+  --rpc-url <RPC_URL> \
+  --account <ADMIN_ACCOUNT>
+```
+
+### Setting the minimum slash tier requirement
+
+Requires `DEFAULT_ADMIN_ROLE` on Karma. Configures the minimum tier index a slasher must hold before a slash is
+accepted. Tier indices are zero-based and correspond to the tiers in the configured `KarmaTiers` contract. The check
+applies to all callers, including admins. Has no effect when `karmaTiers` is set to the zero address.
+
+```bash
+cast send <KARMA_PROXY_ADDRESS> \
+  "setSlashTierRequirement(uint8)" \
+  <TIER_INDEX> \
   --rpc-url <RPC_URL> \
   --account <ADMIN_ACCOUNT>
 ```
